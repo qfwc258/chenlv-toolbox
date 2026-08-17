@@ -1,0 +1,53 @@
+# ============================================================
+# 陈律工具箱 · 依赖/插件版本目录（单一来源）
+# 引用方式：build.gradle / build.gradle.kts 中使用 libs.xxx
+# ============================================================
+
+[versions]
+agp = "8.1.4"
+kotlin = "1.9.22"
+composeCompiler = "1.5.10"          # 对应 Kotlin 1.9.22 的 Compose 编译器版本
+composeBom = "2024.02.00"
+coreKtx = "1.12.0"
+lifecycle = "2.7.0"
+activityCompose = "1.8.2"
+documentFile = "1.0.1"
+pdfbox = "2.0.27.0"
+junit = "4.13.2"
+serialization = "1.6.3"
+commonmark = "0.30.0"
+jsoup = "1.17.2"
+
+[libraries]
+core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycle" }
+activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
+documentfile = { group = "androidx.documentfile", name = "documentfile", version.ref = "documentFile" }
+
+# Compose（BOM 管控版本，不单独指定）
+compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
+compose-ui = { group = "androidx.compose.ui", name = "ui" }
+compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
+material3 = { group = "androidx.compose.material3", name = "material3" }
+material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended" }
+
+# PDF 页码：Apache-2.0 的 PDFBox Android 移植版
+pdfbox-android = { group = "com.tom-roush", name = "pdfbox-android", version.ref = "pdfbox" }
+
+# 单元测试
+junit = { group = "junit", name = "junit", version.ref = "junit" }
+
+# 公文草稿序列化
+kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "serialization" }
+
+# 公众号排版：Markdown -> HTML
+commonmark = { group = "org.commonmark", name = "commonmark", version.ref = "commonmark" }
+commonmark-gfm-tables = { group = "org.commonmark", name = "commonmark-ext-gfm-tables", version.ref = "commonmark" }
+commonmark-gfm-strikethrough = { group = "org.commonmark", name = "commonmark-ext-gfm-strikethrough", version.ref = "commonmark" }
+commonmark-task-list = { group = "org.commonmark", name = "commonmark-ext-task-list-items", version.ref = "commonmark" }
+jsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }

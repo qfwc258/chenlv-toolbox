@@ -46,12 +46,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-// ============================================================
-// 统一设计 token（参照「公众号」Tab 的紧凑风格）
-// ============================================================
-private val W_BTN_RADIUS     = RoundedCornerShape(10.dp)
-private val W_CARD_RADIUS    = RoundedCornerShape(14.dp)
-private val W_SECTION_RADIUS = RoundedCornerShape(12.dp)
+// 设计 token 复用 com.wb.mdgw.UiTokens 的公共令牌（UI_SECTION_RADIUS / UI_CARD_RADIUS /
+// UI_BTN_RADIUS / UI_ACTION_HEIGHT），避免在各 tab 屏幕内重复定义（参见第8项 de-god）。
 
 /** 设置/弹窗中的分区小标题（紧凑、主色、字距收窄），与 PPTX 弹窗风格统一。 */
 @Composable
@@ -62,7 +58,6 @@ private fun WSectionLabel(text: String) {
         modifier = Modifier.padding(top = 10.dp, bottom = 2.dp)
     )
 }
-private val W_ACTION_HEIGHT  = 46.dp
 
 private const val DOCX_MIME =
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -589,7 +584,7 @@ fun WordScreen(
             // 编辑 / 预览 分段切换（选中态主色填充）
             Surface(
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                shape = W_SECTION_RADIUS,
+                shape = UI_SECTION_RADIUS,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)
             ) {
                 Row(Modifier.fillMaxWidth().padding(4.dp)) {
@@ -600,7 +595,7 @@ fun WordScreen(
                         val cellMod = Modifier.weight(1f).height(40.dp)
                             .clickable { if (v == SubView.PREVIEW) switchToPreview() else subView = SubView.EDIT }
                         if (selected) {
-                            Surface(color = MaterialTheme.colorScheme.primary, shape = W_SECTION_RADIUS, modifier = cellMod) {
+                            Surface(color = MaterialTheme.colorScheme.primary, shape = UI_SECTION_RADIUS, modifier = cellMod) {
                                 Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
                                     Icon(icon, null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(17.dp))
                                     Spacer(Modifier.width(6.dp))
@@ -679,7 +674,7 @@ fun WordScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(W_SECTION_RADIUS)
+                                .clip(UI_SECTION_RADIUS)
                                 .background(if (sel) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
                                 .clickable { chooseSpec(spec) }
                                 .padding(horizontal = 10.dp, vertical = 8.dp)
@@ -733,7 +728,7 @@ fun WordScreen(
                     }
 
                     Spacer(Modifier.height(4.dp))
-                    Surface(color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f), shape = W_SECTION_RADIUS, modifier = Modifier.fillMaxWidth()) {
+                    Surface(color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f), shape = UI_SECTION_RADIUS, modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(10.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Default.Info, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp))
@@ -791,11 +786,11 @@ fun WordScreen(
                     }
                     Text("保存位置：$resultPath", fontSize = 11.sp, lineHeight = 16.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(2.dp))
-                    OutlinedButton(onClick = { openOrShare(open = true) }, modifier = Modifier.fillMaxWidth().height(W_ACTION_HEIGHT), shape = W_BTN_RADIUS) {
+                    OutlinedButton(onClick = { openOrShare(open = true) }, modifier = Modifier.fillMaxWidth().height(UI_ACTION_HEIGHT), shape = UI_BTN_RADIUS) {
                         Icon(Icons.AutoMirrored.Filled.OpenInNew, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
                         Text("用其他应用打开", fontSize = 14.sp, maxLines = 1, softWrap = false)
                     }
-                    Button(onClick = { openOrShare(open = false) }, modifier = Modifier.fillMaxWidth().height(W_ACTION_HEIGHT), shape = W_BTN_RADIUS) {
+                    Button(onClick = { openOrShare(open = false) }, modifier = Modifier.fillMaxWidth().height(UI_ACTION_HEIGHT), shape = UI_BTN_RADIUS) {
                         Icon(Icons.Default.Share, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
                         Text("分享文件", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
                     }
@@ -932,7 +927,7 @@ fun WordScreen(
                     }
                 }
             },
-            confirmButton = { Button(onClick = { if (splitMode) applyEditGroups(groupTexts) else applyEditSingle(fullText) }, shape = W_BTN_RADIUS) { Text("保存") } },
+            confirmButton = { Button(onClick = { if (splitMode) applyEditGroups(groupTexts) else applyEditSingle(fullText) }, shape = UI_BTN_RADIUS) { Text("保存") } },
             dismissButton = { TextButton(onClick = { editing = null }) { Text("取消") } }
         )
     }
@@ -992,13 +987,13 @@ private fun WordActionBar(
 ) {
     Surface(
         tonalElevation = 3.dp, shadowElevation = 6.dp, color = MaterialTheme.colorScheme.surface,
-        shape = W_CARD_RADIUS, modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp)
+        shape = UI_CARD_RADIUS, modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp)
     ) {
         Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            val btnMod = Modifier.weight(1f).height(W_ACTION_HEIGHT)
+            val btnMod = Modifier.weight(1f).height(UI_ACTION_HEIGHT)
             val btnPad = PaddingValues(horizontal = 5.dp, vertical = 0.dp)
             OutlinedButton(
-                onClick = onOpen, shape = W_BTN_RADIUS, modifier = btnMod,
+                onClick = onOpen, shape = UI_BTN_RADIUS, modifier = btnMod,
                 border = BorderStroke(1.2.dp, MaterialTheme.colorScheme.primary),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary),
                 contentPadding = btnPad
@@ -1007,13 +1002,13 @@ private fun WordActionBar(
                 Spacer(Modifier.width(5.dp))
                 Text("打开", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
             }
-            Button(onClick = onExportDocx, shape = W_BTN_RADIUS, modifier = btnMod, contentPadding = btnPad) {
+            Button(onClick = onExportDocx, shape = UI_BTN_RADIUS, modifier = btnMod, contentPadding = btnPad) {
                 Icon(Icons.Default.Description, contentDescription = null, modifier = Modifier.size(17.dp))
                 Spacer(Modifier.width(5.dp))
                 Text("导出DOCX", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
             }
             OutlinedButton(
-                onClick = onSavePdf, shape = W_BTN_RADIUS, modifier = btnMod,
+                onClick = onSavePdf, shape = UI_BTN_RADIUS, modifier = btnMod,
                 border = BorderStroke(1.2.dp, MaterialTheme.colorScheme.outline),
                 contentPadding = btnPad
             ) {
@@ -1053,7 +1048,7 @@ private fun EditorPane(
         // 编辑卡片
         Surface(
             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f),
-            shape = W_CARD_RADIUS,
+            shape = UI_CARD_RADIUS,
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)),
             modifier = Modifier.fillMaxSize()
         ) {

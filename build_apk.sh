@@ -19,14 +19,14 @@ source "$SCRIPT_DIR/setup_env.sh"
 PROJECT_DIR="$(cd "$SCRIPT_DIR" && pwd)"
 cd "$PROJECT_DIR"
 
-# ---------- 版本号（与 app/build.gradle.kts 保持同一公式） ----------
+# ---------- 版本号（与 app/build.gradle.kts 公式一致，参数统一从 gradle.properties 读取） ----------
 # versionCode = git 提交数（单调递增）；versionName 自动派生：
-# 三段均为个位数(0–9)。以「提交数 - 92」为发布序号，按 base-10 拆成三位：
+# 三段均为个位数(0–9)。以「提交数 - VERSION_BASE_COMMIT」为发布序号，按 base-10 拆成三位：
 # 百位→major、十位→minor、个位→patch；满 1000（即 9.9.9）归零循环，
 # 保证三段永远 ≤9、不超过 10。
 VERSION_CODE="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
-VERSION_BASE_COMMIT=92
-VERSION_MAJOR_BASE=2
+VERSION_BASE_COMMIT="$(grep '^VERSION_BASE_COMMIT=' gradle.properties | cut -d= -f2)"
+VERSION_MAJOR_BASE="$(grep '^VERSION_MAJOR_BASE=' gradle.properties | cut -d= -f2)"
 if [ "$VERSION_CODE" -gt "$VERSION_BASE_COMMIT" ]; then
     DELTA=$(( VERSION_CODE - VERSION_BASE_COMMIT ))
 else

@@ -149,8 +149,8 @@ object MdToGongwen {
         if (t.length !in 2..40) return false
         if (!t.endsWith("：") && !t.endsWith(":")) return false
         // 排除以数字/项目符号开头的条目式内容（如「一、事实认定：」属正文标题）
-        if (Regex("^[一二三四五六七八九十百]+[、.．]").containsMatchIn(t)) return false
-        if (Regex("^[（(]?\\d+[）)、.．]").containsMatchIn(t)) return false
+        if (ENUM_CN_RE.containsMatchIn(t)) return false
+        if (ENUM_NUM_RE.containsMatchIn(t)) return false
         return true
     }
 
@@ -212,6 +212,14 @@ object MdToGongwen {
 
     private val SEP_REGEX = Regex("^:?-{1,}:?$")
 
+    // 预编译正则：写入时会逐行/逐块调用，避免在热路径上反复编译 Regex
+    private val IMG_RE = Regex("!\\[[^\\]]*]\\([^)]*\\)")          // 图片
+    private val LINK_RE = Regex("\\[([^\\]]*)]\\([^)]*\\)")        // 链接保留文字
+    private val CODE_RE = Regex("`([^`]*)`")                       // 行内代码
+    private val STRIKE_RE = Regex("~~([^~]*)~~")                   // 删除线
+    private val ENUM_CN_RE = Regex("^[一二三四五六七八九十百]+[、.．]")   // 中文序号条目
+    private val ENUM_NUM_RE = Regex("^[（(]?\\d+[）)、.．]")           // 数字条目
+
     /** 智能引号：把成对的直引号转成中文弯引号 */
     private fun applySmartQuotes(line: String): String {
         val sb = StringBuilder(line.length)
@@ -228,10 +236,10 @@ object MdToGongwen {
     /** 去除 Markdown 语法噪声：图片、链接、行内代码、删除线 */
     private fun stripNoise(s: String): String {
         var t = s
-        t = Regex("!\\[[^\\]]*]\\([^)]*\\)").replace(t, "")          // 图片
-        t = Regex("\\[([^\\]]*)]\\([^)]*\\)").replace(t, "$1")        // 链接保留文字
-        t = Regex("`([^`]*)`").replace(t, "$1")                       // 行内代码
-        t = Regex("~~([^~]*)~~").replace(t, "$1")                     // 删除线
+        t = IMG_RE.replace(t, "")
+        t = LINK_RE.replace(t, "$1")
+        t = CODE_RE.replace(t, "$1")
+        t = STRIKE_RE.replace(t, "$1")
         return t
     }
 

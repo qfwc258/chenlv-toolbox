@@ -34,6 +34,29 @@ import org.jsoup.nodes.Document
  *   5) **表格硬兜底**：补 `border/cellspacing/cellpadding` HTML 属性（后台会保留），并内联
  *      `border-collapse:collapse;border-spacing:0`，彻底消除单元格缝隙与断裂。
  */
+
+/**
+ * 内联样式是否已包含某属性：预编译各 CSS 属性的正则（热路径逐元素调用，避免反复编译 Regex）。
+ * 语义与原实现一致——匹配「属性声明以行首或分号开始」。
+ */
+private val cssPropertyRegexes: Map<String, Regex> = mapOf(
+    "line-height" to Regex("""(^|;)\s*line-height\s*:"""),
+    "font-size" to Regex("""(^|;)\s*font-size\s*:"""),
+    "font-family" to Regex("""(^|;)\s*font-family\s*:"""),
+    "color" to Regex("""(^|;)\s*color\s*:"""),
+    "width" to Regex("""(^|;)\s*width\s*:"""),
+    "word-break" to Regex("""(^|;)\s*word-break\s*:"""),
+    "table-layout" to Regex("""(^|;)\s*table-layout\s*:"""),
+    "border-collapse" to Regex("""(^|;)\s*border-collapse\s*:"""),
+    "border-spacing" to Regex("""(^|;)\s*border-spacing\s*:"""),
+    "box-sizing" to Regex("""(^|;)\s*box-sizing\s*:"""),
+    "border" to Regex("""(^|;)\s*border\s*:"""),
+    "padding" to Regex("""(^|;)\s*padding\s*:""")
+)
+
+private fun cssHasProp(style: String, prop: String): Boolean =
+    cssPropertyRegexes[prop]?.containsMatchIn(style) ?: false
+
 class MdWechatConverter(context: Context) {
 
     private val extensions = listOf(
@@ -124,19 +147,16 @@ class MdWechatConverter(context: Context) {
         val bodyFs = bodyDecls["font-size"].orEmpty()
         val bodyFf = bodyDecls["font-family"].orEmpty()
         val bodyColor = bodyDecls["color"].orEmpty()
-        val hasProp = { style: String, prop: String ->
-            Regex("""(^|;)\s*$prop\s*:""").containsMatchIn(style)
-        }
         body.select(
             "p, li, blockquote, h1, h2, h3, h4, h5, h6, " +
                 "td, th, pre, code, strong, em, b, i, a, span, div, dt, dd"
         ).forEach { el ->
             val style = el.attr("style")
             val add = mutableListOf<String>()
-            if (!hasProp(style, "line-height")) add += "line-height: $bodyLh"
-            if (!hasProp(style, "font-size") && bodyFs.isNotBlank()) add += "font-size: $bodyFs"
-            if (!hasProp(style, "font-family") && bodyFf.isNotBlank()) add += "font-family: $bodyFf"
-            if (!hasProp(style, "color") && bodyColor.isNotBlank()) add += "color: $bodyColor"
+            if (!cssHasProp(style, "line-height")) add += "line-height: $bodyLh"
+            if (!cssHasProp(style, "font-size") && bodyFs.isNotBlank()) add += "font-size: $bodyFs"
+            if (!cssHasProp(style, "font-family") && bodyFf.isNotBlank()) add += "font-family: $bodyFf"
+            if (!cssHasProp(style, "color") && bodyColor.isNotBlank()) add += "color: $bodyColor"
             if (add.isNotEmpty()) {
                 val merged = (style.trim().removeSuffix(";") + ";" + add.joinToString("; "))
                     .trimStart(';')
@@ -156,8 +176,8 @@ class MdWechatConverter(context: Context) {
             firstRow?.children()?.forEach { cell ->
                 val s = cell.attr("style").trim().removeSuffix(";")
                 var merged = s
-                if (!hasProp(merged, "width")) merged += ";width: $colWidth"
-                if (!hasProp(merged, "word-break")) merged += ";word-break: break-word"
+                if (!cssHasProp(merged, "width")) merged += ";width: $colWidth"
+                if (!cssHasProp(merged, "word-break")) merged += ";word-break: break-word"
                 cell.attr("style", merged.trimStart(';'))
             }
 
@@ -166,11 +186,11 @@ class MdWechatConverter(context: Context) {
             t.attr("cellpadding", "6")
             val s = t.attr("style").trim().removeSuffix(";")
             var merged = s
-            if (!hasProp(merged, "table-layout")) merged += ";table-layout: fixed"
-            if (!hasProp(merged, "width")) merged += ";width: 100%"
-            if (!hasProp(merged, "border-collapse")) merged += ";border-collapse: collapse"
-            if (!hasProp(merged, "border-spacing")) merged += ";border-spacing: 0"
-            if (!hasProp(merged, "box-sizing")) merged += ";box-sizing: border-box"
+            if (!cssHasProp(merged, "table-layout")) merged += ";table-layout: fixed"
+            if (!cssHasProp(merged, "width")) merged += ";width: 100%"
+            if (!cssHasProp(merged, "border-collapse")) merged += ";border-collapse: collapse"
+            if (!cssHasProp(merged, "border-spacing")) merged += ";border-spacing: 0"
+            if (!cssHasProp(merged, "box-sizing")) merged += ";box-sizing: border-box"
             t.attr("style", merged.trimStart(';'))
         }
 
@@ -178,9 +198,9 @@ class MdWechatConverter(context: Context) {
         body.select("th, td").forEach { cell ->
             val s = cell.attr("style").trim().removeSuffix(";")
             var merged = s
-            if (!hasProp(merged, "border")) merged += ";border: 1px solid #dfdfdf"
-            if (!hasProp(merged, "padding")) merged += ";padding: 8px 10px"
-            if (!hasProp(merged, "word-break")) merged += ";word-break: break-word"
+            if (!cssHasProp(merged, "border")) merged += ";border: 1px solid #dfdfdf"
+            if (!cssHasProp(merged, "padding")) merged += ";padding: 8px 10px"
+            if (!cssHasProp(merged, "word-break")) merged += ";word-break: break-word"
             cell.attr("style", merged.trimStart(';'))
         }
 

@@ -1,13 +1,19 @@
 plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
-    id("org.jetbrains.kotlin.plugin.serialization")
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.serialization)
 }
 
-// 自动版本号：
-// - versionCode 以 git 提交数为基准（每次提交自增，保证单调递增）；
-// - versionName 自动派生：基于里程碑锚点，每累积 10 个提交 minor 进一位（逢十进一），
-//   末位 patch 按「提交数 % 10」自动递增，每次发布均进位，无需手动维护版本号。
+// ============================================================
+// 版本号：单一来源 = gradle.properties 的 VERSION_* 键。
+// 默认走「提交数驱动」的自动递增，具体算法见下。
+// 特殊发布需要手工覆盖时，在 gradle.properties 显式设置 VERSION_CODE / VERSION_NAME。
+// ============================================================
+// 从 gradle.properties 读取整数属性（缺省用默认值）
+fun propInt(name: String, default: Int): Int =
+    (project.findProperty(name) as? String)?.toIntOrNull() ?: default
+
+// git 提交数（versionCode 单调递增的基准）
 val gitCommitCount = runCatching {
     val tmp = createTempFile("gitcount", ".txt")
     exec {
@@ -19,22 +25,26 @@ val gitCommitCount = runCatching {
     n
 }.getOrNull() ?: 1
 
-// 自动版本号：三段均为个位数(0–9)，且随提交数自动递增。
-// 版本值 v = (提交数 - VERSION_BASE_COMMIT) + VERSION_MAJOR_BASE*100，作为单一递增整数；
-// 当前(≈183)对应 308 → v3.0.8，每次提交 +1，三位各自按 base-10 自然进位（首位亦自动递增）。
-// 满 1000（即 9.9.9）后归零循环，保证三段永远 ≤9、不超过 10。
-// 注意：仓库曾做历史瘦身(filter-repo 清理 APK)，提交数 199→183；为接续 v3.0.7 且保证
-// versionCode 单调递增，VERSION_BASE_COMMIT 由 92 调至 75，并为 versionCode 引入 +17 偏移。
-val VERSION_BASE_COMMIT = 75
-val VERSION_MAJOR_BASE = 2
-// 历史瘦身补偿偏移：旧历史 count=199(v3.0.7, versionCode=199)；瘦身后 count 回落 16，
-// +17 使当前 versionCode=200 > 199，升级链不中断（此后随提交继续 +1 递增）。
-val VERSION_CODE_OFFSET = 17
-val v = (if (gitCommitCount > VERSION_BASE_COMMIT) (gitCommitCount - VERSION_BASE_COMMIT) else 0) + VERSION_MAJOR_BASE * 100
-val autoMajor = (v / 100) % 10
-val autoMinor = (v / 10) % 10
-val autoPatch = v % 10
+// 版本号参数收口到 gradle.properties（单一来源）。
+// 背景：仓库曾做历史瘦身（filter-repo 清理 APK，提交数 199→183），为接续 v3.0.7 且保证
+// versionCode 单调递增，需保留 VERSION_BASE_COMMIT 与 VERSION_CODE_OFFSET 两个补偿值。
+val VERSION_BASE_COMMIT = propInt("VERSION_BASE_COMMIT", 75)
+val VERSION_MAJOR_BASE = propInt("VERSION_MAJOR_BASE", 2)
+val VERSION_CODE_OFFSET = propInt("VERSION_CODE_OFFSET", 17)
+
+// 三段版本号推导：v = (提交数 - BASE) + MAJOR*100，三位各自按 base-10 自然进位（逢十进一）。
+val derivedV = (if (gitCommitCount > VERSION_BASE_COMMIT) (gitCommitCount - VERSION_BASE_COMMIT) else 0) + VERSION_MAJOR_BASE * 100
+val autoMajor = (derivedV / 100) % 10
+val autoMinor = (derivedV / 10) % 10
+val autoPatch = derivedV % 10
 val autoVersionName = "$autoMajor.$autoMinor.$autoPatch"
+
+// 允许显式覆盖（发版兜底）
+val overrideVersionCode = propInt("VERSION_CODE", 0)
+val overrideVersionName = project.findProperty("VERSION_NAME") as? String
+
+fun fileProperty(name: String, default: String): String =
+    (project.findProperty(name) as? String) ?: default
 
 android {
     namespace = "com.wb.mdgw"
@@ -45,17 +55,19 @@ android {
         applicationId = "com.wb.mdgw"
         minSdk = 24
         targetSdk = 34
-        versionCode = gitCommitCount + VERSION_CODE_OFFSET
-        versionName = autoVersionName
+        versionCode = if (overrideVersionCode > 0) overrideVersionCode else gitCommitCount + VERSION_CODE_OFFSET
+        versionName = overrideVersionName ?: autoVersionName
     }
 
     signingConfigs {
         create("release") {
-            val storeFileParam = project.findProperty("storeFile")?.toString() ?: "mdgw-release.jks"
-            val storePasswordParam = project.findProperty("storePassword")?.toString() ?: "mdgw123456"
-            val keyAliasParam = project.findProperty("keyAlias")?.toString() ?: "mdgw"
-            val keyPasswordParam = project.findProperty("keyPassword")?.toString() ?: "mdgw123456"
-            val storeTypeParam = project.findProperty("storeType")?.toString() ?: "PKCS12"
+            // 签名信息来自 Gradle 属性（CI 经 secrets 传入，本地见 signing.properties）。
+            // 默认值保留是为了兼容本地 build_apk.sh 直接 assembleRelease 的用法。
+            val storeFileParam = fileProperty("storeFile", "mdgw-release.jks")
+            val storePasswordParam = fileProperty("storePassword", "mdgw123456")
+            val keyAliasParam = fileProperty("keyAlias", "mdgw")
+            val keyPasswordParam = fileProperty("keyPassword", "mdgw123456")
+            val storeTypeParam = fileProperty("storeType", "PKCS12")
 
             storeFile = rootProject.file(storeFileParam)
             storePassword = storePasswordParam
@@ -67,7 +79,13 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // R8 代码压缩 + 资源收缩，显著减小 APK 体积。
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
             signingConfig = signingConfigs.getByName("release")
         }
     }
@@ -87,7 +105,7 @@ android {
     }
 
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.10"
+        kotlinCompilerExtensionVersion = libs.versions.composeCompiler.get()
     }
 
     packaging {
@@ -98,34 +116,33 @@ android {
 }
 
 dependencies {
-    implementation("androidx.core:core-ktx:1.12.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
-    implementation("androidx.activity:activity-compose:1.8.2")
-    implementation("androidx.documentfile:documentfile:1.0.1")
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.documentfile)
 
-    implementation(platform("androidx.compose:compose-bom:2024.02.00"))
-    implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.ui:ui-graphics")
-    implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.material:material-icons-extended")
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.androidx.compose.ui)
+    implementation(libs.androidx.compose.ui.graphics)
+    implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.material.icons.extended)
 
-    // PDF 页码：Apache-2.0 的 PDFBox Android 移植版。
-    // 排除 BouncyCastle（仅加密 PDF 才需要），未加密文件加页码不受影响；
+    // PDF 页码：排除 BouncyCastle（仅加密 PDF 才需要），未加密文件加页码不受影响；
     // 若遇到加密 PDF，引擎会捕获并提示，不会崩溃。
-    implementation("com.tom-roush:pdfbox-android:2.0.27.0") {
+    implementation(libs.pdfbox.android) {
         exclude(group = "org.bouncycastle")
     }
 
     // 单元测试（校验 docx / OOXML 生成正确性）
-    testImplementation("junit:junit:4.13.2")
+    testImplementation(libs.junit)
 
     // 公文草稿序列化：GovDoc 模型 ↔ JSON（零反射、体积可控）
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
+    implementation(libs.kotlinx.serialization.json)
 
     // 公众号排版：Markdown -> 微信公众号 HTML（commonmark-java 解析 + Jsoup 内联样式）
-    implementation("org.commonmark:commonmark:0.30.0")
-    implementation("org.commonmark:commonmark-ext-gfm-tables:0.30.0")
-    implementation("org.commonmark:commonmark-ext-gfm-strikethrough:0.30.0")
-    implementation("org.commonmark:commonmark-ext-task-list-items:0.30.0")
-    implementation("org.jsoup:jsoup:1.17.2")
+    implementation(libs.commonmark)
+    implementation(libs.commonmark.gfm.tables)
+    implementation(libs.commonmark.gfm.strikethrough)
+    implementation(libs.commonmark.task.list)
+    implementation(libs.jsoup)
 }
