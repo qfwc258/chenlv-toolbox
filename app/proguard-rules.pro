@@ -30,3 +30,14 @@
 # ---------- commonmark ----------
 # commonmark 解析器按类型分发，保留其访问扩展点所需成员。
 -dontwarn org.commonmark.**
+
+# ---------- 可选 / 被排除的可选依赖 ----------
+# JP2（JPEG2000）解码器：pdfbox-android 的可选模块，本项目未引入；R8 报 Missing class。
+-dontwarn com.gemalto.jp2.**
+
+# BouncyCastle：app/build.gradle.kts 已 exclude，PDFBox 加密（PublicKeySecurityHandler）
+# 未使用。缺类仅发生在该未被调用的加密路径上，忽略即可。
+-dontwarn org.bouncycastle.**
+
+# jspecify 空值注解（jsoup 依赖）：仅为编译期元数据，运行时无需类。
+-dontwarn org.jspecify.annotations.**
