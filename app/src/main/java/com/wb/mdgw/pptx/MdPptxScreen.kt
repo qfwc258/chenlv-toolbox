@@ -5,7 +5,6 @@ import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
@@ -346,13 +345,13 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
                 )
 
                 Box(Modifier.weight(1f).fillMaxWidth()) {
-                    AnimatedVisibility(
+                    androidx.compose.animation.AnimatedVisibility(
                         visible = subView == SubView.EDIT,
                         enter = fadeIn(), exit = fadeOut()
                     ) {
                         EditorPane(markdown, { markdown = it }, "将生成 ${slides.size} 页 · 版式：${defaultLayout.label}")
                     }
-                    AnimatedVisibility(
+                    androidx.compose.animation.AnimatedVisibility(
                         visible = subView == SubView.PREVIEW,
                         enter = fadeIn(), exit = fadeOut()
                     ) {

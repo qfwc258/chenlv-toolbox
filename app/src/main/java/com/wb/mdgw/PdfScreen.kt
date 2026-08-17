@@ -887,7 +887,7 @@ private fun SealSection(
                 val outName2 = (FileUtils.baseName(fileName).ifBlank { "文档" }) + "_盖章.pdf"
                 onBusy(true)
                 scope.launch {
-                    runCatching {
+                    val result = runCatching {
                         withContext(Dispatchers.IO) {
                             val raw = BitmapFactory.decodeFile(sealPath!!)
                                 ?: throw IllegalStateException("印章图片丢失，请重新选择")
@@ -915,12 +915,14 @@ private fun SealSection(
                             val sf = FileUtils.saveToDownloads(context, outName2, out.readBytes(), FileUtils.PDF_MIME)
                             sf to outName2
                         }
-                    }.onSuccess { (sf, name) ->
+                    }
+                    if (result.isSuccess) {
+                        val (sf, name) = result.getOrThrow()
                         onBusy(false)
-                        scope.launch { snackbar.showSnackbar("✓ 已盖章并保存：$name") }
-                    }.onFailure {
+                        snackbar.showSnackbar("✓ 已盖章并保存：$name")
+                    } else {
                         onBusy(false)
-                        onError(friendlyError(it))
+                        onError(friendlyError(result.exceptionOrNull()!!))
                     }
                 }
             },
