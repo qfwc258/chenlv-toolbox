@@ -1,0 +1,123 @@
+displayName: 陈律工具箱 APK 云编译
+stages:
+  - name: stage-build
+    displayName: 编译并签名 APK
+    strategy: naturally
+    trigger: auto
+    executor: []
+    steps:
+      - step: build@python
+        name: build_apk
+        displayName: 编译 APK（Python 环境当通用 Shell）
+        pythonVersion: '3.9'
+        commands:
+          # ---- 0) 全局修复SSL证书 + 统一环境变量 ----
+          - |
+            export DEBIAN_FRONTEND=noninteractive
+            export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+            export ANDROID_HOME=/opt/android-sdk
+            export ANDROID_SDK_ROOT=$ANDROID_HOME
+            # 修复Ubuntu Java信任锚空报错（核心修复段）
+            echo "=== 修复Java SSL证书信任库 ==="
+            apt-get update -qq
+            apt-get install -y -qq ca-certificates ca-certificates-java
+            update-ca-certificates --fresh
+            # 重建Java系统信任锚
+            /var/lib/dpkg/info/ca-certificates-java.postinst configure
+            export JAVA_TOOL_OPTIONS="-Djavax.net.ssl.trustStore=/etc/ssl/certs/java/cacerts"
+            echo "=== 系统信息 ==="
+            uname -a
+            cat /etc/os-release 2>/dev/null | head -4 || true
+            echo "Python:" && python3 --version
+
+          # ---- 1) Ubuntu apt 安装JDK17+依赖 ----
+          - |
+            echo "=== 安装 JDK 17 & 工具依赖 ==="
+            apt-get install -y -qq openjdk-17-jdk-headless wget unzip
+            echo "JAVA_HOME=$JAVA_HOME"
+            $JAVA_HOME/bin/java -version 2>&1 | head -3
+
+          # ---- 2) 安装Android SDK（清华镜像备用下载）----
+          - |
+            echo "=== 安装 Android SDK ==="
+            mkdir -p "$ANDROID_HOME"
+            if [ ! -f "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
+              echo "→ 下载 cmdline-tools（国内镜像优先）..."
+              mkdir -p "$ANDROID_HOME/cmdline-tools/tmp"
+              wget --no-check-certificate -q "https://mirrors.tuna.tsinghua.edu.cn/android/repository/commandlinetools-linux-11076708_latest.zip" \
+                -O /tmp/cmdline-tools.zip || \
+              wget --no-check-certificate -q "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip" \
+                -O /tmp/cmdline-tools.zip
+              unzip -q -o /tmp/cmdline-tools.zip -d "$ANDROID_HOME/cmdline-tools/tmp"
+              mv "$ANDROID_HOME/cmdline-tools/tmp/cmdline-tools" "$ANDROID_HOME/cmdline-tools/latest" 2>/dev/null || true
+              rm -rf "$ANDROID_HOME/cmdline-tools/tmp"
+            fi
+            # sdkmanager 清华镜像源
+            mkdir -p ~/.android
+            echo "sdk.manager.site=https://mirrors.tuna.tsinghua.edu.cn/android/android/repository/addon-6.xml" >> ~/.android/sdkmanager.cfg
+            echo "→ 安装平台&构建工具"
+            yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install \
+              "platforms;android-34" \
+              "build-tools;34.0.0" \
+              "platform-tools" 2>&1 | tail -10
+            yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses 2>&1 | tail -3
+            echo "✓ SDK 环境就绪"
+
+          # ---- 3) Gradle Wrapper 修复 + 全局替换阿里Maven源 ----
+          - |
+            echo "=== Gradle Wrapper & 国内依赖源配置 ==="
+            WRAPPER="gradle/wrapper/gradle-wrapper.properties"
+            sed -i 's|distributionUrl=.*|distributionUrl=https\\://services.gradle.org/distributions/gradle-8.7-bin.zip|' "$WRAPPER"
+            # 全局替换谷歌maven为阿里镜像，规避SSL失败
+            find . -name "build.gradle" -o -name "build.gradle.kts" | xargs sed -i \
+              -e 's|https://maven.google.com|https://maven.aliyun.com/mvn/google|g' \
+              -e 's|https://repo1.maven.org/maven2|https://maven.aliyun.com/mvn/central|g'
+            cat "$WRAPPER"
+
+          # ---- 3.5) 单元测试门禁 ----
+          - |
+            echo "=== 运行单元测试 ==="
+            chmod +x gradlew
+            ./gradlew testReleaseUnitTest --no-daemon --stacktrace 2>&1 | tee test.log
+            TEST_CODE=${PIPESTATUS[0]}
+            echo "=== 单元测试退出码: $TEST_CODE ==="
+            if [ "$TEST_CODE" -ne 0 ]; then
+              echo "✗✗✗ 单元测试未通过，终止发布 ✗✗✗"
+              grep -rl "<failure" app/build/test-results/testReleaseUnitTest/ 2>/dev/null || true
+              tail -40 test.log 2>/dev/null || true
+              exit 1
+            fi
+            echo "✓✓✓ 单元测试全部通过 ✓✓✓"
+
+          # ---- 4) 编译Release签名APK ----
+          - |
+            echo "=== 开始编译Release签名APK ==="
+            chmod +x gradlew
+            ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee build.log
+            EXIT_CODE=$?
+            echo "=== 编译退出码: $EXIT_CODE ==="
+
+          # ---- 5) 产物校验输出 ----
+          - |
+            echo "=== 构建产物检索 ==="
+            find . -name "*.apk" -type f 2>/dev/null | while read f; do ls -lh "$f"; done
+            if [ -f app/build/outputs/apk/release/app-release.apk ]; then
+              echo "✓✓✓ APK 构建成功 ✓✓✓"
+              ls -lh app/build/outputs/apk/release/*.apk
+            else
+              echo "✗✗✗ APK 未生成 ✗✗✗"
+              echo "--- 最后80行构建日志 ---"
+              tail -80 build.log 2>/dev/null || echo "无构建日志"
+              exit 1
+            fi
+        artifacts:
+          - name: chenlv-toolbox-apk
+            path:
+              - app/build/outputs/apk/release/*.apk
+        caches:
+          - ~/.gradle/caches
+          - ~/.gradle/wrapper
+          - /opt/android-sdk
+        notify: []
+        strategy:
+          retry: '1'
