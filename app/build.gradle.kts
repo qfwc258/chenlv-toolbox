@@ -51,10 +51,15 @@ android {
 
     signingConfigs {
         create("release") {
-            storeFile = rootProject.file("mdgw-release.jks")
-            storePassword = "mdgw123456"
-            keyAlias = "mdgw"
-            keyPassword = "mdgw123456"
+            val storeFileParam = project.findProperty("storeFile")?.toString() ?: "mdgw-release.jks"
+            val storePasswordParam = project.findProperty("storePassword")?.toString() ?: "mdgw123456"
+            val keyAliasParam = project.findProperty("keyAlias")?.toString() ?: "mdgw"
+            val keyPasswordParam = project.findProperty("keyPassword")?.toString() ?: "mdgw123456"
+
+            storeFile = rootProject.file(storeFileParam)
+            storePassword = storePasswordParam
+            keyAlias = keyAliasParam
+            keyPassword = keyPasswordParam
         }
     }
 

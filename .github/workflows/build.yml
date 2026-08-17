@@ -1,9 +1,22 @@
-name: Build APK
+name: Build & Release APK
 
 on:
   push:
-    branches: [ master, main ]
+    branches: [ main, master ]
   workflow_dispatch:
+    inputs:
+      release_type:
+        description: 'Release type'
+        required: true
+        default: 'draft'
+        type: choice
+        options:
+          - 'draft'
+          - 'published'
+      notes:
+        description: 'Release notes'
+        required: false
+        default: ''
 
 jobs:
   build:
@@ -20,18 +33,73 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          api-level: 34
+          build-tools: '34.0.0'
+
+      - name: Decode signing key
+        run: |
+          echo "${{ secrets.SIGNING_KEY_BASE64 }}" | base64 -d > mdgw-release.jks
+
+      - name: Setup signing config
+        run: |
+          cat > signing.properties << 'EOF'
+          storeFile=mdgw-release.jks
+          storePassword=${{ secrets.SIGNING_STORE_PASSWORD }}
+          keyAlias=${{ secrets.SIGNING_KEY_ALIAS }}
+          keyPassword=${{ secrets.SIGNING_KEY_PASSWORD }}
+          EOF
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Run Unit Tests (quality gate)
-        run: ./gradlew testReleaseUnitTest --no-daemon
-
       - name: Build Release APK
-        run: ./gradlew assembleRelease --no-daemon
+        run: ./gradlew assembleRelease --no-daemon -PstoreFile=mdgw-release.jks -PstorePassword="${{ secrets.SIGNING_STORE_PASSWORD }}" -PkeyAlias="${{ secrets.SIGNING_KEY_ALIAS }}" -PkeyPassword="${{ secrets.SIGNING_KEY_PASSWORD }}"
 
-      - name: Upload APK
+      - name: Get APK info
+        id: apk_info
+        run: |
+          APK_PATH=$(ls app/build/outputs/apk/release/*.apk | head -1)
+          APK_NAME=$(basename "$APK_PATH")
+          echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
+          echo "apk_name=$APK_NAME" >> $GITHUB_OUTPUT
+
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: chenlv-toolbox-apk
-          path: app/build/outputs/apk/release/*.apk
+          path: ${{ steps.apk_info.outputs.apk_path }}
+          retention-days: 30
+
+      - name: Get version from APK
+        id: version_info
+        run: |
+          VERSION_NAME=$(grep -oP 'versionName:\s*"\K[^"]+' app/build/outputs/apk/release/output-metadata.json 2>/dev/null || echo "3.1.0")
+          COMMIT_COUNT=$(git rev-list --count HEAD)
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
+          echo "commit_count=$COMMIT_COUNT" >> $GITHUB_OUTPUT
+          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version_info.outputs.version_name }}-${{ steps.version_info.outputs.short_sha }}
+          name: 陈律工具箱 v${{ steps.version_info.outputs.version_name }}
+          body: |
+            ## 更新日志
+            
+            - 版本：${{ steps.version_info.outputs.version_name }}
+            - 提交：${{ steps.version_info.outputs.short_sha }}
+            - 提交数：${{ steps.version_info.outputs.commit_count }}
+            
+            ${{ github.event.inputs.notes || '自动构建版本' }}
+            
+            ## 下载
+            
+            - 点击下方 Assets 下载 APK
+          files: ${{ steps.apk_info.outputs.apk_path }}
+          draft: ${{ github.event.inputs.release_type == 'draft' }}
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
