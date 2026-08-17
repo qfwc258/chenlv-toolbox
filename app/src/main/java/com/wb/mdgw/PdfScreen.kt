@@ -403,6 +403,7 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                 PdfTab.SEAL -> SealSection(
                     context = context, scope = scope, density = density,
                     pdfBytes = pdfBytes!!, fileName = fileName,
+                    snackbar = snackbar,
                     onBusy = { busy = it }, onError = {
                         errorMessage = it
                         showErrorDialog = true
@@ -568,6 +569,7 @@ private fun SealSection(
     density: androidx.compose.ui.unit.Density,
     pdfBytes: ByteArray,
     fileName: String,
+    snackbar: SnackbarHostState,
     onBusy: (Boolean) -> Unit,
     onError: (String) -> Unit
 ) {
