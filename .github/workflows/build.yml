@@ -54,7 +54,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build Release APK
-        run: ./gradlew assembleRelease --no-daemon -PstoreFile=mdgw-release.jks -PstorePassword="${{ secrets.SIGNING_STORE_PASSWORD }}" -PkeyAlias="${{ secrets.SIGNING_KEY_ALIAS }}" -PkeyPassword="${{ secrets.SIGNING_KEY_PASSWORD }}"
+        run: ./gradlew assembleRelease --no-daemon -PstoreFile=mdgw-release.jks -PstorePassword="${{ secrets.SIGNING_STORE_PASSWORD }}" -PkeyAlias="${{ secrets.SIGNING_KEY_ALIAS }}" -PkeyPassword="${{ secrets.SIGNING_KEY_PASSWORD }}" -PstoreType=PKCS12
 
       - name: Get APK info
         id: apk_info

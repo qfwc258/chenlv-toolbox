@@ -55,11 +55,13 @@ android {
             val storePasswordParam = project.findProperty("storePassword")?.toString() ?: "mdgw123456"
             val keyAliasParam = project.findProperty("keyAlias")?.toString() ?: "mdgw"
             val keyPasswordParam = project.findProperty("keyPassword")?.toString() ?: "mdgw123456"
+            val storeTypeParam = project.findProperty("storeType")?.toString() ?: "PKCS12"
 
             storeFile = rootProject.file(storeFileParam)
             storePassword = storePasswordParam
             keyAlias = keyAliasParam
             keyPassword = keyPasswordParam
+            storeType = storeTypeParam
         }
     }
 
