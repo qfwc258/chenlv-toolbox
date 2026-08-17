@@ -20,7 +20,7 @@ object PptStyleStore : JsonFileStore<PptStyleStore.StyleHolder>() {
     override fun serializer(): KSerializer<StyleHolder> = StyleHolder.serializer()
 
     @Serializable
-    private data class StyleHolder(val css: String = "")
+    data class StyleHolder(val css: String = "")
 
     /** 保存 CSS 文本（空字符串表示恢复默认）。 */
     fun save(context: Context, css: String) = write(context, StyleHolder(css))

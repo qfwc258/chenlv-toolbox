@@ -21,7 +21,7 @@ object PptWaveStore : JsonFileStore<PptWaveStore.WaveHolder>() {
     override fun serializer(): KSerializer<WaveHolder> = WaveHolder.serializer()
 
     @Serializable
-    private data class WaveHolder(val p: PptWaveParams = PptWaveParams())
+    data class WaveHolder(val p: PptWaveParams = PptWaveParams())
 
     /** 保存波浪参数（出厂默认即视为「未自定义」）。 */
     fun save(context: Context, p: PptWaveParams) = write(context, WaveHolder(p))
