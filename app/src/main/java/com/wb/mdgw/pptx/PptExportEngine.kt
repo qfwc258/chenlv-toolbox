@@ -15,9 +15,6 @@ import java.util.zip.ZipOutputStream
  * 不依赖图片或渲染快照，100% 矢量可编辑。
  */
 object PptExportEngine {
-    /** 当前生效样式表（由 UI 注入；默认=默认样式=v1.7.x，保证「不填 CSS = 原样」）。 */
-    var style: PptStyleSheet = PptStyleSheet()
-
     private const val A = "http://schemas.openxmlformats.org/drawingml/2006/main"
     private const val R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
     private const val RP = "http://schemas.openxmlformats.org/package/2006/relationships"
@@ -38,14 +35,14 @@ object PptExportEngine {
     // 入口
     // ────────────────────────────────────────────────
 
-    fun exportPptx(slides: List<LaidOutSlide>, theme: PptTheme, out: OutputStream) {
+    fun exportPptx(slides: List<LaidOutSlide>, theme: PptTheme, style: PptStyleSheet, out: OutputStream) {
         val n = slides.size.coerceAtLeast(1)
         ZipOutputStream(out).use { zip ->
             entry(zip, "[Content_Types].xml") { contentTypesXml(n) }
             entry(zip, "_rels/.rels") { relsDotRels() }
             entry(zip, "docProps/core.xml") { coreXml() }
             entry(zip, "docProps/app.xml") { appXml(n) }
-            entry(zip, "ppt/presentation.xml") { presentationXml(n) }
+            entry(zip, "ppt/presentation.xml") { presentationXml(n, style) }
             entry(zip, "ppt/_rels/presentation.xml.rels") { presentationRels(n) }
             entry(zip, "ppt/presProps.xml") { presPropsXml() }
             entry(zip, "ppt/slideMasters/slideMaster1.xml") { slideMasterXml() }
@@ -55,7 +52,7 @@ object PptExportEngine {
             entry(zip, "ppt/theme/theme1.xml") { themeXml(theme) }
             entry(zip, "ppt/theme/_rels/theme1.xml.rels") { themeRels() }
             for (i in 1..n) {
-                entry(zip, "ppt/slides/slide$i.xml") { slideXml(slides[i - 1], theme) }
+                entry(zip, "ppt/slides/slide$i.xml") { slideXml(slides[i - 1], theme, style) }
                 entry(zip, "ppt/slides/_rels/slide$i.xml.rels") { slideRels() }
             }
         }
@@ -107,7 +104,7 @@ object PptExportEngine {
             """<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties">""" +
             """<Slides>$n</Slides><Company>陈律工具箱</Company></Properties>"""
 
-    private fun presentationXml(n: Int): String {
+    private fun presentationXml(n: Int, style: PptStyleSheet): String {
         val sb = StringBuilder()
         sb.append("""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>""")
         sb.append("""<p:presentation xmlns:a="$A" xmlns:r="$R" xmlns:p="$P">""")
@@ -222,7 +219,7 @@ object PptExportEngine {
     // 幻灯片内容
     // ────────────────────────────────────────────────
 
-    private fun slideXml(slide: LaidOutSlide, theme: PptTheme): String {
+    private fun slideXml(slide: LaidOutSlide, theme: PptTheme, style: PptStyleSheet): String {
         val sb = StringBuilder()
         sb.append("""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>""")
         sb.append("""<p:sld xmlns:a="$A" xmlns:r="$R" xmlns:p="$P">""")
@@ -242,7 +239,7 @@ object PptExportEngine {
             val waveColor = slide.deco.waveColor ?: theme.accent
             val layers = PptLayoutEngine.generateWaveLayers(waveColor)
             for (layer in layers) {
-                sb.append(waveShapeXml(layer, id++))
+                sb.append(waveShapeXml(layer, style, id++))
             }
         }
         // 底部直线色块装饰（与波浪并列、可独立开关）：满屏宽、贴齐页底、高度 = 画布高 1/N（默认 1/60，可在设置中调），
@@ -275,9 +272,9 @@ object PptExportEngine {
         slide.deco?.quoteBg?.forEach { b -> sb.append(roundRectShapeXml(b, theme.quoteBg, id++)) }
         for (unit in slide.units) {
             if (unit.type == BlockType.TABLE && unit.table != null) {
-                id = tableShapesXml(sb, unit, slide.cover, slide.deco?.accentBg == true, theme, id)
-            } else {
-                sb.append(shapeXml(unit, slide.cover, slide.deco?.accentBg == true, theme, id++))
+                id = tableShapesXml(sb, unit, slide.cover, slide.deco?.accentBg == true, theme, style, id)
+                } else {
+                    sb.append(shapeXml(unit, slide.cover, slide.deco?.accentBg == true, theme, style, id++))
             }
         }
         sb.append("""</p:spTree></p:cSld>""")
@@ -286,7 +283,7 @@ object PptExportEngine {
         return sb.toString()
     }
 
-    private fun shapeXml(unit: LaidOutUnit, cover: Boolean, accentBg: Boolean, theme: PptTheme, id: Int): String {
+    private fun shapeXml(unit: LaidOutUnit, cover: Boolean, accentBg: Boolean, theme: PptTheme, style: PptStyleSheet, id: Int): String {
         // 封面背景可能偏亮（如简约灰白），按背景明暗自适应前景色；强调背景始终白字
         val coverText = if (isLight(theme.coverBg)) "222222" else "FFFFFF"
         val color = when {
@@ -302,7 +299,7 @@ object PptExportEngine {
         val bodyPr = """<a:bodyPr wrap="square" lIns="0" tIns="0" rIns="0" bIns="0" anchor="t"><a:normAutofit fontScale="95000"/></a:bodyPr><a:lstStyle/>"""
         val paras = when (unit.type) {
             // 颜色统一用已算好的 color（含遇色块反色）：COVER 页/accentBg 上 CODE/LIST 也反色，与预览端一致
-            BlockType.CODE -> codeParas(unit.rawText(), color, unit.fontFamily, unit.gapAfter, unit.latinFont)
+            BlockType.CODE -> codeParas(unit.rawText(), color, style, unit.fontFamily, unit.gapAfter, unit.latinFont)
             BlockType.BULLET_LIST, BlockType.ORDERED_LIST -> listParas(unit, color, unit.fontFamily, unit.gapAfter, unit.latinFont)
             else -> paragraphsFromFrags(
                 boldFrags, unit.fontSize, color, unit.align, isCode = false, unit.fontFamily,
@@ -342,7 +339,7 @@ object PptExportEngine {
      * 注意：三次贝塞尔曲线在 DrawingML 中的正确元素名是 <a:cubicBezTo>（含 3 个 <a:pt>），
      * 坐标统一用 EMU，与 <a:ext> 形状尺寸保持一致，C1 连续保证波峰波谷圆润无折角。
      */
-    private fun waveShapeXml(layer: WaveLayer, id: Int): String {
+    private fun waveShapeXml(layer: WaveLayer, style: PptStyleSheet, id: Int): String {
         val w = style.canvasW   // 720pt
         val h = style.canvasH   // 405pt
         val EW = emu(w).toDouble()   // 路径坐标空间（EMU）
@@ -396,6 +393,7 @@ object PptExportEngine {
         cover: Boolean,
         accentBg: Boolean,
         theme: PptTheme,
+        style: PptStyleSheet,
         startId: Int
     ): Int {
         val tr = unit.table ?: return startId
@@ -422,7 +420,7 @@ object PptExportEngine {
                 val color = if (isHeader) "FFFFFF" else cellColor
                 val fs = if (isHeader) tr.headerFs else tr.cellFs
                 val align = tr.colAlign.getOrNull(j) ?: TableAlign.LEFT
-                sb.append(cellTextXml(cx, y, cw, h, cells[j], color, fs, align, id++))
+                sb.append(cellTextXml(cx, y, cw, h, cells[j], color, fs, align, style, id++))
             }
             y += h
         }
@@ -447,7 +445,7 @@ object PptExportEngine {
     /** 单个单元格文本框（带内边距，垂直居中，按列对齐）。 */
     private fun cellTextXml(
         cx: Int, y: Int, cw: Int, h: Int,
-        frags: List<InlineFragment>, color: String, fs: Int, align: TableAlign, id: Int
+        frags: List<InlineFragment>, color: String, fs: Int, align: TableAlign, style: PptStyleSheet, id: Int
     ): String {
         val a = when (align) {
             TableAlign.CENTER -> Align.CENTER
@@ -561,7 +559,7 @@ object PptExportEngine {
     }
 
     // ── 代码块 ──
-    private fun codeParas(raw: String, color: String, fontFamily: String = "", gapAfter: Int = 0, latinFont: String = ""): String {
+    private fun codeParas(raw: String, color: String, style: PptStyleSheet, fontFamily: String = "", gapAfter: Int = 0, latinFont: String = ""): String {
         // 代码块内部行间距由行距(lineMult)决定，不叠加 spcAft；块尾间距由布局 y 步进负责
         val sb = StringBuilder()
         val lines = if (raw.isEmpty()) listOf(" ") else raw.split("\n")

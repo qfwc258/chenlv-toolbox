@@ -2,10 +2,12 @@ package com.wb.mdgw.pptx
 
 import android.content.Context
 import android.net.Uri
-import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -63,6 +65,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.core.content.ContextCompat
 import com.wb.mdgw.FileUtils
+import com.wb.mdgw.ExportResultDialog
 import com.wb.mdgw.SegmentedTabs
 import com.wb.mdgw.UI_CARD_RADIUS
 import com.wb.mdgw.UI_BTN_RADIUS
@@ -71,6 +74,20 @@ import com.wb.mdgw.UI_ACTION_HEIGHT
 /** PPTX 文件 MIME（与文件导出/打开/分享保持一致）。 */
 private const val PPTX_MIME =
     "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+
+/** 将常见异常翻译为用户可读的中文提示。 */
+private fun friendlyError(e: Throwable): String = when {
+    e.message?.contains("permission", ignoreCase = true) == true -> "权限不足，请授予存储权限后重试"
+    e.message?.contains("No space", ignoreCase = true) == true -> "存储空间不足，请清理后重试"
+    e.message?.contains("FileNotFound", ignoreCase = true) == true || e.message?.contains("No such file", ignoreCase = true) == true -> "文件不存在，请检查后重试"
+    e.message?.contains("Read-only", ignoreCase = true) == true -> "文件为只读，无法写入"
+    else -> "操作失败，请稍后重试"
+}
+
+/** 预览画布使用的语义颜色常量，避免硬编码。 */
+private val COVER_DARK_TEXT = Color(0xFF222222)
+private val OVERFLOW_WARN = Color(0xFFC0392B)
+private val TABLE_GRID = Color(0xFFC8C8C8)
 
 /**
  * 「样式」弹窗的默认 CSS 模板（仅作参考/起点）。
@@ -223,6 +240,7 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
     var resultName by remember { mutableStateOf("") }
     var resultPath by remember { mutableStateOf("") }
     var showResult by remember { mutableStateOf(false) }
+    var exportProgress by remember { mutableStateOf("") }
 
     // 文件命名对话框状态
     var showNameDialog by remember { mutableStateOf(false) }
@@ -236,31 +254,32 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
      */
     fun exportPptx(baseName: String) {
         if (slides.isEmpty()) {
-            Toast.makeText(context, "没有可导出的内容，请先在编辑区输入 Markdown", Toast.LENGTH_LONG).show()
+            scope.launch { snackbar.showSnackbar("没有可导出的内容，请先在编辑区输入 Markdown") }
             return
         }
-        // 清理非法字符（/\:*?"<>|），去空白，保证以 .pptx 结尾
         val clean = baseName.trim().replace(Regex("""[\\/:*?"<>|]"""), "").ifBlank { "陈律工具箱" }
         val name = if (clean.endsWith(".pptx", ignoreCase = true)) clean else "$clean.pptx"
         scope.launch(Dispatchers.IO) {
             try {
                 val cur = slides
+                withContext(Dispatchers.Main) { exportProgress = "正在生成 PPTX（共 ${cur.size} 页）..." }
                 val baos = java.io.ByteArrayOutputStream()
-                PptExportEngine.style = style
                 PptLayoutEngine.waveParams = waveParams
-                PptExportEngine.exportPptx(cur, theme, baos)
+                PptExportEngine.exportPptx(cur, theme, style, baos)
                 val bytes = baos.toByteArray()
                 val sf = FileUtils.saveToDownloads(context, name, bytes, PPTX_MIME)
                 withContext(Dispatchers.Main) {
+                    exportProgress = ""
                     resultUri = sf.uri
                     resultName = name
                     resultPath = sf.displayPath
                     showResult = true
-                    Toast.makeText(context, "已导出 PPTX（${cur.size} 页）", Toast.LENGTH_LONG).show()
+                    snackbar.showSnackbar("已导出 PPTX（${cur.size} 页）")
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "导出失败：${e.message}", Toast.LENGTH_LONG).show()
+                    exportProgress = ""
+                    snackbar.showSnackbar(friendlyError(e))
                 }
             }
         }
@@ -275,7 +294,7 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
                 else FileUtils.shareIntent(uri, resultName, PPTX_MIME)
             )
         }.onFailure {
-            Toast.makeText(context, "操作失败：${it.message}", Toast.LENGTH_SHORT).show()
+            scope.launch { snackbar.showSnackbar(friendlyError(it)) }
         }
     }
 
@@ -303,7 +322,7 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
             PptxActionBar(
                 onExport = {
                     if (slides.isEmpty()) {
-                        Toast.makeText(context, "没有可导出的内容，请先在编辑区输入 Markdown", Toast.LENGTH_LONG).show()
+                        scope.launch { snackbar.showSnackbar("没有可导出的内容，请先在编辑区输入 Markdown") }
                     } else {
                         fileNameInput = TextFieldValue("陈律工具箱")
                         showNameDialog = true
@@ -326,19 +345,47 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)
                 )
 
-                when (subView) {
-                    SubView.EDIT -> EditorPane(markdown, { markdown = it }, "将生成 ${slides.size} 页 · 版式：${defaultLayout.label}")
-                    SubView.PREVIEW -> PreviewPager(
-                        slides = slides,
-                        theme = theme,
-                        snackbar = snackbar,
-                        comps = comps,
-                        defaultLayout = defaultLayout,
-                        onCompositionChange = { i, c ->
-                            comps[i] = c
-                            layoutsVersion++   // 触发草稿防抖保存
+                Box(Modifier.weight(1f).fillMaxWidth()) {
+                    AnimatedVisibility(
+                        visible = subView == SubView.EDIT,
+                        enter = fadeIn(), exit = fadeOut()
+                    ) {
+                        EditorPane(markdown, { markdown = it }, "将生成 ${slides.size} 页 · 版式：${defaultLayout.label}")
+                    }
+                    AnimatedVisibility(
+                        visible = subView == SubView.PREVIEW,
+                        enter = fadeIn(), exit = fadeOut()
+                    ) {
+                        PreviewPager(
+                            slides = slides,
+                            theme = theme,
+                            snackbar = snackbar,
+                            comps = comps,
+                            defaultLayout = defaultLayout,
+                            onCompositionChange = { i, c ->
+                                comps[i] = c
+                                layoutsVersion++   // 触发草稿防抖保存
+                            }
+                        )
+                    }
+                }
+
+                // 导出进度条
+                if (exportProgress.isNotEmpty()) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        shape = UI_BTN_RADIUS,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                            Text(exportProgress, fontSize = 12.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
                         }
-                    )
+                    }
                 }
             }
 
@@ -385,35 +432,16 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
     }
 
     // ---------- 导出结果（与「公文」Tab 一致：打开 / 分享） ----------
-    if (showResult && resultUri != null) {
-        AlertDialog(
-            onDismissRequest = { showResult = false },
-            icon = { Icon(Icons.Default.CheckCircle, null, tint = Color(0xFF2E7D32), modifier = Modifier.size(30.dp)) },
-            title = { Text("PPTX 已生成", fontWeight = FontWeight.Bold, fontSize = 17.sp) },
-            text = {
-                Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(10.dp)) {
-                            Icon(Icons.Default.Description, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text(resultName, fontWeight = FontWeight.Medium, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        }
-                    }
-                    Text("保存位置：$resultPath", fontSize = 11.sp, lineHeight = 16.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(2.dp))
-                    OutlinedButton(onClick = { openOrShare(open = true) }, modifier = Modifier.fillMaxWidth().height(UI_ACTION_HEIGHT), shape = UI_BTN_RADIUS) {
-                        Icon(Icons.AutoMirrored.Filled.OpenInNew, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
-                        Text("用其他应用打开", fontSize = 14.sp, maxLines = 1, softWrap = false)
-                    }
-                    Button(onClick = { openOrShare(open = false) }, modifier = Modifier.fillMaxWidth().height(UI_ACTION_HEIGHT), shape = UI_BTN_RADIUS) {
-                        Icon(Icons.Default.Share, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
-                        Text("分享文件", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { showResult = false }) { Text("关闭") } }
-        )
-    }
+    ExportResultDialog(
+        visible = showResult && resultUri != null,
+        onDismiss = { showResult = false },
+        title = "PPTX 已生成",
+        fileName = resultName,
+        savePath = resultPath,
+        fileIcon = Icons.Default.Description,
+        onOpen = { openOrShare(open = true) },
+        onShare = { openOrShare(open = false) }
+    )
 
     // ---------- 文件命名对话框（导出前填写文件名） ----------
     if (showNameDialog) {
@@ -1221,6 +1249,9 @@ private fun CompositionSelector(
                 Pill("上左对齐", comp.valign == VAlign.TOP && comp.halign == HAlign.LEFT) {
                     onCompositionChange(comp.copy(valign = VAlign.TOP, halign = HAlign.LEFT))
                 }
+                Pill("上居中对齐", comp.valign == VAlign.TOP && comp.halign == HAlign.CENTER) {
+                    onCompositionChange(comp.copy(valign = VAlign.TOP, halign = HAlign.CENTER))
+                }
                 Pill("居中左对齐", comp.valign == VAlign.CENTER && comp.halign == HAlign.LEFT) {
                     onCompositionChange(comp.copy(valign = VAlign.CENTER, halign = HAlign.LEFT))
                 }
@@ -1341,7 +1372,7 @@ private fun BoxScope.UnitBox(unit: PptLayoutEngine.LaidOutUnit, theme: PptTheme,
     val density = LocalDensity.current.density
 
     // 封面背景可能偏亮（如简约灰白），按背景明暗自适应前景色；强调背景(accentBg)始终白字
-    val coverText = if (isLight(theme.coverBg)) Color(0xFF222222) else Color.White
+    val coverText = if (isLight(theme.coverBg)) COVER_DARK_TEXT else Color.White
     val baseColor = when {
         unit.color != null -> hexToColor(unit.color)   // 显式颜色覆盖（如目录标题反白）
         accentBg -> Color.White
@@ -1419,7 +1450,7 @@ private fun BoxScope.UnitBox(unit: PptLayoutEngine.LaidOutUnit, theme: PptTheme,
                     tr.rows.forEachIndexed { i, row ->
                         Row(
                             Modifier.fillMaxWidth().height((tr.rowHs[i] * scale).dp)
-                                .border(BorderStroke((0.75f * scale).dp, Color(0xFFC8C8C8)))
+                                .border(BorderStroke((0.75f * scale).dp, TABLE_GRID))
                         ) {
                             row.forEachIndexed { j, frags ->
                                 Box(
@@ -1481,7 +1512,7 @@ private fun BoxScope.UnitBox(unit: PptLayoutEngine.LaidOutUnit, theme: PptTheme,
             Text(
                 "⚠ 内容超长",
                 fontSize = 10.sp,
-                color = Color(0xFFC0392B),
+                color = OVERFLOW_WARN,
                 modifier = Modifier.align(Alignment.BottomEnd)
             )
         }

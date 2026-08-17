@@ -707,6 +707,103 @@ object PptLayoutEngine {
         return u to d
     }
 
+    // ── 四栏（标题置顶 + 其下四栏连续流分栏，顶端对齐）──
+    /**
+     * 四栏（结构=四栏）。标题置顶 + 其下四栏连续流分栏，顶端对齐。
+     * 可传入 [frame] 与 [align] 以适配「带色块内缩」或「组合对齐」。
+     */
+    private fun layoutFourColInFrame(blocks: List<MdBlock>, frame: Rect, align: Align): Pair<List<LaidOutUnit>, SlideDeco> {
+        if (blocks.isEmpty()) return emptyList<LaidOutUnit>() to SlideDeco()
+        val units = mutableListOf<LaidOutUnit>()
+        val bars = mutableListOf<Rect>()
+        val LEVEL_INDENT = 24
+        // 标题（首个标题）置顶
+        val title = blocks.firstOrNull { isHeading(it) }
+        var topY = frame.y + 4
+        if (title != null) {
+            val tFs = fontSizeOf(blockTypeOf(title))
+            val ch = contentHeight(title, tFs)
+            val isH3OrLower = title is MdBlock.TextBlock && title.type.ordinal >= BlockType.H3.ordinal
+            val tx = if (isH3OrLower) frame.x + LEVEL_INDENT else frame.x
+            units.add(makeUnit(title, tx, topY, frame.w - (if (isH3OrLower) LEVEL_INDENT else 0), ch,
+                cover = false, overflow = false, fontSizeOverride = tFs, alignOverride = align))
+            if (isH3OrLower) bars.add(titleBarRect(title, tx, topY, ch))
+            topY += ch + 30
+        }
+        // 其下四栏（剩余块均衡分配）
+        val rest = if (title != null) blocks.filter { it !== title } else blocks
+        if (rest.isEmpty()) return units to SlideDeco(bars = bars)
+        val gap = style.splitGap
+        val colW = (frame.w - gap * 3) / 4
+        // 按段落均衡分配到四栏
+        val columns = splitToNColumns(rest, 4, colW, topY, frame.y + frame.h)
+        val restHasH3 = columns.flatten().any { it is MdBlock.TextBlock && it.type.ordinal >= BlockType.H3.ordinal }
+        columns.forEachIndexed { ci, col ->
+            val cx = frame.x + ci * (colW + gap) + if (restHasH3 && ci > 0) LEVEL_INDENT else 0
+            val actualColW = if (restHasH3 && ci > 0) colW - LEVEL_INDENT else colW
+            val (colU, colDeco) = layoutColumn(col, cx, actualColW.coerceAtLeast(80), topStart = topY, availBottom = frame.y + frame.h, alignOverride = align)
+            units.addAll(colU); bars.addAll(colDeco.bars)
+        }
+        return units to SlideDeco(bars = bars)
+    }
+
+    // ── 上窄下宽（上区窄幅居中 + 下区全宽展开）──
+    /**
+     * 上窄下宽（结构=上窄下宽）。上区内容窄幅（60% 宽）居中 + 下区内容全宽展开。
+     * 上区放首个标题/要点，下区放其余块。
+     */
+    private fun layoutTopNarrowInFrame(blocks: List<MdBlock>, frame: Rect, vCenter: Boolean, align: Align): Pair<List<LaidOutUnit>, SlideDeco> {
+        if (blocks.isEmpty()) return emptyList<LaidOutUnit>() to SlideDeco()
+        val units = mutableListOf<LaidOutUnit>()
+        val bars = mutableListOf<Rect>()
+        val narrowW = (frame.w * 0.60).toInt().coerceAtLeast(200)
+        val narrowX = frame.x + (frame.w - narrowW) / 2
+        // 上区：取首个标题块（窄幅居中）
+        val title = blocks.firstOrNull { isHeading(it) }
+        val topBlocks = if (title != null) listOf(title) else blocks.take(1)
+        val restBlocks = if (title != null) blocks.filter { it !== title } else blocks.drop(1)
+        var topY = frame.y + 4
+        // 渲染上区窄幅内容
+        topBlocks.forEach { b ->
+            val fs = fontSizeOf(blockTypeOf(b))
+            val ch = contentHeight(b, fs, narrowW)
+            val isH3OrLower = b is MdBlock.TextBlock && b.type.ordinal >= BlockType.H3.ordinal
+            val tx = if (isH3OrLower) narrowX + 24 else narrowX
+            val tw = if (isH3OrLower) narrowW - 24 else narrowW
+            units.add(makeUnit(b, tx, topY, tw, ch, cover = false, overflow = false, fontSizeOverride = fs, alignOverride = Align.CENTER))
+            if (isH3OrLower) bars.add(titleBarRect(b, tx, topY, ch))
+            topY += ch + 20
+        }
+        // 下区：全宽展开剩余内容
+        if (restBlocks.isNotEmpty()) {
+            val bottomY = topY + 12
+            val (restU, restDeco) = layoutColumn(restBlocks, frame.x, frame.w, topStart = bottomY, availBottom = frame.y + frame.h, vCenter = vCenter, alignOverride = align)
+            units.addAll(restU); bars.addAll(restDeco.bars)
+        }
+        return units to SlideDeco(bars = bars)
+    }
+
+    /** 将块列表均衡分配到 N 栏（按段落截断、连续流）。 */
+    private fun splitToNColumns(blocks: List<MdBlock>, n: Int, colW: Int, topY: Int, availBottom: Int): List<List<MdBlock>> {
+        val columns = List(n) { mutableListOf<MdBlock>() }
+        val colHeights = IntArray(n) { topY }
+        for (block in blocks) {
+            val fs = fontSizeOf(blockTypeOf(block))
+            val bh = contentHeight(block, fs, colW)
+            // 找当前最矮的栏
+            val ci = colHeights.indices.minByOrNull { colHeights[it] } ?: 0
+            if (colHeights[ci] + bh > availBottom) {
+                // 所有栏都放不下，放最后一栏
+                columns.last().add(block)
+                colHeights[columns.lastIndex] += bh
+            } else {
+                columns[ci].add(block)
+                colHeights[ci] += bh
+            }
+        }
+        return columns
+    }
+
     // ────────────────────────────────────────────────
     // 组合驱动渲染（阶段二）：结构 × 色块 × 对齐 × 间距
     // ────────────────────────────────────────────────
@@ -729,11 +826,20 @@ object PptLayoutEngine {
         return Rect(x, y, w, h)
     }
 
-    /** 色块装饰（左/上/下色条）。全色(NONE)与无色块返回空。 */
+    /** 色块装饰（左/右/上/下色条）。全色(NONE)与无色块返回空。 */
     private fun decoFor(comp: SlideComposition, theme: PptTheme): SlideDeco {
-        val tpl = bandTemplateOf(comp.colorBlock) ?: return SlideDeco()
-        val resolved = PptLayoutTemplates.resolveBands(PptLayoutTemplates.get(tpl), style, theme)
-        return SlideDeco(bars = resolved.map { it.first }, barColor = resolved.first().second)
+        when (comp.colorBlock) {
+            ColorBlock.RIGHT -> {
+                val bandW = (PptLayoutTemplates.SIDE_BAND_RATIO * style.canvasW).toInt()
+                val x = style.canvasW - bandW
+                return SlideDeco(bars = listOf(Rect(x, 0, bandW, style.canvasH)), barColor = theme.coverBg)
+            }
+            else -> {
+                val tpl = bandTemplateOf(comp.colorBlock) ?: return SlideDeco()
+                val resolved = PptLayoutTemplates.resolveBands(PptLayoutTemplates.get(tpl), style, theme)
+                return SlideDeco(bars = resolved.map { it.first }, barColor = resolved.first().second)
+            }
+        }
     }
 
     /** 文本框区域：有色块时按 bandGap 内缩避让（取 max(页边距, 色条+间距) 保证不重叠且至少留间距）；全色/无色块占整页内容区。 */
@@ -760,6 +866,11 @@ object PptLayoutEngine {
                 // 文本框下缘 = 下色带上缘 − 间距；上缘仍为页上边距
                 val bottom = style.canvasH - bandH - comp.bandGap
                 Rect(mx, cTop, cw, (bottom - cTop).coerceAtLeast(40))
+            }
+            ColorBlock.RIGHT -> {
+                // 文本框右缘 = 右色条左缘 − 间距；左缘仍为页左边距
+                val right = style.canvasW - bandW - comp.bandGap
+                Rect(mx, cTop, (right - mx).coerceAtLeast(40), cBottom - cTop)
             }
         }
     }
@@ -794,6 +905,8 @@ object PptLayoutEngine {
             }
             Structure.TWO_COL -> { val (u, d) = layoutSplitInFrame(blocks, frame, vCenter = vCenter, align = align); units = u; contentDeco = d }
             Structure.THREE_COL -> { val (u, d) = layoutThreeColInFrame(blocks, frame, align = align); units = u; contentDeco = d }
+            Structure.FOUR_COL -> { val (u, d) = layoutFourColInFrame(blocks, frame, align = align); units = u; contentDeco = d }
+            Structure.TOP_NARROW -> { val (u, d) = layoutTopNarrowInFrame(blocks, frame, vCenter = vCenter, align = align); units = u; contentDeco = d }
         }
         // 合并色块装饰（band）与内容装饰（H3 竖线 / 引用背景）
         val merged = SlideDeco(

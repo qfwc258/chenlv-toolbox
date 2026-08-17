@@ -7,7 +7,7 @@ import android.graphics.pdf.PdfRenderer
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import android.net.Uri
 import android.os.ParcelFileDescriptor
-import android.widget.Toast
+
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -221,7 +221,7 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                 outName = name
                 savedPath = sf.displayPath
                 stage = PdfStage.DONE
-                Toast.makeText(context, "✓ 页码已添加完成！", Toast.LENGTH_LONG).show()
+                scope.launch { snackbar.showSnackbar("✓ 页码已添加完成") }
             }.onFailure {
                 errorMessage = friendlyError(it)
                 showErrorDialog = true
@@ -244,7 +244,7 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                 else FileUtils.shareIntent(sf.uri, outName, FileUtils.PDF_MIME)
             )
         }.onFailure {
-            Toast.makeText(context, "操作失败：${it.message}", Toast.LENGTH_SHORT).show()
+            scope.launch { snackbar.showSnackbar(friendlyError(it)) }
         }
     }
 
@@ -917,7 +917,7 @@ private fun SealSection(
                         }
                     }.onSuccess { (sf, name) ->
                         onBusy(false)
-                        Toast.makeText(context, "✓ 已盖章并保存：$name", Toast.LENGTH_LONG).show()
+                        scope.launch { snackbar.showSnackbar("✓ 已盖章并保存：$name") }
                     }.onFailure {
                         onBusy(false)
                         onError(friendlyError(it))

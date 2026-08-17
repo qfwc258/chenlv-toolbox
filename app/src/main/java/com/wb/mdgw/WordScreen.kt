@@ -2,7 +2,7 @@ package com.wb.mdgw
 
 import android.content.Intent
 import android.net.Uri
-import android.widget.Toast
+
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -555,7 +555,7 @@ fun WordScreen(
         val uri = resultUri ?: return
         val mime = if (resultIsPdf) FileUtils.PDF_MIME else DOCX_MIME
         runCatching { context.startActivity(if (open) FileUtils.openIntent(uri, mime) else FileUtils.shareIntent(uri, resultName, mime)) }
-            .onFailure { Toast.makeText(context, "操作失败：${it.message}", Toast.LENGTH_SHORT).show() }
+            .onFailure { scope.launch { snackbar.showSnackbar("操作失败：${it.message ?: "未知错误"}") } }
     }
 
     // ============================================================
@@ -770,35 +770,16 @@ fun WordScreen(
     }
 
     // ---------- 导出结果 ----------
-    if (showResult && resultUri != null) {
-        AlertDialog(
-            onDismissRequest = { showResult = false },
-            icon = { Icon(Icons.Default.CheckCircle, null, tint = Color(0xFF2E7D32), modifier = Modifier.size(30.dp)) },
-            title = { Text(if (resultIsPdf) "PDF 已生成" else "Word 已生成", fontWeight = FontWeight.Bold, fontSize = 17.sp) },
-            text = {
-                Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(10.dp)) {
-                            Icon(if (resultIsPdf) Icons.Default.PictureAsPdf else Icons.Default.Description, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text(resultName, fontWeight = FontWeight.Medium, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        }
-                    }
-                    Text("保存位置：$resultPath", fontSize = 11.sp, lineHeight = 16.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.height(2.dp))
-                    OutlinedButton(onClick = { openOrShare(open = true) }, modifier = Modifier.fillMaxWidth().height(UI_ACTION_HEIGHT), shape = UI_BTN_RADIUS) {
-                        Icon(Icons.AutoMirrored.Filled.OpenInNew, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
-                        Text("用其他应用打开", fontSize = 14.sp, maxLines = 1, softWrap = false)
-                    }
-                    Button(onClick = { openOrShare(open = false) }, modifier = Modifier.fillMaxWidth().height(UI_ACTION_HEIGHT), shape = UI_BTN_RADIUS) {
-                        Icon(Icons.Default.Share, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
-                        Text("分享文件", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { showResult = false }) { Text("关闭") } }
-        )
-    }
+    ExportResultDialog(
+        visible = showResult && resultUri != null,
+        onDismiss = { showResult = false },
+        title = if (resultIsPdf) "PDF 已生成" else "Word 已生成",
+        fileName = resultName,
+        savePath = resultPath,
+        fileIcon = if (resultIsPdf) Icons.Default.PictureAsPdf else Icons.Default.Description,
+        onOpen = { openOrShare(open = true) },
+        onShare = { openOrShare(open = false) }
+    )
 
     // ---------- 保存 .md 命名 ----------
     if (showSaveDialog) {

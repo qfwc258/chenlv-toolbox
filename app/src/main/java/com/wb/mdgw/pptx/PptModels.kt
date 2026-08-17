@@ -257,11 +257,11 @@ data class SlideFooter(val text: String)
 // 预览与导出已与版式名解耦（只消费 cover + deco），故组合仅作为统一描述，后续阶段再驱动渲染。
 // ────────────────────────────────────────────────
 
-/** 结构轴：上下 / 左右 / 三栏 */
-enum class Structure { VERTICAL, TWO_COL, THREE_COL }
+/** 结构轴：上下 / 左右 / 三栏 / 四栏 / 上窄下宽 */
+enum class Structure { VERTICAL, TWO_COL, THREE_COL, FOUR_COL, TOP_NARROW }
 
-/** 色块轴：无 / 全色 / 左色 / 上色 / 下色（"无"用于上下/居中/左中等无色块版式） */
-enum class ColorBlock { NONE, COVER, LEFT, TOP, BOTTOM }
+/** 色块轴：无 / 全色 / 左色 / 上色 / 下色 / 右色 */
+enum class ColorBlock { NONE, COVER, LEFT, TOP, BOTTOM, RIGHT }
 
 /** 竖直对齐：上 / 居中 */
 enum class VAlign { TOP, CENTER }
@@ -277,14 +277,17 @@ val Structure.label: String get() = when (this) {
     Structure.VERTICAL -> "上下"
     Structure.TWO_COL -> "左右"
     Structure.THREE_COL -> "三栏"
+    Structure.FOUR_COL -> "四栏"
+    Structure.TOP_NARROW -> "上窄下宽"
 }
-/** 色块轴中文标签（UI 展示）。顺序即用户选择顺序：无 / 全色 / 左色 / 上色 / 下色。 */
+/** 色块轴中文标签（UI 展示）。顺序即用户选择顺序：无 / 全色 / 左色 / 上色 / 下色 / 右色。 */
 val ColorBlock.label: String get() = when (this) {
     ColorBlock.NONE -> "无"
     ColorBlock.COVER -> "全色"
     ColorBlock.LEFT -> "左色"
     ColorBlock.TOP -> "上色"
     ColorBlock.BOTTOM -> "下色"
+    ColorBlock.RIGHT -> "右色"
 }
 
 /**

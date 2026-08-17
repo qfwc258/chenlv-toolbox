@@ -60,7 +60,7 @@ object PptLayoutTemplates {
     )
 
     // ── 结构常量（与旧版 layoutXxx 完全一致）──
-    private const val SIDE_BAND_RATIO = 0.20f   // 章节左侧色条宽占画布宽
+    internal const val SIDE_BAND_RATIO = 0.20f   // 章节左侧色条宽占画布宽
     private const val BAND_RATIO = 0.10f        // 目录顶部/结尾底部色带高占画布高
     private const val BAND_MIN_H = 36           // 色带高度下限
     private const val SECTION_GAP = 28          // 章节色条与文字间隙

@@ -26,11 +26,11 @@ val gitCommitCount = runCatching {
 }.getOrNull() ?: 1
 
 // 版本号参数收口到 gradle.properties（单一来源）。
-// 背景：仓库曾做历史瘦身（filter-repo 清理 APK，提交数 199→183），为接续 v3.0.7 且保证
-// versionCode 单调递增，需保留 VERSION_BASE_COMMIT 与 VERSION_CODE_OFFSET 两个补偿值。
-val VERSION_BASE_COMMIT = propInt("VERSION_BASE_COMMIT", 75)
-val VERSION_MAJOR_BASE = propInt("VERSION_MAJOR_BASE", 2)
-val VERSION_CODE_OFFSET = propInt("VERSION_CODE_OFFSET", 17)
+// 仓库经多次 filter-repo 瘦身，提交数重置后需同步调整 VERSION_BASE_COMMIT。
+// 当前公式：15 commits + BASE=5 → v3.1.0，每 +1 commit → patch 号自动 +1。
+val VERSION_BASE_COMMIT = propInt("VERSION_BASE_COMMIT", 5)
+val VERSION_MAJOR_BASE = propInt("VERSION_MAJOR_BASE", 3)
+val VERSION_CODE_OFFSET = propInt("VERSION_CODE_OFFSET", 186)
 
 // 三段版本号推导：v = (提交数 - BASE) + MAJOR*100，三位各自按 base-10 自然进位（逢十进一）。
 val derivedV = (if (gitCommitCount > VERSION_BASE_COMMIT) (gitCommitCount - VERSION_BASE_COMMIT) else 0) + VERSION_MAJOR_BASE * 100
