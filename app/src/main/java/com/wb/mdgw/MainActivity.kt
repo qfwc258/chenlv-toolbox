@@ -6,6 +6,9 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.core.content.IntentCompat
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -174,14 +177,37 @@ fun AppScreen(initialUri: Uri? = null) {
         }
     ) { pad ->
         Box(Modifier.padding(pad).fillMaxSize()) {
-            when (mode) {
-                DocMode.WORD -> WordScreen(
+            // 四屏同时存活，仅切换可见性，避免切 Tab 丢失编辑状态。
+            // initialUri 仅首次传递给对应模式，之后不再触发。
+            AnimatedVisibility(
+                visible = mode == DocMode.WORD,
+                enter = fadeIn(), exit = fadeOut()
+            ) {
+                WordScreen(
                     snackbar = snackbar,
                     initialUri = initialUri.takeIf { detected == DocMode.WORD }
                 )
-                DocMode.PDF -> PdfScreen(initialUri.takeIf { detected == DocMode.PDF }, snackbar)
-                DocMode.WECHAT -> WeChatScreen(snackbar)
-                DocMode.PPTX -> MdPptxScreen(snackbar)
+            }
+            AnimatedVisibility(
+                visible = mode == DocMode.PDF,
+                enter = fadeIn(), exit = fadeOut()
+            ) {
+                PdfScreen(
+                    initialUri = initialUri.takeIf { detected == DocMode.PDF },
+                    snackbar = snackbar
+                )
+            }
+            AnimatedVisibility(
+                visible = mode == DocMode.WECHAT,
+                enter = fadeIn(), exit = fadeOut()
+            ) {
+                WeChatScreen(snackbar = snackbar)
+            }
+            AnimatedVisibility(
+                visible = mode == DocMode.PPTX,
+                enter = fadeIn(), exit = fadeOut()
+            ) {
+                MdPptxScreen(snackbar = snackbar)
             }
         }
     }
