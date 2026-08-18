@@ -93,7 +93,7 @@ object DocxHtml {
                 when (b) {
                     is Block.Para -> {
                         if (b.runs.isEmpty()) {
-                            append("<p data-block='$idx' class='doc-para'><br></p>")
+                            append("<p data-block='$idx' class='doc-para' style='${bordersToCss(b.props.borders)}'><br></p>")
                         } else {
                             val align = when (b.props.align) {
                                 Align.CENTER -> "center"
@@ -105,7 +105,8 @@ object DocxHtml {
                                 "text-indent:${b.props.firstLineIndentPt}pt;" else ""
                             val lh = if (b.props.lineSpacingPt > 0)
                                 "line-height:${b.props.lineSpacingPt}pt;" else ""
-                            append("<p data-block='$idx' class='doc-para' style='text-align:$align;$indent$lh' onclick=\"editBridge.startEdit($idx,-1,-1)\">")
+                            val border = bordersToCss(b.props.borders)
+                            append("<p data-block='$idx' class='doc-para' style='text-align:$align;$indent$lh$border' onclick=\"editBridge.startEdit($idx,-1,-1)\">")
                             b.runs.forEachIndexed { ri, r ->
                                 append(runToHtml(r, ri))
                             }
@@ -193,9 +194,33 @@ object DocxHtml {
         if (r.sizePt > 0) styles += "font-size:${r.sizePt}pt"
         if (r.bold) styles += "font-weight:bold"
         if (r.italic) styles += "font-style:italic"
-        if (r.underline) styles += "text-decoration:underline"
+        // 下划线 + 删除线合并到同一 text-decoration，避免简写声明后者覆盖前者
+        val deco = mutableListOf<String>()
+        if (r.underline) deco += "underline"
+        if (r.strike) deco += "line-through"
+        if (deco.isNotEmpty()) styles += "text-decoration:${deco.joinToString(" ")}"
         val style = if (styles.isNotEmpty()) " style='${styles.joinToString(";")}'" else ""
         return "<span data-run='$runIndex'$style>${r.text.escapeHtml()}</span>"
+    }
+
+    /** 段落边框 → CSS border-*（下边框常用于填空线/标题线/签名线） */
+    private fun bordersToCss(b: ParaBorders?): String {
+        if (b == null) return ""
+        val sb = StringBuilder()
+        fun side(border: ParaBorder?, cssSide: String) {
+            if (border == null || border.value == "none" || border.value == "nil") return
+            val bs = when (border.value) {
+                "single", "thick", "thinThickSmallGap", "thickThinSmallGap", "thinThickThinSmallGap" -> "solid"
+                "double", "doubleWave" -> "double"
+                "dash", "dashed", "dotDash", "dotDotDash" -> "dashed"
+                "dot", "dotted", "sysDot" -> "dotted"
+                "wave" -> "wavy"
+                else -> "solid"
+            }
+            sb.append("border-$cssSide:${"%.2f".format(border.szPt)}pt $bs ${border.color};")
+        }
+        side(b.top, "top"); side(b.bottom, "bottom"); side(b.left, "left"); side(b.right, "right")
+        return sb.toString()
     }
 
     // ========== 私有：document.xml → HTML ==========

@@ -56,7 +56,31 @@ data class TextRun(
     val bold: Boolean = false,
     val italic: Boolean = false,
     /** 下划线：Word 中带下划线的文字，打开/编辑/保存后仍需保留 */
-    val underline: Boolean = false
+    val underline: Boolean = false,
+    /** 删除线（strikethrough）：统一到模型路径后需保留，方能使预览与导出保真 */
+    val strike: Boolean = false
+)
+
+/**
+ * 段落边框的单条边。
+ * @param value 线型（Word 的 w:val）：single/double/dash/dot/wave/.../none/nil
+ * @param szPt  线宽（磅）
+ * @param color 颜色（CSS 十六进制，如 #000000）
+ */
+@Serializable
+data class ParaBorder(
+    val value: String = "single",
+    val szPt: Double = 1.0,
+    val color: String = "#000000"
+)
+
+/** 段落四边边框；某边为 null 表示无边框。公文填空线 / 标题线 / 签名线常用下边框实现。 */
+@Serializable
+data class ParaBorders(
+    val top: ParaBorder? = null,
+    val bottom: ParaBorder? = null,
+    val left: ParaBorder? = null,
+    val right: ParaBorder? = null
 )
 
 /**
@@ -69,7 +93,8 @@ data class ParaProps(
     val firstLineIndentPt: Double = 0.0,
     val lineSpacingPt: Double = 28.0,
     val spaceBeforePt: Double = 0.0,
-    val spaceAfterPt: Double = 0.0
+    val spaceAfterPt: Double = 0.0,
+    val borders: ParaBorders? = null
 )
 
 /** 文档中的块级元素 */

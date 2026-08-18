@@ -200,6 +200,19 @@ object DocxReader {
             }
             pPr.child("w:ind")?.attr("w:firstLine")?.toDoubleOrNull()?.let { firstLinePt = it / 20.0 }
             pPr.child("w:spacing")?.attr("w:line")?.toDoubleOrNull()?.let { linePt = it / 20.0 }
+            // 段落边框：公文填空线/标题线/签名线常用 w:pBdr 下边框实现。统一到模型路径后
+            // 需解析并保留，否则预览中这类「下划线」整体缺失（旧字节路径已支持）。
+            val borders = pPr.child("w:pBdr")?.let { pBdr ->
+                fun borderOf(tag: String): ParaBorder? {
+                    val b = pBdr.child("w:$tag") ?: return null
+                    val v = b.attr("w:val").orEmpty()
+                    if (v.isBlank() || v == "none" || v == "nil") return null
+                    val sz = b.attr("w:sz")?.toDoubleOrNull()?.div(8.0) ?: 1.0 // 八分之一磅 → 磅
+                    val color = b.attr("w:color")?.let { if (it != "auto") "#$it" else "#000000" } ?: "#000000"
+                    return ParaBorder(value = v, szPt = sz, color = color)
+                }
+                ParaBorders(top = borderOf("top"), bottom = borderOf("bottom"), left = borderOf("left"), right = borderOf("right"))
+            }
             val styleId = pPr.child("w:pStyle")?.attr("w:val")
             if (styleId != null) {
                 val sname = styleNames[styleId].orEmpty()
@@ -222,7 +235,7 @@ object DocxReader {
         }
         return Block.Para(
             finalRuns,
-            ParaProps(align = align, firstLineIndentPt = firstLinePt, lineSpacingPt = linePt)
+            ParaProps(align = align, firstLineIndentPt = firstLinePt, lineSpacingPt = linePt, borders = borders)
         )
     }
 
@@ -234,12 +247,14 @@ object DocxReader {
             var bold = false
             var italic = false
             var underline = false
+            var strike = false
             var font = ""
             var sz = 0.0
             if (rPr != null) {
                 bold = isOn(rPr.child("w:b"))
                 italic = isOn(rPr.child("w:i"))
                 underline = isUnderline(rPr.child("w:u"))
+                strike = isOn(rPr.child("w:strike"))
                 font = rPr.child("w:rFonts")?.run {
                     val ea = attr("w:eastAsia").orEmpty()
                     if (ea.isBlank()) attr("w:ascii").orEmpty() else ea
@@ -248,7 +263,7 @@ object DocxReader {
             }
             val sb = StringBuilder()
             appendText(r, sb)
-            runs += TextRun(sb.toString(), font, sz, bold, italic, underline)
+            runs += TextRun(sb.toString(), font, sz, bold, italic, underline, strike)
         }
         return runs
     }
