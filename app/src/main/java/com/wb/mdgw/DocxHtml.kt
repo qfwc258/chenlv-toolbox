@@ -276,6 +276,29 @@ function collectEdits(){
                     styles += "margin-bottom:${it / 20.0}pt"
                 }
             }
+            // 段落边框：下边框常用于填空线 / 标题线 / 签名线（本质是视觉下划线）；
+            // 其余三边若也有设置则一并渲染，保证公文段落框线保真。原代码完全未处理
+            // w:pBdr，导致这类「下划线」在预览中整体缺失。
+            pPr.child("w:pBdr")?.let { pBdr ->
+                for (side in listOf("top" to "top", "bottom" to "bottom", "left" to "left", "right" to "right")) {
+                    pBdr.child("w:${side.first}")?.let { br ->
+                        val bv = br.attr("w:val").orEmpty()
+                        if (bv.isNotBlank() && bv != "none" && bv != "nil") {
+                            val sz = br.attr("w:sz")?.toDoubleOrNull()?.div(8.0) ?: 1.0 // 八分之一磅 → 磅
+                            val color = br.attr("w:color")?.let { if (it != "auto") "#$it" else "#000000" } ?: "#000000"
+                            val bs = when (bv) {
+                                "single", "thick", "thinThickSmallGap", "thickThinSmallGap", "thinThickThinSmallGap" -> "solid"
+                                "double", "doubleWave" -> "double"
+                                "dash", "dashed", "dotDash", "dotDotDash" -> "dashed"
+                                "dot", "dotted", "sysDot" -> "dotted"
+                                "wave" -> "wavy"
+                                else -> "solid"
+                            }
+                            styles += "border-${side.second}:${"%.2f".format(sz)}pt $bs $color"
+                        }
+                    }
+                }
+            }
         }
         styles += "text-align:$align"
         val styleStr = styles.joinToString(";")
@@ -317,16 +340,16 @@ function collectEdits(){
             // 斜体
             if (isOn(rPr.child("w:i"))) styles += "font-style:italic"
             if (isOn(rPr.child("w:iCs"))) styles += "font-style:italic"
-            // 下划线
+            // 下划线 + 删除线：合并到同一 text-decoration 值，避免简写后者覆盖前者
+            // 导致「下划线 + 删除线」同 run 时下划线被吞掉（CSS 中后一条 text-decoration 覆盖前一条）
+            val deco = mutableListOf<String>()
             rPr.child("w:u")?.let { u ->
                 if (isUnderline(u)) {
-                    val uVal = u.attr("w:val").orEmpty()
-                    styles += if (uVal == "double") "text-decoration:underline double"
-                    else "text-decoration:underline"
+                    deco += if (u.attr("w:val").orEmpty() == "double") "underline double" else "underline"
                 }
             }
-            // 删除线
-            if (isOn(rPr.child("w:strike"))) styles += "text-decoration:line-through"
+            if (isOn(rPr.child("w:strike"))) deco += "line-through"
+            if (deco.isNotEmpty()) styles += "text-decoration:${deco.joinToString(" ")}"
             // 文字颜色
             rPr.child("w:color")?.attr("w:val")?.let { c ->
                 if (c != "auto") styles += "color:#$c"
