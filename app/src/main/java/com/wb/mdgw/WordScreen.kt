@@ -287,32 +287,55 @@ fun WordScreen(
     }
 
     fun doSave() {
-        if (tfv.text.isEmpty() && originalUri == null) {
+        if (tfv.text.isEmpty() && originalUri == null && govDoc == null) {
             scope.launch { snackbar.showSnackbar("没有可保存的内容") }
             return
         }
-        saveName = FileUtils.baseName(fileName).ifBlank { "未命名" }
+        // Word 文档源：默认以 .docx 另存（原文件仅读权限，无法覆盖写回）
+        val base = FileUtils.baseName(fileName).ifBlank { "未命名" }
+        saveName = if (govDoc?.originalDocx != null) "$base.docx" else base
         showSaveDialog = true
     }
     fun performSave(name: String) {
+        // 区分来源：Word 文档源以 .docx 另存（先将 WebView 就地编辑同步进公文模型再生成）；
+        // Markdown 源保持原 .md 逻辑（可写回原文件或另存）。
+        val isDocxSource = govDoc?.originalDocx != null
+        val ext = if (isDocxSource) "docx" else "md"
         val clean = name.trim().ifBlank { "未命名" }
-        val outName = if (clean.endsWith(".md", ignoreCase = true)) clean else "$clean.md"
+        val outName = if (clean.endsWith(".$ext", ignoreCase = true)) clean else "$clean.$ext"
         scope.launch {
             busy = true
-            var wroteBack = false
-            if (originalUri != null && outName.equals(fileName, ignoreCase = true)) {
-                wroteBack = FileUtils.writeTextToUri(context, originalUri!!, tfv.text)
-            }
-            if (wroteBack) {
-                resultUri = originalUri; resultName = outName; resultPath = "已写回原文件"
+            if (isDocxSource) {
+                // 同步预览区 WebView 的就地编辑 → 生成新 docx 字节 → 另存（原文件只读，无法写回）
+                val updated = syncWebViewEditsSuspend() ?: govDoc
+                val bytes = updated?.toDocx()
+                if (bytes == null) {
+                    busy = false; showSaveDialog = false
+                    snackbar.showSnackbar("没有可导出的内容")
+                    return@launch
+                }
+                val sf = FileUtils.saveToDownloads(context, outName, bytes, DOCX_MIME)
+                resultUri = sf.uri; resultName = outName; resultPath = sf.displayPath; resultIsPdf = false
+                fileName = outName; dirty = false; autoSaved = false
+                GovDocDraftStore.clear(context)
+                busy = false; showSaveDialog = false
+                snackbar.showSnackbar("已另存为 Word 文档：$outName")
             } else {
-                val sf = FileUtils.saveTextAsFile(context, outName, tfv.text)
-                resultUri = sf.uri; resultName = outName; resultPath = sf.displayPath
+                var wroteBack = false
+                if (originalUri != null && outName.equals(fileName, ignoreCase = true)) {
+                    wroteBack = FileUtils.writeTextToUri(context, originalUri!!, tfv.text)
+                }
+                if (wroteBack) {
+                    resultUri = originalUri; resultName = outName; resultPath = "已写回原文件"
+                } else {
+                    val sf = FileUtils.saveTextAsFile(context, outName, tfv.text)
+                    resultUri = sf.uri; resultName = outName; resultPath = sf.displayPath
+                }
+                fileName = outName; dirty = false; autoSaved = false
+                DraftStore.clear(context)
+                busy = false; showSaveDialog = false
+                snackbar.showSnackbar(if (wroteBack) "已保存回原文件：$outName" else "已保存到 陈律文档/$outName")
             }
-            fileName = outName; dirty = false; autoSaved = false
-            DraftStore.clear(context)
-            busy = false; showSaveDialog = false
-            snackbar.showSnackbar(if (wroteBack) "已保存回原文件：$outName" else "已保存到 陈律文档/$outName")
         }
     }
 
@@ -882,8 +905,9 @@ fun WordScreen(
         onShare = { openOrShare(open = false) }
     )
 
-    // ---------- 保存 .md 命名 ----------
+    // ---------- 保存 命名 ----------
     if (showSaveDialog) {
+        val isDocxSource = govDoc != null && govDoc?.originalDocx != null
         AlertDialog(
             onDismissRequest = { showSaveDialog = false },
             icon = { Icon(Icons.Default.Save, null, tint = MaterialTheme.colorScheme.primary) },
@@ -891,9 +915,12 @@ fun WordScreen(
             text = {
                 Column(Modifier.fillMaxWidth()) {
                     OutlinedTextField(value = saveName, onValueChange = { saveName = it }, label = { Text("文件名") }, singleLine = true,
-                        suffix = { Text(".md", fontSize = 13.sp) }, modifier = Modifier.fillMaxWidth(), textStyle = TextStyle(fontSize = 15.sp))
+                        suffix = { Text(if (isDocxSource) ".docx" else ".md", fontSize = 13.sp) }, modifier = Modifier.fillMaxWidth(), textStyle = TextStyle(fontSize = 15.sp))
                     Spacer(Modifier.height(6.dp))
-                    Text(if (originalUri != null) "保持原名将直接写回打开的文件；改名则另存为副本" else "将保存到「陈律文档」文件夹",
+                    Text(
+                        if (isDocxSource) "当前为 Word 文档，编辑后将另存为新的 .docx（原文件无法被覆盖写回）"
+                        else if (originalUri != null) "保持原名将直接写回打开的文件；改名则另存为副本"
+                        else "将保存到「陈律文档」文件夹",
                         fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             },
@@ -1334,7 +1361,30 @@ private fun GovDocPaper(
         return
     }
     val html = htmlResult.getOrNull() ?: return
-    Box(modifier = Modifier.fillMaxSize().background(Color(0xFFE8E8E8))) {
+    Column(modifier = Modifier.fillMaxSize().background(Color(0xFFE8E8E8))) {
+        // Word 文档源：提示可直接在页面内编辑，避免被误认为只读
+        if (doc.originalDocx != null) {
+            Surface(
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    "可直接在页面上点按修改文字；改完后点顶部「保存」将另存为新的 Word 文档。",
+                    fontSize = 11.sp, lineHeight = 15.sp,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                )
+            }
+        }
+        // 加载进度条（顶部细线），加载完成后自动消失
+        if (loadProgress in 1..99) {
+            LinearProgressIndicator(
+                progress = { loadProgress / 100f },
+                modifier = Modifier.fillMaxWidth().height(2.dp),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = Color.Transparent
+            )
+        }
         AndroidView(
             factory = { ctx ->
                 WebView(ctx).apply {
@@ -1373,17 +1423,8 @@ private fun GovDocPaper(
                     wv.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
                 }
             },
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxWidth().weight(1f)
         )
-        // 加载进度条（顶部细线），加载完成后自动消失
-        if (loadProgress in 1..99) {
-            LinearProgressIndicator(
-                progress = { loadProgress / 100f },
-                modifier = Modifier.fillMaxWidth().height(2.dp).align(Alignment.TopCenter),
-                color = MaterialTheme.colorScheme.primary,
-                trackColor = Color.Transparent
-            )
-        }
     }
 }
 
