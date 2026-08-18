@@ -46,16 +46,24 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            MdGwTheme {
-                AppScreen(initialUri = incoming)
-            }
+            AppScreen(initialUri = incoming)
         }
     }
 }
 
 @Composable
-fun MdGwTheme(content: @Composable () -> Unit) {
-    val colors = lightColorScheme(
+fun MdGwTheme(darkTheme: Boolean = false, content: @Composable () -> Unit) {
+    val colors = if (darkTheme) darkColorScheme(
+        primary = Color(0xFFE57373),
+        onPrimary = Color(0xFF3E100C),
+        primaryContainer = Color(0xFF5C1A13),
+        onPrimaryContainer = Color(0xFFF6E3E0),
+        secondary = Color(0xFFD4B87D),
+        secondaryContainer = Color(0xFF4A3A20),
+        surface = Color(0xFF1C1B1A),
+        background = Color(0xFF131211),
+        surfaceVariant = Color(0xFF2C2A27)
+    ) else lightColorScheme(
         primary = Color(0xFFB03A2E),
         onPrimary = Color.White,
         primaryContainer = Color(0xFFF6E3E0),
@@ -88,7 +96,9 @@ fun AppScreen(initialUri: Uri? = null) {
         var mode by remember { mutableStateOf(detected) }
         val snackbar = remember { SnackbarHostState() }
         var showAbout by remember { mutableStateOf(false) }
+        var darkMode by remember { mutableStateOf(SettingsStore.isDarkMode(context)) }
 
+        MdGwTheme(darkTheme = darkMode) {
         Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
@@ -127,6 +137,16 @@ fun AppScreen(initialUri: Uri? = null) {
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Medium,
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                        )
+                    }
+                    IconButton(onClick = {
+                        darkMode = !darkMode
+                        SettingsStore.saveDarkMode(context, darkMode)
+                    }) {
+                        Icon(
+                            if (darkMode) Icons.Default.LightMode else Icons.Default.DarkMode,
+                            contentDescription = if (darkMode) "浅色模式" else "深色模式",
+                            tint = Color.White
                         )
                     }
                     IconButton(onClick = { showAbout = true }) {
@@ -210,6 +230,7 @@ fun AppScreen(initialUri: Uri? = null) {
                 MdPptxScreen(snackbar = snackbar)
             }
         }
+    }
     }
 
     if (showAbout) {

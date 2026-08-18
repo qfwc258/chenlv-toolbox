@@ -22,6 +22,7 @@ object SettingsStore {
     private const val K_SMART_QUOTES = "smart_quotes"
     private const val K_PAGE_NUMBER = "page_number"
     private const val K_TITLE_FONT = "title_font"
+    private const val K_DARK_MODE = "dark_mode"
 
     /** 默认规范：诉讼文书 */
     val DEFAULT_SPEC: GovDocSpec get() = GovDocSpec.COURT_DOC
@@ -75,6 +76,14 @@ object SettingsStore {
             .putString(K_SPEC, spec.specName)
             .putString(K_TITLE_FONT, spec.mainTitleFont)
             .apply()
+    }
+
+    /** 深色模式开关。 */
+    fun isDarkMode(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(K_DARK_MODE, false)
+
+    fun saveDarkMode(ctx: Context, v: Boolean) {
+        prefs(ctx).edit().putBoolean(K_DARK_MODE, v).apply()
     }
 
     /** 一次性读出完整的转换选项，供各页面直接使用 */
