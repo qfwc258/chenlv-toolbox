@@ -441,9 +441,7 @@ fun WordScreen(
      * 从 WebView 收集用户编辑的文本，回写到 GovDoc.blocks（同步等待 JS 完成）。
      * 用于导出前确保所有编辑都已同步。
      */
-    suspend fun syncWebViewEditsSuspend(): GovDoc? = kotlinx.coroutines.suspendCancellableCoroutine(
-        onCancellation = { /* 协程取消时无需额外清理：evaluateJavascript 回调到达时会被 isActive 拦截 */ }
-    ) { cont ->
+    suspend fun syncWebViewEditsSuspend(): GovDoc? = kotlinx.coroutines.suspendCancellableCoroutine<GovDoc?> { cont ->
         val wv = webView
         if (wv == null) { if (cont.isActive) cont.resume(null); return@suspendCancellableCoroutine }
         val d = govDoc
