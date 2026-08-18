@@ -46,7 +46,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlin.collections.ArrayDeque
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -216,6 +215,67 @@ fun WordScreen(
         dirty = true
     }
 
+    // ---------- 打开文件（.docx / .md / .txt） ----------
+    fun openFile(uri: Uri) {
+        scope.launch {
+            busy = true
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                withContext(Dispatchers.IO) {
+                    val name = FileUtils.displayName(context, uri)
+                    val lower = name.lowercase()
+                    if (lower.endsWith(".docx") || lower.endsWith(".doc")) {
+                        name to DocxReader.read(FileUtils.readBytes(context, uri), selectedSpec)
+                    } else {
+                        name to FileUtils.readText(context, uri)
+                    }
+                }
+            }.onSuccess { (name, payload) ->
+                if (payload is GovDoc) {
+                    val md = payload.toMarkdown()
+                    commitGov(payload)
+                    fidelityNotes = payload.originalDocx?.let { DocxFidelity.scan(it) } ?: emptyList()
+                    fileName = name; sourceName = name
+                    tfv = TextFieldValue(md); undoStack.clear(); redoStack.clear(); lastGenSource = md
+                    originalUri = uri; dirty = false; autoSaved = false
+                    govDirty = false; govAutoSaved = false
+                    DraftStore.clear(context); GovDocDraftStore.clear(context); resultUri = null
+                    subView = SubView.PREVIEW
+                    val extra = if (fidelityNotes.isNotEmpty()) "（含特殊内容，已原样保留）" else ""
+                    snackbar.showSnackbar("已打开：$name$extra，已生成对应 Markdown")
+                } else {
+                    val content = payload as String
+                    fileName = name
+                    tfv = TextFieldValue(content); undoStack.clear(); redoStack.clear()
+                    originalUri = uri; dirty = false; autoSaved = false
+                    DraftStore.clear(context); resultUri = null; govDoc = null
+                    subView = SubView.EDIT
+                    snackbar.showSnackbar("已打开：$name")
+                }
+            }.onFailure {
+                snackbar.showSnackbar("打开失败：${it.message ?: "未知错误"}")
+            }
+            busy = false
+        }
+    }
+
+    val openPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        uri?.let { openFile(it) }
+    }
+
+    // 应用入口（文件管理器分享/打开）传入的 initialUri 首次自动载入
+    LaunchedEffect(initialUri) { initialUri?.let { openFile(it) } }
+
+    fun doSave() {
+        if (tfv.text.isEmpty() && originalUri == null && govDoc == null) {
+            scope.launch { snackbar.showSnackbar("没有可保存的内容") }
+            return
+        }
+        // Word 文档源：默认以 .docx 另存（原文件仅读权限，无法覆盖写回）
+        val base = FileUtils.baseName(fileName).ifBlank { "未命名" }
+        saveName = if (govDoc?.originalDocx != null) "$base.docx" else base
+        showSaveDialog = true
+    }
 
     fun performSave(name: String) {
         // 区分来源：Word 文档源以 .docx 另存（先将 WebView 就地编辑同步进公文模型再生成）；

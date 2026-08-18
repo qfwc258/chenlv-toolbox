@@ -188,6 +188,10 @@ object DocxReader {
         var align = Align.LEFT
         var firstLinePt = 0.0
         var linePt = MdToGongwen.LINE_SPACING
+        // 段落边框 / 制表位在 pPr 块内解析，但作用域须覆盖整个函数（返回值要用），
+        // 因此先在块外声明、块内赋值，避免「Unresolved reference」。
+        var borders: ParaBorders? = null
+        var tabs: List<TabStop> = emptyList()
         val pPr = p.child("w:pPr")
         if (pPr != null) {
             pPr.child("w:jc")?.attr("w:val")?.let { v ->
@@ -202,7 +206,7 @@ object DocxReader {
             pPr.child("w:spacing")?.attr("w:line")?.toDoubleOrNull()?.let { linePt = it / 20.0 }
             // 段落边框：公文填空线/标题线/签名线常用 w:pBdr 下边框实现。统一到模型路径后
             // 需解析并保留，否则预览中这类「下划线」整体缺失（旧字节路径已支持）。
-            val borders = pPr.child("w:pBdr")?.let { pBdr ->
+            borders = pPr.child("w:pBdr")?.let { pBdr ->
                 fun borderOf(tag: String): ParaBorder? {
                     val b = pBdr.child("w:$tag") ?: return null
                     val v = b.attr("w:val").orEmpty()
@@ -215,7 +219,7 @@ object DocxReader {
             }
             // 制表位（含前导符 leader）：公务填空线/目录点线由它驱动，是第二类「下划线」。
             // 旧字节路径未解析，导致这类效果在模型路径预览中整体缺失。这里解析并保留。
-            val tabs = pPr.child("w:tabs")?.let { tabsEl ->
+            tabs = pPr.child("w:tabs")?.let { tabsEl ->
                 tabsEl.childElements().filter { it.local() == "tab" }.mapNotNull { tab ->
                     val pos = tab.attr("w:pos")?.toDoubleOrNull()?.div(20.0) ?: return@mapNotNull null // 缇 → 磅
                     val al = tab.attr("w:val").orEmpty().let { if (it.isBlank()) "left" else it }
