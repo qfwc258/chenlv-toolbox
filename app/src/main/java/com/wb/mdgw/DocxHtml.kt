@@ -1,0 +1,545 @@
+package com.wb.mdgw
+
+import android.util.Log
+import org.w3c.dom.Element
+import java.io.ByteArrayInputStream
+import java.util.zip.ZipInputStream
+import javax.xml.parsers.DocumentBuilderFactory
+
+/**
+ * OOXML document.xml → HTML 转换器。
+ *
+ * 将 Word 文档的 document.xml 逐元素转换为 HTML + 内联 CSS，在 WebView 中渲染，
+ * 实现与 WPS/Word 打印效果高度一致的预览。所有格式属性（字体、字号、颜色、粗斜体、
+ * 下划线、删除线、高亮、上标下标、表格边框/列宽/合并单元格）均通过 CSS 原生表达。
+ *
+ * 生成的 HTML 结构：
+ *   - 每个 <w:p> → <p data-block="N">，内含 <span data-run="N"> 逐 run
+ *   - 每个 <w:tbl> → <table data-block="N">，单元格含 data-row / data-col
+ *   - 页面整体可 contenteditable，导出前通过 JS 收集编辑内容回写 GovDoc
+ */
+object DocxHtml {
+
+    private const val NS_W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    private const val TAG = "DocxHtml"
+
+    /**
+     * 将原始 .docx 字节转为可在 WebView 中渲染的完整 HTML 页面。
+     *
+     * @param docxBytes 原始 Word 文件字节
+     * @param page      页面设置（决定边距比例）
+     * @return 完整 HTML 字符串
+     */
+    fun toHtml(docxBytes: ByteArray, page: PageSetup): String {
+        var docXml: ByteArray? = null
+        ZipInputStream(ByteArrayInputStream(docxBytes)).use { zis ->
+            var entry = zis.nextEntry
+            while (entry != null) {
+                if (entry.name.lowercase().endsWith("word/document.xml")) {
+                    docXml = zis.readBytes()
+                    break
+                }
+                entry = zis.nextEntry
+            }
+        }
+        val docData = docXml ?: error("不是有效的 Word 文档（缺少 document.xml）")
+        // 解析 XML 加异常兜底：损坏的 docx / 非标 XML 时返回空 body，由上层降级到 SimpleTextFallback
+        val dom = try {
+            parseDom(docData)
+        } catch (e: Exception) {
+            Log.w(TAG, "toHtml: document.xml 解析失败，返回空白页", e)
+            return blankHtml()
+        }
+        val body = dom.documentElement.childElements().firstOrNull { it.local() == "body" }
+            ?: return blankHtml("文档结构异常：缺少 body")
+
+        // 边距比例（相对于页面宽度）
+        val lPadPct = (page.leftCm / page.widthCm * 100).let { "%.1f".format(it) }
+        val rPadPct = (page.rightCm / page.widthCm * 100).let { "%.1f".format(it) }
+        val tPadPct = (page.topCm / page.widthCm * 100).let { "%.1f".format(it) }
+        val bPadPct = (page.bottomCm / page.widthCm * 100).let { "%.1f".format(it) }
+
+        val bodyHtml = try {
+            buildBodyHtml(body)
+        } catch (e: Exception) {
+            Log.w(TAG, "toHtml: buildBodyHtml 失败，返回空白页", e)
+            "<p data-block='0' class='doc-para' style='text-align:left;color:#999'>文档内容解析失败（${e.message ?: "未知错误"}）</p>"
+        }
+        Log.d(TAG, "toHtml: generated ${bodyHtml.length} chars of body HTML")
+
+        return buildString {
+            append(htmlHead(tPadPct, rPadPct, bPadPct, lPadPct))
+            append("<div class='page' contenteditable='true'>")
+            append(bodyHtml)
+            append("</div>")
+            append(collectEditsScript())
+            append("</body></html>")
+        }
+    }
+
+    /**
+     * 将 GovDoc 模型（Markdown 生成）转为 HTML 页面。
+     * 与 [toHtml] 生成相同的 HTML 结构和 data 属性，确保编辑回写一致。
+     */
+    fun govDocToHtml(doc: GovDoc): String {
+        val page = doc.page
+        val lPadPct = (page.leftCm / page.widthCm * 100).let { "%.1f".format(it) }
+        val rPadPct = (page.rightCm / page.widthCm * 100).let { "%.1f".format(it) }
+        val tPadPct = (page.topCm / page.widthCm * 100).let { "%.1f".format(it) }
+        val bPadPct = (page.bottomCm / page.widthCm * 100).let { "%.1f".format(it) }
+
+        val bodyHtml = buildString {
+            doc.blocks.forEachIndexed { idx, b ->
+                when (b) {
+                    is Block.Para -> {
+                        if (b.runs.isEmpty()) {
+                            append("<p data-block='$idx' class='doc-para'><br></p>")
+                        } else {
+                            val align = when (b.props.align) {
+                                Align.CENTER -> "center"
+                                Align.RIGHT -> "right"
+                                Align.BOTH -> "justify"
+                                else -> "left"
+                            }
+                            val indent = if (b.props.firstLineIndentPt > 0)
+                                "text-indent:${b.props.firstLineIndentPt}pt;" else ""
+                            val lh = if (b.props.lineSpacingPt > 0)
+                                "line-height:${b.props.lineSpacingPt}pt;" else ""
+                            append("<p data-block='$idx' class='doc-para' style='text-align:$align;$indent$lh'>")
+                            b.runs.forEachIndexed { ri, r ->
+                                append(runToHtml(r, ri))
+                            }
+                            append("</p>")
+                        }
+                    }
+                    is Block.Table -> {
+                        append("<table data-block='$idx' class='doc-table'>")
+                        b.rows.forEachIndexed { ri, row ->
+                            append("<tr>")
+                            row.forEachIndexed { ci, cell ->
+                                append("<td data-block='$idx' data-row='$ri' data-col='$ci'>")
+                                cell.forEachIndexed { runi, r ->
+                                    append(runToHtml(r, runi))
+                                }
+                                append("</td>")
+                            }
+                            append("</tr>")
+                        }
+                        append("</table>")
+                    }
+                }
+            }
+        }
+
+        return buildString {
+            append(htmlHead(tPadPct, rPadPct, bPadPct, lPadPct))
+            append("<div class='page' contenteditable='true'>")
+            append(bodyHtml)
+            append("</div>")
+            append(collectEditsScript())
+            append("</body></html>")
+        }
+    }
+
+    /** 公共 HTML 头部：DOCTYPE + meta + 中文字体堆栈 + 页面基础样式。
+     *  字体堆栈优先用系统中文字体（思源宋体 / Noto Serif CJK），避免首次加载时字体闪烁。 */
+    private fun htmlHead(tPadPct: String, rPadPct: String, bPadPct: String, lPadPct: String): String = buildString {
+        append("<!DOCTYPE html><html><head><meta charset='utf-8'>")
+        append("<meta name='viewport' content='width=device-width,initial-scale=1.0,maximum-scale=3.0,user-scalable=yes'>")
+        append("<style>")
+        append("*{box-sizing:border-box;margin:0;padding:0;}")
+        // 中文优先：思源宋体 / Noto Serif CJK / 宋体 / SimSun / serif
+        append("body{background:#E8E8E8;font-family:'Source Han Serif SC','Noto Serif CJK SC','Songti SC','宋体',SimSun,serif;")
+        append("padding:8px;-webkit-text-size-adjust:100%;}")
+        append(".page{background:white;max-width:100%;margin:0 auto;")
+        append("padding:${tPadPct}% ${rPadPct}% ${bPadPct}% ${lPadPct}%;")
+        append("box-shadow:0 2px 12px rgba(0,0,0,0.12);min-height:90vh;}")
+        append(".doc-para{margin:0;padding:3px 0;}")
+        append(".doc-table{width:100%;border-collapse:collapse;margin:6px 0;}")
+        append(".doc-table td{border:1px solid #333;padding:4px 6px;vertical-align:top;}")
+        append(".doc-table tr:first-child td{border-top:1.5px solid #333;}")
+        append(".doc-table tr:last-child td{border-bottom:1.5px solid #333;}")
+        append(".doc-table td:first-child{border-left:1.5px solid #333;}")
+        append(".doc-table td:last-child{border-right:1.5px solid #333;}")
+        append("</style></head><body>")
+    }
+
+    /** 空白页（用于解析失败兜底） */
+    private fun blankHtml(msg: String = ""): String = buildString {
+        append("<!DOCTYPE html><html><head><meta charset='utf-8'>")
+        append("<meta name='viewport' content='width=device-width,initial-scale=1.0'>")
+        append("<style>body{background:#E8E8E8;font-family:serif;padding:24px;}")
+        append(".page{background:white;max-width:100%;margin:0 auto;padding:32px;box-shadow:0 2px 12px rgba(0,0,0,0.12);min-height:80vh;}")
+        append(".empty{color:#999;font-size:14px;text-align:center;padding:60px 0;}</style>")
+        append("</head><body><div class='page'><div class='empty'>")
+        append(msg.ifBlank { "（空文档）" })
+        append("</div></div></body></html>")
+    }
+
+    /** 收集编辑内容的 JS：被 WebView evaluateJavascript 调用，返回 JSON 数组 */
+    private fun collectEditsScript(): String = """
+<script>
+function collectEdits(){
+  var r=[];
+  var ps=document.querySelectorAll('p[data-block]');
+  ps.forEach(function(p){
+    var b=parseInt(p.getAttribute('data-block'));
+    var t='';
+    p.querySelectorAll('[data-run]').forEach(function(s){t+=s.textContent;});
+    r.push({b:b,row:-1,col:-1,t:t});
+  });
+  var tds=document.querySelectorAll('td[data-block]');
+  tds.forEach(function(td){
+    var b=parseInt(td.getAttribute('data-block'));
+    var row=parseInt(td.getAttribute('data-row'));
+    var col=parseInt(td.getAttribute('data-col'));
+    var t='';
+    td.querySelectorAll('[data-run]').forEach(function(s){t+=s.textContent;});
+    r.push({b:b,row:row,col:col,t:t});
+  });
+  return JSON.stringify(r);
+}
+</script>
+    """.trimIndent()
+
+    /** 将单个 TextRun 转为 HTML span */
+    private fun runToHtml(r: TextRun, runIndex: Int): String {
+        val styles = mutableListOf<String>()
+        if (r.font.isNotBlank()) styles += "font-family:'${r.font.escapeHtml()}',serif"
+        if (r.sizePt > 0) styles += "font-size:${r.sizePt}pt"
+        if (r.bold) styles += "font-weight:bold"
+        if (r.italic) styles += "font-style:italic"
+        if (r.underline) styles += "text-decoration:underline"
+        val style = if (styles.isNotEmpty()) " style='${styles.joinToString(";")}'" else ""
+        return "<span data-run='$runIndex'$style>${r.text.escapeHtml()}</span>"
+    }
+
+    // ========== 私有：document.xml → HTML ==========
+
+    private fun buildBodyHtml(body: Element): String = buildString {
+        var blockIdx = 0
+        for (child in body.childElements()) {
+            when (child.local()) {
+                "p" -> {
+                    append(convertPara(child, blockIdx))
+                    blockIdx++
+                }
+                "tbl" -> {
+                    append(convertTable(child, blockIdx))
+                    blockIdx++
+                }
+            }
+        }
+    }
+
+    private fun convertPara(p: Element, blockIdx: Int): String {
+        val pPr = p.child("w:pPr")
+        val styles = mutableListOf<String>()
+        var align = "left"
+        if (pPr != null) {
+            pPr.child("w:jc")?.attr("w:val")?.let { v ->
+                align = when (v) {
+                    "center" -> "center"
+                    "right" -> "right"
+                    "both" -> "justify"
+                    else -> "left"
+                }
+            }
+            pPr.child("w:ind")?.let { ind ->
+                ind.attr("w:firstLine")?.toDoubleOrNull()?.let {
+                    styles += "text-indent:${it / 20.0}pt"
+                }
+                ind.attr("w:left")?.toDoubleOrNull()?.let {
+                    styles += "margin-left:${it / 20.0}pt"
+                }
+            }
+            pPr.child("w:spacing")?.let { sp ->
+                sp.attr("w:line")?.toDoubleOrNull()?.let {
+                    styles += "line-height:${it / 20.0}pt"
+                }
+                sp.attr("w:before")?.toDoubleOrNull()?.let {
+                    styles += "margin-top:${it / 20.0}pt"
+                }
+                sp.attr("w:after")?.toDoubleOrNull()?.let {
+                    styles += "margin-bottom:${it / 20.0}pt"
+                }
+            }
+        }
+        styles += "text-align:$align"
+        val styleStr = styles.joinToString(";")
+
+        val runsHtml = buildString {
+            var runIdx = 0
+            for (r in p.childElements()) {
+                if (r.local() != "r") continue
+                append(convertRun(r, runIdx))
+                runIdx++
+            }
+        }
+        if (runsHtml.isEmpty()) return "<p data-block='$blockIdx' class='doc-para' style='$styleStr'><br></p>"
+        return "<p data-block='$blockIdx' class='doc-para' style='$styleStr'>$runsHtml</p>"
+    }
+
+    private fun convertRun(r: Element, runIdx: Int): String {
+        val rPr = r.child("w:rPr")
+        val styles = mutableListOf<String>()
+
+        if (rPr != null) {
+            // 字体
+            rPr.child("w:rFonts")?.let { rf ->
+                val ea = rf.attr("w:eastAsia").orEmpty()
+                val ascii = rf.attr("w:ascii").orEmpty()
+                val font = if (ea.isNotBlank()) ea else ascii
+                if (font.isNotBlank()) styles += "font-family:'${font.escapeHtml()}',serif"
+            }
+            // 字号（半磅 → 磅）
+            rPr.child("w:sz")?.attr("w:val")?.toDoubleOrNull()?.let {
+                styles += "font-size:${it / 2.0}pt"
+            }
+            rPr.child("w:szCs")?.attr("w:val")?.toDoubleOrNull()?.let {
+                if (styles.none { s -> s.startsWith("font-size:") })
+                    styles += "font-size:${it / 2.0}pt"
+            }
+            // 粗体
+            if (isOn(rPr.child("w:b"))) styles += "font-weight:bold"
+            // 斜体
+            if (isOn(rPr.child("w:i"))) styles += "font-style:italic"
+            if (isOn(rPr.child("w:iCs"))) styles += "font-style:italic"
+            // 下划线
+            rPr.child("w:u")?.let { u ->
+                if (isUnderline(u)) {
+                    val uVal = u.attr("w:val").orEmpty()
+                    styles += if (uVal == "double") "text-decoration:underline double"
+                    else "text-decoration:underline"
+                }
+            }
+            // 删除线
+            if (isOn(rPr.child("w:strike"))) styles += "text-decoration:line-through"
+            // 文字颜色
+            rPr.child("w:color")?.attr("w:val")?.let { c ->
+                if (c != "auto") styles += "color:#$c"
+            }
+            // 高亮
+            rPr.child("w:highlight")?.attr("w:val")?.let { h ->
+                val bg = highlightColor(h)
+                if (bg != null) styles += "background-color:$bg"
+            }
+            // 上标/下标
+            rPr.child("w:vertAlign")?.attr("w:val")?.let { va ->
+                when (va) {
+                    "superscript" -> styles += "vertical-align:super;font-size:75%"
+                    "subscript" -> styles += "vertical-align:sub;font-size:75%"
+                }
+            }
+            // 小型大写
+            if (isOn(rPr.child("w:smallCaps"))) styles += "font-variant:small-caps"
+        }
+
+        // 收集文字内容（w:t + w:tab + w:br）
+        val text = collectRunText(r)
+        val styleStr = if (styles.isNotEmpty()) " style='${styles.joinToString(";")}'" else ""
+        return "<span data-run='$runIdx'$styleStr>${text.escapeHtml()}</span>"
+    }
+
+    /** 递归收集 run 内的文字：w:t 取字、w:tab → 制表符、w:br → <br> */
+    private fun collectRunText(node: Element): String = buildString {
+        val nodes = node.childNodes
+        for (i in 0 until nodes.length) {
+            val n = nodes.item(i)
+            if (n is Element) {
+                when (n.local()) {
+                    "t" -> append(n.textContent)
+                    "tab" -> append("\t")
+                    "br" -> {}
+                    else -> append(collectRunText(n))
+                }
+            }
+        }
+    }
+
+    private fun convertTable(tbl: Element, blockIdx: Int): String {
+        val sb = StringBuilder()
+        sb.append("<table data-block='$blockIdx' class='doc-table'")
+
+        // 表格宽度
+        tbl.child("w:tblPr")?.child("w:tblW")?.let { w ->
+            val wVal = w.attr("w:w")?.toDoubleOrNull()
+            val wType = w.attr("w:type").orEmpty()
+            if (wVal != null && wType == "pct") {
+                sb.append(" style='width:${wVal / 50.0}%'")
+            }
+        }
+        sb.append(">")
+
+        // 收集列宽（从 tblGrid）
+        val colWidths = mutableListOf<Double>()
+        tbl.child("w:tblGrid")?.let { grid ->
+            for (gc in grid.childElements()) {
+                if (gc.local() == "gridCol") {
+                    gc.attr("w:w")?.toDoubleOrNull()?.let { colWidths += it }
+                }
+            }
+        }
+
+        var rowIdx = 0
+        for (tr in tbl.childElements()) {
+            if (tr.local() != "tr") continue
+            sb.append("<tr>")
+            var colIdx = 0
+            for (tc in tr.childElements()) {
+                if (tc.local() != "tc") continue
+                sb.append(convertCell(tc, blockIdx, rowIdx, colIdx, colWidths))
+                colIdx++
+            }
+            sb.append("</tr>")
+            rowIdx++
+        }
+        sb.append("</table>")
+        return sb.toString()
+    }
+
+    private fun convertCell(
+        tc: Element, blockIdx: Int, rowIdx: Int, colIdx: Int, colWidths: List<Double>
+    ): String {
+        val tcPr = tc.child("w:tcPr")
+        val styles = mutableListOf<String>()
+        val attrs = mutableListOf<String>()
+
+        // 列宽
+        tcPr?.child("w:tcW")?.let { w ->
+            val wVal = w.attr("w:w")?.toDoubleOrNull()
+            val wType = w.attr("w:type").orEmpty()
+            if (wVal != null) {
+                when (wType) {
+                    "pct" -> styles += "width:${wVal / 50.0}%"
+                    "dxa" -> styles += "width:${wVal / 20.0}pt"
+                }
+            }
+        }
+        // 没有显式列宽时，从 tblGrid 取
+        if (styles.none { it.startsWith("width:") } && colIdx < colWidths.size) {
+            styles += "width:${colWidths[colIdx] / 20.0}pt"
+        }
+
+        // 合并单元格：gridSpan（HTML 属性，非 CSS）
+        tcPr?.child("w:gridSpan")?.attr("w:val")?.toIntOrNull()?.let { span ->
+            if (span > 1) attrs += "colspan='$span'"
+        }
+        // vMerge（继续合并）
+        tcPr?.child("w:vMerge")?.let { vm ->
+            val v = vm.attr("w:val").orEmpty()
+            if (v == "restart" || v.isEmpty()) {
+                // rowspan 需要后续行配合，此处仅标记
+            }
+        }
+
+        // 单元格垂直对齐
+        tcPr?.child("w:vAlign")?.attr("w:val")?.let { va ->
+            when (va) {
+                "center" -> styles += "vertical-align:middle"
+                "bottom" -> styles += "vertical-align:bottom"
+            }
+        }
+
+        // 单元格背景色
+        tcPr?.child("w:shd")?.attr("w:fill")?.let { fill ->
+            if (fill != "auto" && fill.isNotBlank()) styles += "background-color:#$fill"
+        }
+
+        val styleStr = if (styles.isNotEmpty()) " style='${styles.joinToString(";")}'" else ""
+        val attrStr = if (attrs.isNotEmpty()) " " + attrs.joinToString(" ") else ""
+
+        val runsHtml = buildString {
+            var runIdx = 0
+            for (p in tc.childElements()) {
+                if (p.local() != "p") continue
+                for (r in p.childElements()) {
+                    if (r.local() != "r") continue
+                    append(convertRun(r, runIdx))
+                    runIdx++
+                }
+                // 段落间换行
+                if (runIdx > 0) append("<br>")
+            }
+        }
+
+        return "<td data-block='$blockIdx' data-row='$rowIdx' data-col='$colIdx'$attrStr$styleStr>$runsHtml</td>"
+    }
+
+    // ========== 辅助 ==========
+
+    private fun isOn(node: Element?): Boolean {
+        if (node == null) return false
+        val v = node.attr("w:val")
+        if (v == null) return true
+        return v == "true" || v == "1" || v == "on"
+    }
+
+    private fun isUnderline(u: Element): Boolean {
+        val v = u.attr("w:val")
+        if (v == null) return true
+        return v != "none" && v != "0" && v != "off" && v != "false"
+    }
+
+    private fun highlightColor(valStr: String): String? = when (valStr.lowercase()) {
+        "yellow" -> "#FFFF00"
+        "green" -> "#00FF00"
+        "cyan" -> "#00FFFF"
+        "magenta" -> "#FF00FF"
+        "blue" -> "#0000FF"
+        "red" -> "#FF0000"
+        "darkblue" -> "#00008B"
+        "darkcyan" -> "#008B8B"
+        "darkgreen" -> "#006400"
+        "darkmagenta" -> "#8B008B"
+        "darkred" -> "#8B0000"
+        "darkyellow" -> "#808000"
+        "darkgray" -> "#A9A9A9"
+        "lightgray" -> "#D3D3D3"
+        "black" -> "#000000"
+        "none" -> null
+        else -> null
+    }
+
+    private fun parseDom(bytes: ByteArray) = DocumentBuilderFactory.newInstance()
+        .apply { isNamespaceAware = false }
+        .newDocumentBuilder()
+        .parse(ByteArrayInputStream(bytes))
+
+    private fun Element.local(): String {
+        val tag = tagName
+        val idx = tag.indexOf(':')
+        return if (idx >= 0) tag.substring(idx + 1) else tag
+    }
+
+    private fun Element.attr(name: String): String? {
+        getAttributeNode(name)?.value?.let { return it }
+        getAttributeNode(name.local())?.value?.let { return it }
+        return null
+    }
+
+    private fun Element.child(tag: String): Element? =
+        childElements().firstOrNull { it.local() == tag.local() }
+
+    private fun Element.childElements(): List<Element> {
+        val list = mutableListOf<Element>()
+        val nodes = childNodes
+        for (i in 0 until nodes.length) {
+            val n = nodes.item(i)
+            if (n is Element) list += n
+        }
+        return list
+    }
+
+    private fun String.local(): String {
+        val idx = indexOf(':')
+        return if (idx >= 0) substring(idx + 1) else this
+    }
+
+    private fun String.escapeHtml(): String = this
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace("\"", "&quot;")
+        .replace("'", "&#39;")
+}

@@ -12,6 +12,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
@@ -21,6 +22,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
@@ -168,6 +170,8 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
     var logoScale by remember { mutableStateOf(draft?.logoScale ?: 0.20f) }
     var logoHAlign by remember { mutableStateOf(draft?.logoHAlign ?: "right") }
     var logoVAlign by remember { mutableStateOf(draft?.logoVAlign ?: "bottom") }
+    // 「全部应用：是/否」开关：进入预览时恢复上次选择（持久化在 PptDraftStore 中）
+    var applyToAll by remember { mutableStateOf(draft?.applyToAll ?: false) }
     // 统一设置弹窗（自动分页 / 波浪 / 波浪参数 / 样式 全部收进弹窗，规避原横条芯片点击失效）
     var showSettings by remember { mutableStateOf(false) }
 
@@ -212,7 +216,7 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
     val scope = rememberCoroutineScope()
 
     // 自动保存草稿（编辑内容/布局变化后防抖落盘，下次进入自动恢复）
-    LaunchedEffect(markdown, themeId, customColor, autoPaginate, barHeightDenom, bandGap, defaultLayout, logoScale, logoHAlign, logoVAlign, layoutsVersion) {
+    LaunchedEffect(markdown, themeId, customColor, autoPaginate, barHeightDenom, bandGap, defaultLayout, logoScale, logoHAlign, logoVAlign, applyToAll, layoutsVersion) {
         delay(500)
         PptDraftStore.save(
             context,
@@ -228,7 +232,8 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
                 logoVAlign = logoVAlign,
                 defaultLayout = defaultLayout.key,
                 layouts = emptyMap(),
-                comps = comps.mapValues { it.value.key }
+                comps = comps.mapValues { it.value.key },
+                applyToAll = applyToAll
             )
         )
     }
@@ -373,6 +378,8 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
                             snackbar = snackbar,
                             comps = comps,
                             defaultLayout = defaultLayout,
+                            applyToAll = applyToAll,
+                            onApplyToAllChange = { applyToAll = it },
                             onCompositionChange = { i, c ->
                                 comps[i] = c
                                 layoutsVersion++   // 触发草稿防抖保存
@@ -1162,9 +1169,12 @@ private fun PreviewPager(
     snackbar: SnackbarHostState,
     comps: SnapshotStateMap<Int, SlideComposition>,
     defaultLayout: SlideLayout,
+    applyToAll: Boolean,
+    onApplyToAllChange: (Boolean) -> Unit,
     onCompositionChange: (Int, SlideComposition) -> Unit
 ) {
     var current by remember { mutableStateOf(0) }
+    // applyToAll 由父级持有 + 持久化，PreviewPager 只消费
     // 页数与选中页同步（分页变化或删除时收敛）
     LaunchedEffect(slides.size) {
         current = current.coerceIn(0, slides.lastIndex.coerceAtLeast(0))
@@ -1173,6 +1183,11 @@ private fun PreviewPager(
     var jumpText by remember { mutableStateOf((current + 1).toString()) }
     LaunchedEffect(current) { jumpText = (current + 1).toString() }
     val curLayout = defaultLayout
+    val scope = rememberCoroutineScope()
+
+    // 应用/读取统一的组合变更：内部修改 comps 后通过 onCompositionChange
+    // 把每一次变更冒泡给父级，由父级统一负责布局重算与草稿防抖保存。
+    val apply: (Int, SlideComposition) -> Unit = { i, c -> onCompositionChange(i, c) }
 
     Column(Modifier.fillMaxSize()) {
         if (slides.isEmpty()) {
@@ -1193,7 +1208,31 @@ private fun PreviewPager(
         if (slides.isNotEmpty()) {
             CompositionSelector(
                 comp = comps[current] ?: CompositionResolver.compositionOf(curLayout),
-                onCompositionChange = { onCompositionChange(current, it) }
+                applyToAll = applyToAll,
+                onApplyToAllChange = { applyToAll = it },
+                theme = theme,
+                onCompositionChange = { newComp ->
+                    if (applyToAll) {
+                        // 全部应用：跳过特殊页（封面/目录/章节/结尾），避免破坏其专属版式
+                        // 仅对 PageRole.NONE 的内容页统一组合，保证视觉一致
+                        var applied = 0
+                        var skipped = 0
+                        for (i in slides.indices) {
+                            val sRole = slides[i].composition?.role ?: PageRole.NONE
+                            if (sRole != PageRole.NONE) { skipped++; continue }
+                            apply(i, newComp)
+                            applied++
+                        }
+                        // 给用户一个反馈：让用户知道哪些页没被覆盖
+                        if (skipped > 0) {
+                            scope.launch {
+                                snackbar.showSnackbar("已应用 $applied 页；跳过 $skipped 张特殊页（封面/目录/章节/结尾）")
+                            }
+                        }
+                    } else {
+                        apply(current, newComp)
+                    }
+                }
             )
         }
 
@@ -1267,13 +1306,23 @@ private fun PreviewPager(
 
 /**
  * 阶段二组合选择器：结构 × 色块 × 对齐，作为每页版式的唯一控制。
- * 以卡片分组呈现三个维度，每组一行、标签居左、选项横向滚动（随预览区宽度自适应），
- * 把垂直空间让给预览画布，使幻灯片保持「满手机屏宽」的原版大小。
- * 间距为全局设置，已移入统一设置面板（数值输入框），不在此逐页调节。
+ *
+ * 关键交互：
+ *  - 色块行：每个 Pill 左侧嵌入迷你色块图示（用主题主色调渲染），让用户一眼看出
+ *    「全=整页 / 上=顶部色带」等实际效果；
+ *  - 对齐行：改用 2x2 网格布局，把 4 种常用对齐（上左/上中/中左/中中）摊成 2 行 2 列，
+ *    比横排更直观，避免文字省略时撞车；
+ *  - 装饰行：长按 Pill 弹 Tooltip 说明「波浪/直线/Logo」各自效果；
+ *  - 顶部「全部应用：是/否」开关已挪到「装饰」行末尾，与"对所有页生效"语义更聚拢。
+ *
+ * 「全部应用=是」时跳过特殊页（封面/目录/章节/结尾），由父级 PreviewPager 处理。
  */
 @Composable
 private fun CompositionSelector(
     comp: SlideComposition,
+    applyToAll: Boolean,
+    onApplyToAllChange: (Boolean) -> Unit,
+    theme: PptTheme,
     onCompositionChange: (SlideComposition) -> Unit
 ) {
     Surface(
@@ -1281,41 +1330,43 @@ private fun CompositionSelector(
         shape = UI_CARD_RADIUS,
         modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp)
     ) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
+            // 标题
             Text(
                 "版式组合",
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.outline
+                color = MaterialTheme.colorScheme.outline,
+                modifier = Modifier.padding(bottom = 4.dp)
             )
-            Spacer(Modifier.height(6.dp))
             CompositionRow("结构") {
                 Structure.values().forEach { s ->
                     Pill(s.label, comp.structure == s) { onCompositionChange(comp.copy(structure = s)) }
                 }
             }
-            CompositionRow("色块") {
+            // 色块行：紧凑 Pill + 嵌入主题主色调的迷你色块图示
+            CompositionRow("色块", compact = true) {
                 ColorBlock.values().forEach { c ->
-                    Pill(c.label, comp.colorBlock == c) {
-                        onCompositionChange(comp.copy(colorBlock = c))
-                    }
+                    val (text, color) = colorBlockVisual(c)
+                    PillWithIcon(
+                        text = c.label,
+                        iconColor = color,
+                        iconShape = c,
+                        selected = comp.colorBlock == c,
+                        compact = true,
+                        theme = theme
+                    ) { onCompositionChange(comp.copy(colorBlock = c)) }
                 }
             }
+            // 对齐行：2x2 网格
             CompositionRow("对齐") {
-                Pill("上左对齐", comp.valign == VAlign.TOP && comp.halign == HAlign.LEFT) {
-                    onCompositionChange(comp.copy(valign = VAlign.TOP, halign = HAlign.LEFT))
-                }
-                Pill("上居中对齐", comp.valign == VAlign.TOP && comp.halign == HAlign.CENTER) {
-                    onCompositionChange(comp.copy(valign = VAlign.TOP, halign = HAlign.CENTER))
-                }
-                Pill("居中左对齐", comp.valign == VAlign.CENTER && comp.halign == HAlign.LEFT) {
-                    onCompositionChange(comp.copy(valign = VAlign.CENTER, halign = HAlign.LEFT))
-                }
-                Pill("居中对齐", comp.valign == VAlign.CENTER && comp.halign == HAlign.CENTER) {
-                    onCompositionChange(comp.copy(valign = VAlign.CENTER, halign = HAlign.CENTER))
-                }
+                AlignmentGrid(
+                    valign = comp.valign,
+                    halign = comp.halign,
+                    onChange = { v, h -> onCompositionChange(comp.copy(valign = v, halign = h)) }
+                )
             }
-            // 底部装饰：仅无色块页面可选；有色块页面自动禁用
+            // 装饰行：长按弹 tooltip；末尾并入「全部应用:是/否」开关
             CompositionRow("装饰") {
                 if (comp.hasBigBlock) {
                     Text(
@@ -1326,40 +1377,217 @@ private fun CompositionSelector(
                     )
                 } else {
                     BottomDecoration.values().forEach { d ->
-                        Pill(d.label, comp.decoration == d) {
-                            onCompositionChange(comp.copy(decoration = d))
-                        }
+                        PillWithTooltip(
+                            text = d.label,
+                            tip = decorationTip(d),
+                            selected = comp.decoration == d
+                        ) { onCompositionChange(comp.copy(decoration = d)) }
                     }
+                }
+                // 全部应用开关（右上角）挪到装饰行末尾
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "全部应用",
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.padding(end = 4.dp)
+                )
+                Pill(if (applyToAll) "是" else "否", applyToAll, compact = true) {
+                    onApplyToAllChange(!applyToAll)
                 }
             }
         }
     }
 }
 
-/** 组合选择器中的单行分组：左侧固定宽标签 + 右侧横向滚动的选项行。 */
+/** 色块枚举 → (迷你图示色, 形状)。迷你图示在 Pill 左侧画出主题色的小色块。 */
+private fun colorBlockVisual(c: ColorBlock): Pair<String, Boolean> = when (c) {
+    ColorBlock.NONE -> "#E0E0E0" to false   // 灰白底（无色块）
+    ColorBlock.FULL -> "theme" to false      // 主题色整块
+    ColorBlock.LEFT -> "theme" to true       // 主题色左侧竖条
+    ColorBlock.TOP -> "theme" to false       // 主题色顶部横条
+    ColorBlock.BOTTOM -> "theme" to false    // 主题色底部横条
+    ColorBlock.RIGHT -> "theme" to true      // 主题色右侧竖条
+}
+
+/** Pill 文字 + 主题色迷你图示（用于「色块」行）。
+ *  [iconShape] 决定色块的几何形态：整块/竖条/横条/无；颜色取自 [theme.accent]。 */
 @Composable
-private fun CompositionRow(label: String, content: @Composable RowScope.() -> Unit) {
+private fun PillWithIcon(
+    text: String,
+    iconColor: String,
+    iconShape: ColorBlock,
+    selected: Boolean,
+    compact: Boolean = false,
+    theme: PptTheme,
+    onClick: () -> Unit
+) {
+    val bg = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
+    val fg = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+    // 解码主题色（"#RRGGBB" → Color）
+    val accentColor = remember(theme.accent) { parseHexColor(theme.accent) }
+    val grayColor = remember { parseHexColor("#E0E0E0") }
+    val drawColor = if (iconColor == "theme") accentColor else grayColor
+    Surface(
+        color = bg, shape = UI_BTN_RADIUS, onClick = onClick,
+        modifier = Modifier.height(if (compact) 24.dp else 28.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 6.dp)
+        ) {
+            // 左侧 8dp 宽 × 14dp 高的迷你色块图示（按形状决定占满 / 竖条 / 横条）
+            Box(
+                modifier = Modifier
+                    .size(width = 8.dp, height = 14.dp)
+                    .clip(RoundedCornerShape(1.dp))
+                    .background(
+                        when (iconShape) {
+                            ColorBlock.NONE -> grayColor
+                            ColorBlock.FULL -> drawColor
+                            ColorBlock.TOP -> drawColor
+                            ColorBlock.BOTTOM -> drawColor
+                            ColorBlock.LEFT -> drawColor
+                            ColorBlock.RIGHT -> drawColor
+                        }
+                    )
+            )
+            Spacer(Modifier.width(4.dp))
+            Text(text, fontSize = 10.sp, color = fg, maxLines = 1)
+        }
+    }
+}
+
+/** 对齐 2x2 网格：把 4 种常用组合（上左/上中/中左/中中）摊成 2 行 2 列，
+ *  比横排更直观且视觉权重更均衡。 */
+@Composable
+private fun AlignmentGrid(
+    valign: VAlign,
+    halign: HAlign,
+    onChange: (VAlign, HAlign) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+            AlignmentCell("上左", valign == VAlign.TOP && halign == HAlign.LEFT) {
+                onChange(VAlign.TOP, HAlign.LEFT)
+            }
+            AlignmentCell("上中", valign == VAlign.TOP && halign == HAlign.CENTER) {
+                onChange(VAlign.TOP, HAlign.CENTER)
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+            AlignmentCell("中左", valign == VAlign.CENTER && halign == HAlign.LEFT) {
+                onChange(VAlign.CENTER, HAlign.LEFT)
+            }
+            AlignmentCell("中中", valign == VAlign.CENTER && halign == HAlign.CENTER) {
+                onChange(VAlign.CENTER, HAlign.CENTER)
+            }
+        }
+    }
+}
+
+/** 对齐网格中的单格：36dp 宽的方形 Pill，含 2 字对齐标签。 */
+@Composable
+private fun AlignmentCell(text: String, selected: Boolean, onClick: () -> Unit) {
+    val bg = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
+    val fg = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+    Surface(
+        color = bg, shape = UI_BTN_RADIUS, onClick = onClick,
+        modifier = Modifier.size(width = 38.dp, height = 26.dp)
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(text, fontSize = 10.sp, color = fg, maxLines = 1)
+        }
+    }
+}
+
+/** 装饰选项的悬浮提示文本。 */
+private fun decorationTip(d: BottomDecoration): String = when (d) {
+    BottomDecoration.NONE -> "不画任何装饰"
+    BottomDecoration.WAVE -> "底部一条波浪曲线"
+    BottomDecoration.BAR -> "底部一条直线色块"
+    BottomDecoration.LOGO -> "右下角放置 Logo"
+}
+
+/** Pill + 长按弹 Tooltip（用于「装饰」行：4 个选项效果不直观时给文字说明）。 */
+@Composable
+private fun PillWithTooltip(text: String, tip: String, selected: Boolean, onClick: () -> Unit) {
+    var showTip by remember { mutableStateOf(false) }
+    Box {
+        Pill(text, selected, onClick = onClick)
+        // 透明长按热区：让长按事件能落到 Pill 上（Surface 已支持 onClick，但长按需要用 Modifier.pointerInput）
+        androidx.compose.foundation.layout.Box(
+            modifier = Modifier
+                .matchParentSize()
+                .pointerInput(text) {
+                    detectTapGestures(
+                        onTap = { onClick() },
+                        onLongPress = { showTip = true }
+                    )
+                }
+        )
+        androidx.compose.material3.DropdownMenu(
+            expanded = showTip,
+            onDismissRequest = { showTip = false }
+        ) {
+            androidx.compose.material3.Text(tip, modifier = Modifier.padding(8.dp), fontSize = 12.sp)
+        }
+    }
+}
+
+/** 解析 "#RRGGBB" → androidx.compose.ui.graphics.Color。 */
+private fun parseHexColor(hex: String): androidx.compose.ui.graphics.Color {
+    val s = hex.removePrefix("#")
+    val v = s.toLong(16)
+    return androidx.compose.ui.graphics.Color(
+        red = ((v shr 16) and 0xFF) / 255f,
+        green = ((v shr 8) and 0xFF) / 255f,
+        blue = (v and 0xFF) / 255f,
+        alpha = 1f
+    )
+}
+
+/** 组合选择器中的单行分组：左侧固定宽标签 + 右侧横向滚动的选项行。
+ *  [compact]=true 时行内 Pill 更小更密，用于「色块」这类有 5+ 选项的轴。 */
+@Composable
+private fun CompositionRow(label: String, compact: Boolean = false, content: @Composable RowScope.() -> Unit) {
     Row(
-        Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        Modifier.fillMaxWidth().padding(vertical = if (compact) 2.dp else 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.outline, modifier = Modifier.width(36.dp))
+        Text(
+            label,
+            fontSize = if (compact) 10.sp else 11.sp,
+            color = MaterialTheme.colorScheme.outline,
+            modifier = Modifier.width(36.dp)
+        )
         Row(
             Modifier.weight(1f).horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(5.dp),
+            horizontalArrangement = Arrangement.spacedBy(if (compact) 3.dp else 5.dp),
             verticalAlignment = Alignment.CenterVertically,
             content = content
         )
     }
 }
 
-/** 紧凑胶囊按钮（仅文字，选中态实色填充）。 */
+/** 紧凑胶囊按钮（仅文字，选中态实色填充）。
+ *  [compact]=true 时按键更小（高度 22dp、无垂直内边距），
+ *  让「色块」6 个选项能在窄屏上排开不换行；默认保持原 28dp 标准规格。 */
 @Composable
-private fun Pill(text: String, selected: Boolean, onClick: () -> Unit) {
+private fun Pill(text: String, selected: Boolean, compact: Boolean = false, onClick: () -> Unit) {
     val bg = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
     val fg = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-    Surface(color = bg, shape = UI_BTN_RADIUS, onClick = onClick, modifier = Modifier.height(28.dp)) {
-        Text(text, fontSize = 10.sp, color = fg, maxLines = 1, modifier = Modifier.padding(horizontal = 6.dp))
+    Surface(
+        color = bg, shape = UI_BTN_RADIUS, onClick = onClick,
+        modifier = Modifier.height(if (compact) 22.dp else 28.dp)
+    ) {
+        Text(
+            text,
+            fontSize = 10.sp,
+            color = fg,
+            maxLines = 1,
+            modifier = Modifier.padding(horizontal = 6.dp)
+        )
     }
 }
 

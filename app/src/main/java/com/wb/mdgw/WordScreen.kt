@@ -1,7 +1,11 @@
 package com.wb.mdgw
 
+import android.annotation.SuppressLint
 import android.content.Intent
 import android.net.Uri
+import android.webkit.JavascriptInterface
+import android.webkit.WebView
+import android.webkit.WebViewClient
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -40,10 +44,12 @@ import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import kotlin.collections.ArrayDeque
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 
 // 设计 token 复用 com.wb.mdgw.UiTokens 的公共令牌（UI_SECTION_RADIUS / UI_CARD_RADIUS /
@@ -122,6 +128,9 @@ fun WordScreen(
     var govEditVersion by remember { mutableStateOf(0) }
     var showRestoreGov by remember { mutableStateOf(false) }
     var pendingGovDraft by remember { mutableStateOf<GovDoc?>(null) }
+
+    // WebView 引用，用于导出前收集编辑内容
+    var webView by remember { mutableStateOf<WebView?>(null) }
 
     // ---------- 公文设置 ----------
     var selectedSpec by remember { mutableStateOf(SettingsStore.spec(context)) }
@@ -429,6 +438,81 @@ fun WordScreen(
     }
 
     /**
+     * 从 WebView 收集用户编辑的文本，回写到 GovDoc.blocks（同步等待 JS 完成）。
+     * 用于导出前确保所有编辑都已同步。
+     */
+    suspend fun syncWebViewEditsSuspend(): GovDoc? = kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+        val wv = webView
+        if (wv == null) { cont.resume(null); return@suspendCancellableCoroutine }
+        val d = govDoc
+        if (d == null) { cont.resume(null); return@suspendCancellableCoroutine }
+        if (d.originalDocx == null) { cont.resume(d); return@suspendCancellableCoroutine }
+        wv.evaluateJavascript("collectEdits()") { json ->
+            // 回调到达前协程可能已取消（如用户退出页面），必须检查 isActive 避免写入失效状态
+            if (!cont.isActive) return@evaluateJavascript
+            try {
+                if (json == null || json == "null" || json.isBlank()) {
+                    cont.resume(d)
+                    return@evaluateJavascript
+                }
+                val trimmed = json.trim().removeSurrounding("\"")
+                    .replace("\\\"", "\"")
+                val edits = parseEditJson(trimmed)
+                if (edits.isEmpty()) {
+                    cont.resume(d)
+                    return@evaluateJavascript
+                }
+                val blocks = d.blocks.toMutableList()
+                val newEdits = mutableSetOf<EditTarget>()
+                for (edit in edits) {
+                    val b = blocks.getOrNull(edit.blockIndex) ?: continue
+                    when {
+                        edit.row < 0 && b is Block.Para -> {
+                            val dist = distributeRunsRespectingFormat(b.runs, edit.text)
+                            val newRuns = b.runs.mapIndexed { k, r -> r.copy(text = dist[k]) }
+                            blocks[edit.blockIndex] = Block.Para(newRuns, b.props)
+                            newRuns.indices.forEach { newEdits += EditTarget(edit.blockIndex, runIndex = it) }
+                        }
+                        edit.row >= 0 && b is Block.Table -> {
+                            val cell = b.rows.getOrNull(edit.row)?.getOrNull(edit.col) ?: continue
+                            val dist = distributeRunsRespectingFormat(cell, edit.text)
+                            val newCell = cell.mapIndexed { k, r -> r.copy(text = dist[k]) }
+                            val newRows = b.rows.mapIndexed { ri, row ->
+                                if (ri != edit.row) row else row.mapIndexed { ci, c ->
+                                    if (ci != edit.col) c else newCell
+                                }
+                            }
+                            blocks[edit.blockIndex] = Block.Table(newRows)
+                            newCell.indices.forEach { newEdits += EditTarget(edit.blockIndex, edit.row, edit.col, runIndex = it) }
+                        }
+                    }
+                }
+                cont.resume(d.copy(blocks = blocks, edits = d.edits + newEdits))
+            } catch (e: Exception) {
+                cont.resume(d)
+            }
+        }
+    }
+
+    /** 简单解析 collectEdits() 返回的 JSON 数组 */
+    private data class EditEntry(val blockIndex: Int, val row: Int, val col: Int, val text: String)
+
+    private fun parseEditJson(json: String): List<EditEntry> {
+        val result = mutableListOf<EditEntry>()
+        // 匹配每个对象 {...}
+        val objRegex = Regex("""\{[^}]+\}""")
+        for (match in objRegex.findAll(json)) {
+            val obj = match.value
+            val b = Regex(""""b"\s*:\s*(\d+)""").find(obj)?.groupValues?.get(1)?.toIntOrNull() ?: continue
+            val row = Regex(""""row"\s*:\s*(-?\d+)""").find(obj)?.groupValues?.get(1)?.toIntOrNull() ?: -1
+            val col = Regex(""""col"\s*:\s*(-?\d+)""").find(obj)?.groupValues?.get(1)?.toIntOrNull() ?: -1
+            val t = Regex(""""t"\s*:\s*"((?:[^"\\]|\\.)*)"""").find(obj)?.groupValues?.get(1) ?: ""
+            result += EditEntry(b, row, col, t.replace("\\n", "\n").replace("\\t", "\t"))
+        }
+        return result
+    }
+
+    /**
      * 「预览」即自动生成公文：切到预览子页时，若源 Markdown 非空且与上次生成不一致，
      * 则后台把当前 Markdown 转为公文模型并刷新预览；已是最新则直接显示（保留就地编辑）。
      */
@@ -528,8 +612,14 @@ fun WordScreen(
     }
 
     fun doExport(kind: String, name: String? = null) {
-        val d = govDoc ?: return
         scope.launch {
+            // 导出前同步 WebView 编辑内容到 GovDoc
+            syncWebViewEditsSuspend()?.let { updatedGov ->
+                commitGov(updatedGov)
+                govDirty = true; govAutoSaved = false; govEditVersion++
+            }
+            val d = govDoc
+            if (d == null) { snackbar.showSnackbar("没有可导出的内容"); return@launch }
             if (d.blocks.isEmpty()) { snackbar.showSnackbar("没有可导出的内容"); return@launch }
             govBusy = true
             runCatching {
@@ -576,7 +666,7 @@ fun WordScreen(
             WordActionBar(
                 onOpen = { openPicker.launch(arrayOf("text/markdown", "text/x-markdown", "text/plain", DOCX_MIME, "application/octet-stream", "*/*")) },
                 onExportDocx = { exportDocx() },
-                onSavePdf = { exportPdf() }
+                onExportPdf = { exportPdf() }
             )
         }
     ) { pad ->
@@ -640,15 +730,23 @@ fun WordScreen(
                             if (searchOpen) { searchOpen = false; query = "" } else searchOpen = true
                         },
                         onCloseDoc = {
+                            // 关闭文档时立即销毁旧 WebView，释放 HTML/CSS 解析占用的内存
+                            webView?.destroy(); webView = null
                             commitGov(null); resultUri = null; fidelityNotes = emptyList(); lastGenSource = ""
                         },
                         fidelityNotes = fidelityNotes,
                         onDismissFidelity = { fidelityNotes = emptyList() },
-                        onStartEdit = { startEdit(it) }
+                        onStartEdit = { startEdit(it) },
+                        onWebViewReady = { webView = it }
                     )
                 }
             }
         }
+    }
+
+    // ---------- WebView 生命周期：Composable 销毁时释放，避免 Activity 泄漏 ----------
+    DisposableEffect(Unit) {
+        onDispose { webView?.destroy(); webView = null }
     }
 
     // ---------- 公文设置 ----------
@@ -958,13 +1056,13 @@ private fun WordToolbar(
 }
 
 // ============================================================
-// 底部操作栏（悬浮卡片：打开 / 转PDF 两按钮，等宽）
+// 底部操作栏（悬浮卡片：打开 / 导出 DOCX / 转 PDF 三按钮，等宽）
 // ============================================================
 @Composable
 private fun WordActionBar(
     onOpen: () -> Unit,
     onExportDocx: () -> Unit,
-    onSavePdf: () -> Unit
+    onExportPdf: () -> Unit
 ) {
     Surface(
         tonalElevation = 3.dp, shadowElevation = 6.dp, color = MaterialTheme.colorScheme.surface,
@@ -989,7 +1087,7 @@ private fun WordActionBar(
                 Text("导出DOCX", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
             }
             OutlinedButton(
-                onClick = onSavePdf, shape = UI_BTN_RADIUS, modifier = btnMod,
+                onClick = onExportPdf, shape = UI_BTN_RADIUS, modifier = btnMod,
                 border = BorderStroke(1.2.dp, MaterialTheme.colorScheme.outline),
                 contentPadding = btnPad
             ) {
@@ -1091,7 +1189,8 @@ private fun PaperPreview(
     onCloseDoc: () -> Unit,
     fidelityNotes: List<String>,
     onDismissFidelity: () -> Unit,
-    onStartEdit: (EditTarget) -> Unit
+    onStartEdit: (EditTarget) -> Unit,
+    onWebViewReady: (WebView) -> Unit
 ) {
     if (doc == null) {
         Column(
@@ -1192,148 +1291,92 @@ private fun PaperPreview(
                     }
                 }
             } else {
-                // A4 纸面模拟：灰底白页 + 阴影，页面宽度拉满屏幕，内容区按 A4 比例留边距
-                GovDocPaper(doc = doc, onStartEdit = onStartEdit)
+                // A4 纸面模拟：灰底白页 + 阴影，页面宽度拉满屏幕，高度按 A4 真实比例 210:297 约束
+                // padding=0 让 WebView 真占满屏幕宽度，避免内容被裁切
+                GovDocPaper(doc = doc, onStartEdit = onStartEdit, onWebViewReady = onWebViewReady)
             }
         }
     }
 }
 
 /**
- * A4 纸面模拟：灰底白页 + 阴影，页面宽度拉满手机屏幕，高度按 A4 比例 (1:√2) 约束。
- * 模拟 WPS / Word 的「页面视图」效果，文本字号、边距均按页面比例缩放。
+ * A4 纸面模拟：用 WebView 渲染 HTML，实现与 WPS / Word 打印效果一致的预览。
+ * 页面宽度拉满手机屏幕，高度按 A4 真实比例 210:297 约束。所有格式（字体、字号、颜色、粗斜体、
+ * 下划线、删除线、高亮、表格列宽/边框）由 CSS 原生表达，无需逐个建模。
+ *
+ * 用户可直接在页面上编辑文字（contenteditable），导出前通过 [syncWebViewEdits] 收集。
+ * 渲染失败时降级到 Compose PaperPreview，保证用户始终能预览。
  */
+@SuppressLint("SetJavaScriptEnabled")
 @Composable
-private fun GovDocPaper(doc: GovDoc, onStartEdit: (EditTarget) -> Unit) {
-    BoxWithConstraints(Modifier.fillMaxSize()) {
-        // 页面宽度 = 屏幕宽度
-        val pageW = maxWidth
-        val page = doc.page
-        // A4 高宽比：29.7 / 21 ≈ 1.414
-        val pageH = pageW * (page.heightCm / page.widthCm).toFloat()
-        // 1pt = 1/72inch = 2.54/72cm → 1cm = 72/2.54pt ≈ 28.35pt
-        val scale = pageW.value / (page.widthCm * 28.35f)
-        // 内容区边距 = 页面宽度 × (边距cm / 页面宽度cm)
-        val lPad = pageW * (page.leftCm / page.widthCm).toFloat()
-        val rPad = pageW * (page.rightCm / page.widthCm).toFloat()
-        val tPad = pageW * (page.topCm / page.widthCm).toFloat()
-        val bPad = pageW * (page.bottomCm / page.widthCm).toFloat()
-
-        Column(
-            Modifier
-                .fillMaxSize()
-                .background(Color(0xFFE8E8E8))
-                .verticalScroll(rememberScrollState())
-                .padding(vertical = 12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Surface(
-                modifier = Modifier
-                    .width(pageW)
-                    .heightIn(min = pageH),
-                shape = RoundedCornerShape(2.dp),
-                color = Color.White,
-                shadowElevation = 4.dp
-            ) {
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(start = lPad, end = rPad, top = tPad, bottom = bPad),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    doc.blocks.forEachIndexed { idx, b ->
-                        when (b) {
-                            is Block.Para -> {
-                                if (b.runs.isEmpty()) {
-                                    Spacer(Modifier.height(8.dp))
-                                } else {
-                                    // 字号按页面比例缩放，使预览与打印一致
-                                    val sizePt = b.runs.firstOrNull()?.sizePt ?: doc.bodySizePt
-                                    val displaySize = (sizePt * scale).sp
-                                    val align = when (b.props.align) {
-                                        Align.CENTER -> TextAlign.Center
-                                        Align.RIGHT -> TextAlign.End
-                                        Align.BOTH -> TextAlign.Justify
-                                        else -> TextAlign.Start
-                                    }
-                                    val lhSp = (if (b.props.lineSpacingPt > 0) b.props.lineSpacingPt else doc.lineSpacingPt)
-                                    val displayLh = (lhSp * scale).sp
-                                    val first = b.runs.first()
-                                    Text(
-                                        text = runsToAnnotated(b.runs),
-                                        fontSize = displaySize,
-                                        fontFamily = fontFamilyOrNull(first.font),
-                                        textAlign = align,
-                                        lineHeight = displayLh,
-                                        color = Color(0xFF1A1A1A),
-                                        style = TextStyle(textIndent = TextIndent(firstLine = (b.props.firstLineIndentPt * scale).sp)),
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clickable { onStartEdit(EditTarget(idx)) }
-                                            .padding(vertical = 3.dp)
-                                    )
-                                }
-                            }
-                            is Block.Table -> {
-                                // 打印样式表格：直角边框 + 行分隔线，与 Word 打印效果一致
-                                Surface(
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                                    shape = RoundedCornerShape(0.dp),
-                                    color = Color.White,
-                                    border = BorderStroke(1.dp, Color(0xFF333333))
-                                ) {
-                                    Column(Modifier.fillMaxWidth()) {
-                                        b.rows.forEachIndexed { r, row ->
-                                            Row(Modifier.fillMaxWidth()) {
-                                                row.forEachIndexed { c, cell ->
-                                                    Text(
-                                                        text = runsToAnnotated(cell),
-                                                        fontSize = (doc.bodySizePt * scale).sp,
-                                                        fontFamily = fontFamilyOrNull(cell.firstOrNull()?.font ?: doc.bodyFont),
-                                                        color = Color(0xFF1A1A1A),
-                                                        modifier = Modifier
-                                                            .weight(1f)
-                                                            .clickable { onStartEdit(EditTarget(idx, r, c)) }
-                                                            .border(
-                                                                border = BorderStroke(0.5.dp, Color(0xFF999999)),
-                                                                shape = RoundedCornerShape(0.dp)
-                                                            )
-                                                            .padding(horizontal = 6.dp, vertical = 5.dp)
-                                                    )
-                                                }
-                                            }
-                                            // 行间分隔线（最后一行不加）
-                                            if (r < b.rows.size - 1) {
-                                                HorizontalDivider(thickness = 0.5.dp, color = Color(0xFF999999))
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+private fun GovDocPaper(
+    doc: GovDoc,
+    onStartEdit: (EditTarget) -> Unit,
+    onWebViewReady: (WebView) -> Unit
+) {
+    // 加载进度与失败状态：让用户看到「正在渲染」反馈
+    var loadProgress by remember { mutableStateOf(0) }
+    var loadFailed by remember { mutableStateOf(false) }
+    // 预生成 HTML：失败时不进入 WebView 而走降级
+    val htmlResult = remember(doc) {
+        runCatching { doc.originalDocx?.let { DocxHtml.toHtml(it, doc.page) } ?: DocxHtml.govDocToHtml(doc) }
+    }
+    if (loadFailed || htmlResult.isFailure) {
+        // 渲染失败：降级到简化文本预览，避免递归调用 PaperPreview
+        SimpleTextFallback(doc = doc, onStartEdit = onStartEdit)
+        return
+    }
+    val html = htmlResult.getOrNull() ?: return
+    Box(modifier = Modifier.fillMaxSize().background(Color(0xFFE8E8E8))) {
+        AndroidView(
+            factory = { ctx ->
+                WebView(ctx).apply {
+                    settings.javaScriptEnabled = true
+                    settings.domStorageEnabled = true
+                    settings.loadWithOverviewMode = true
+                    settings.useWideViewPort = true
+                    settings.builtInZoomControls = true
+                    settings.displayZoomControls = false
+                    settings.setSupportZoom(true)
+                    // 允许混合内容（如有）
+                    settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                    webViewClient = object : WebViewClient() {
+                        override fun onPageFinished(view: WebView?, url: String?) {
+                            loadProgress = 100
+                        }
+                        override fun onReceivedError(view: WebView?, errorCode: Int, description: String?, failingUrl: String?) {
+                            loadFailed = true
                         }
                     }
-                    Spacer(Modifier.height(8.dp))
+                    webChromeClient = object : android.webkit.WebChromeClient() {
+                        override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                            loadProgress = newProgress
+                        }
+                    }
+                    isVerticalScrollBarEnabled = true
+                    // 固定 A4 真实比例 210:297（不按内容高度自适应），让任意屏幕下页面比例都是 A4
+                    setInitialScale(100)
+                    setBackgroundColor(0xFFE8E8E8.toInt())
+                    onWebViewReady(this)
                 }
-            }
+            },
+            update = { wv ->
+                if (html != wv.tag as? String) {
+                    wv.tag = html
+                    wv.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
+                }
+            },
+            modifier = Modifier.fillMaxSize()
+        )
+        // 加载进度条（顶部细线），加载完成后自动消失
+        if (loadProgress in 1..99) {
+            LinearProgressIndicator(
+                progress = { loadProgress / 100f },
+                modifier = Modifier.fillMaxWidth().height(2.dp).align(Alignment.TopCenter),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = Color.Transparent
+            )
         }
-    }
-}
-
-/**
- * 将字体名字符串转为 Compose FontFamily，支持系统内置中文字体。
- * 无法匹配时返回 null，由 Text 使用默认字体。
- */
-private fun fontFamilyOrNull(name: String): FontFamily? {
-    val n = name.trim().lowercase()
-    if (n.isEmpty()) return null
-    return when {
-        n.contains("仿宋") || n.contains("fangsong") -> FontFamily.Serif
-        n.contains("黑体") || n.contains("hei") || n.contains("sans") -> FontFamily.SansSerif
-        n.contains("楷") || n.contains("kai") -> FontFamily.Cursive
-        n.contains("宋") || n.contains("song") || n.contains("serif") || n.contains("times") -> FontFamily.Serif
-        // 英文等宽 / 无衬线等
-        n.contains("mono") || n.contains("courier") -> FontFamily.Monospace
-        else -> null // 默认系统字体
     }
 }
 
@@ -1344,10 +1387,81 @@ private fun StyleTag(label: String) {
     }
 }
 
-private fun runsToAnnotated(runs: List<TextRun>): AnnotatedString = buildAnnotatedString {
-    for (r in runs) {
-        if (r.bold || r.italic || r.underline) {
-            withStyle(SpanStyle(fontWeight = if (r.bold) FontWeight.Bold else FontWeight.Normal, fontStyle = if (r.italic) FontStyle.Italic else FontStyle.Normal, textDecoration = if (r.underline) TextDecoration.Underline else null)) { append(r.text) }
-        } else append(r.text)
+/**
+ * 简化文本降级预览：WebView 渲染失败或 HTML 解析异常时使用。
+ * 把每个段落 / 表格转成可读的纯文本（保留基础格式如粗斜下划线），
+ * 用户仍可点段落进入就地编辑弹窗，导出功能不受影响。
+ */
+@Composable
+private fun SimpleTextFallback(
+    doc: GovDoc,
+    onStartEdit: (EditTarget) -> Unit
+) {
+    Column(
+        Modifier.fillMaxSize().background(Color(0xFFE8E8E8))
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 12.dp)
+    ) {
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+            shape = RoundedCornerShape(8.dp),
+            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+        ) {
+            Text(
+                "WebView 渲染失败，已切换到简化文本预览（可点段落编辑）",
+                fontSize = 11.sp, lineHeight = 16.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(10.dp)
+            )
+        }
+        doc.blocks.forEachIndexed { idx, b ->
+            when (b) {
+                is Block.Para -> {
+                    val fullText = b.runs.joinToString("") { it.text }
+                    Surface(
+                        onClick = { onStartEdit(EditTarget(idx, runIndex = -1)) },
+                        color = Color.White, shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)
+                    ) {
+                        Text(
+                            fullText.ifBlank { "（空段落）" },
+                            fontSize = 14.sp, lineHeight = 22.sp,
+                            modifier = Modifier.padding(10.dp)
+                        )
+                    }
+                }
+                is Block.Table -> {
+                    Surface(
+                        color = Color.White, shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)
+                    ) {
+                        Column(Modifier.padding(8.dp)) {
+                            Text("表格（${b.rows.size} 行）", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                            Spacer(Modifier.height(4.dp))
+                            b.rows.forEachIndexed { ri, row ->
+                                Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                                    row.forEachIndexed { ci, cell ->
+                                        val text = cell.joinToString("") { it.text }
+                                        Surface(
+                                            onClick = { onStartEdit(EditTarget(idx, ri, ci)) },
+                                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                            shape = RoundedCornerShape(4.dp),
+                                            modifier = Modifier.weight(1f).padding(horizontal = 1.dp)
+                                        ) {
+                                            Text(
+                                                text.ifBlank { "·" },
+                                                fontSize = 12.sp,
+                                                maxLines = 3, overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.padding(6.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }

@@ -34,7 +34,8 @@ object PptDraftStore : JsonFileStore<PptDraftStore.PptDraft>() {
         val logoVAlign: String = "bottom",      // Logo 垂直位置：top / bottom
         val defaultLayout: String = "standard",   // 对应 SlideLayout.STANDARD.key
         val layouts: Map<Int, String> = emptyMap(),   // 页索引 -> 布局 key（预设版式，兼容旧草稿）
-        val comps: Map<Int, String> = emptyMap()      // 页索引 -> 组合 key（阶段二自由组合；缺省视为使用预设版式）
+        val comps: Map<Int, String> = emptyMap(),     // 页索引 -> 组合 key（阶段二自由组合；缺省视为使用预设版式）
+        val applyToAll: Boolean = false              // 「全部应用：是/否」开关：进入预览时恢复上次选择
     )
 
     fun save(context: Context, draft: PptDraft) = write(context, draft)
