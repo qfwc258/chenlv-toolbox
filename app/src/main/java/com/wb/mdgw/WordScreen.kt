@@ -498,23 +498,6 @@ fun WordScreen(
         return deferred.await()
     }
 
-    /** 简单解析 collectEdits() 返回的 JSON 数组。
-     *  EditEntry 已提升为顶级 data class（见文件末尾），便于在 suspend 回调内稳定解析。 */
-    fun parseEditJson(json: String): List<EditEntry> {
-        val result = mutableListOf<EditEntry>()
-        // 匹配每个对象 {...}
-        val objRegex = Regex("""\{[^}]+\}""")
-        for (match in objRegex.findAll(json)) {
-            val obj = match.value
-            val b = Regex(""""b"\s*:\s*(\d+)""").find(obj)?.groupValues?.get(1)?.toIntOrNull() ?: continue
-            val row = Regex(""""row"\s*:\s*(-?\d+)""").find(obj)?.groupValues?.get(1)?.toIntOrNull() ?: -1
-            val col = Regex(""""col"\s*:\s*(-?\d+)""").find(obj)?.groupValues?.get(1)?.toIntOrNull() ?: -1
-            val t = Regex(""""t"\s*:\s*"((?:[^"\\]|\\.)*)"""").find(obj)?.groupValues?.get(1) ?: ""
-            result += EditEntry(b, row, col, t.replace("\\n", "\n").replace("\\t", "\t"))
-        }
-        return result
-    }
-
     /**
      * 「预览」即自动生成公文：切到预览子页时，若源 Markdown 非空且与上次生成不一致，
      * 则后台把当前 Markdown 转为公文模型并刷新预览；已是最新则直接显示（保留就地编辑）。
@@ -1475,3 +1458,20 @@ private fun SimpleTextFallback(
 // 解析失败（Unresolved reference: parseEditJson）。
 // ============================================================
 data class EditEntry(val blockIndex: Int, val row: Int, val col: Int, val text: String)
+
+/** 解析 collectEdits() 返回的 JSON 数组。顶级函数，避免局部作用域在
+ *  suspend 回调深嵌套时编译器无法稳定解析（Unresolved reference）。 */
+fun parseEditJson(json: String): List<EditEntry> {
+    val result = mutableListOf<EditEntry>()
+    // 匹配每个对象 {...}
+    val objRegex = Regex("""\{[^}]+\}""")
+    for (match in objRegex.findAll(json)) {
+        val obj = match.value
+        val b = Regex(""""b"\s*:\s*(\d+)""").find(obj)?.groupValues?.get(1)?.toIntOrNull() ?: continue
+        val row = Regex(""""row"\s*:\s*(-?\d+)""").find(obj)?.groupValues?.get(1)?.toIntOrNull() ?: -1
+        val col = Regex(""""col"\s*:\s*(-?\d+)""").find(obj)?.groupValues?.get(1)?.toIntOrNull() ?: -1
+        val t = Regex(""""t"\s*:\s*"((?:[^"\\]|\\.)*)"""").find(obj)?.groupValues?.get(1) ?: ""
+        result += EditEntry(b, row, col, t.replace("\\n", "\n").replace("\\t", "\t"))
+    }
+    return result
+}
