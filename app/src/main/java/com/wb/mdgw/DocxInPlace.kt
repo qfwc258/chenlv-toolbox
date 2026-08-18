@@ -212,7 +212,7 @@ object DocxInPlace {
         var cursor = 0
         for (i in runs.indices) {
             val end = (cursor + counts[i]).coerceAtMost(newText.length)
-            setRunText(runs[i], newText.substring(cursor, end))
+            setRunText(run = runs[i], text = newText.substring(cursor, end))
             cursor = end
         }
         // 极端情形：仍有剩余文字（格式 run 全锁且总长不足），追加到最后一个 run
@@ -220,31 +220,87 @@ object DocxInPlace {
             val tail = newText.substring(cursor)
             val last = runs.last()
             val cur = last.childElements().filter { it.local() == "t" }.firstOrNull()?.textContent ?: ""
-            setRunText(last, cur + tail)
+            setRunText(run = last, text = cur + tail)
         }
     }
 
-    /** 统计一个 run 内所有 w:t 的纯文本长度 */
+    /** 统计一个 run 的「模型文本长度」：w:t 文字 + 每个 w:tab/ w:br 各算 1，
+     *  与 GovDoc 模型（\t / \n）一一对应，确保字符数分配不偏移。 */
     private fun runTextLen(run: Element): Int =
-        run.childElements().filter { it.local() == "t" }.sumOf { it.textContent.length }
+        run.childElements().sumOf { c ->
+            when (c.local()) {
+                "t" -> c.textContent.length
+                "tab", "br" -> 1
+                else -> 0
+            }
+        }
 
-    /** run 是否承载纯文本（含 w:t 子元素）；图片 / 绘图 / 域等承载型 run 返回 false */
+    /** run 是否承载纯文本（含 w:t / w:tab / w:br 子元素）；图片 / 绘图 / 域等承载型 run 返回 false */
     private fun runHasText(run: Element): Boolean =
-        run.childElements().any { it.local() == "t" }
+        run.childElements().any { it.local() in setOf("t", "tab", "br") }
 
-    /** 把 text 写入 run：保留其 rPr 与结构，仅替换 w:t 文字（多 t 合并到第一个） */
+    /**
+     * 把 text 写入 run：保留其 rPr（下划线 / 粗斜体 / 字体 / 字号）与 run 的位置，仅替换文字内容。
+     *
+     * 文字中的 `\t` / `\n` 会还原为 `w:tab` / `w:br`——这是「打开 Word → 编辑 → 保存」后
+     * 仍能保住原文制表位（含前导下划线 / 目录点线）与软换行的关键。
+     * 不含制表符 / 换行时走快速路径，只改 w:t 的文本节点，对 DOM 扰动最小。
+     */
     private fun setRunText(run: Element, text: String) {
-        val texts = run.childElements().filter { it.local() == "t" }
-        // 图片 / 绘图 / 域等承载型 run 不含 w:t（只有 w:drawing 等），
-        // 绝不为其写入 w:t，否则会把文字塞进图片、破坏对象。
-        if (texts.isEmpty()) return
-        texts.first().textContent = text
-        for (i in 1 until texts.size) run.removeChild(texts[i])
+        val content = run.childElements().filter { it.local() in TEXTUAL }
+        // 图片 / 绘图 / 域等承载型 run 不含 w:t / w:tab / w:br（只有 w:drawing 等），
+        // 绝不为其写入文字，否则会把文字塞进图片、破坏对象。
+        if (content.isEmpty()) return
+
+        val needStructure = text.any { it == '\t' || it == '\n' } ||
+            content.any { it.local() == "tab" || it.local() == "br" }
+        if (!needStructure) {
+            val texts = content.filter { it.local() == "t" }
+            if (texts.isEmpty()) return
+            texts.first().textContent = text
+            for (i in 1 until texts.size) run.removeChild(texts[i])
+            return
+        }
+
+        // 需要结构：清掉旧的 t / tab / br，按 \t、\n 切段重建（连续普通文字合并进一个 w:t）
+        val doc = run.ownerDocument
+        // 插入点定位在 rPr 之后，维持 OOXML「rPr 在前、内容在后」的顺序要求
+        var ref: Element? = run.child("w:rPr")
+        for (o in content) run.removeChild(o)
+
+        fun put(node: Element) {
+            val r = ref
+            if (r != null) {
+                val next = r.nextSibling
+                if (next != null) run.insertBefore(node, next) else run.appendChild(node)
+            } else {
+                val first = run.firstChild
+                if (first != null) run.insertBefore(node, first) else run.appendChild(node)
+            }
+            ref = node
+        }
+
+        var i = 0
+        while (i < text.length) {
+            when (text[i]) {
+                '\t' -> { put(doc.createElementNS(NS_W, "w:tab")); i++ }
+                '\n' -> { put(doc.createElementNS(NS_W, "w:br")); i++ }
+                else -> {
+                    var j = i
+                    while (j < text.length && text[j] != '\t' && text[j] != '\n') j++
+                    val t = doc.createElementNS(NS_W, "w:t")
+                    t.setAttributeNS(XML_NS, "xml:space", "preserve")
+                    t.textContent = text.substring(i, j)
+                    put(t)
+                    i = j
+                }
+            }
+        }
     }
 
     /** 清空 run 的文字（保留 rPr），用于整段被清空的情形 */
     private fun clearRunText(run: Element) {
-        for (t in run.childElements().filter { it.local() == "t" }) run.removeChild(t)
+        for (t in run.childElements().filter { it.local() in setOf("t", "tab", "br") }) run.removeChild(t)
     }
 
     /**
@@ -332,6 +388,8 @@ object DocxInPlace {
     private const val XML_DECL = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n"
     private const val NS_W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
     private const val XML_NS = "http://www.w3.org/XML/1998/namespace"
+    /** run 内承载纯文本内容的元素集合：w:t 文字、w:tab 制表符、w:br 软换行 */
+    private val TEXTUAL = setOf("t", "tab", "br")
 
     private fun parseDom(bytes: ByteArray) = DocumentBuilderFactory.newInstance()
         .apply { isNamespaceAware = true }

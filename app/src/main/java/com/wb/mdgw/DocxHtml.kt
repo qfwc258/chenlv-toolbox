@@ -106,9 +106,18 @@ object DocxHtml {
                             val lh = if (b.props.lineSpacingPt > 0)
                                 "line-height:${b.props.lineSpacingPt}pt;" else ""
                             val border = bordersToCss(b.props.borders)
-                            append("<p data-block='$idx' class='doc-para' style='text-align:$align;$indent$lh$border' onclick=\"editBridge.startEdit($idx,-1,-1)\">")
-                            b.runs.forEachIndexed { ri, r ->
-                                append(runToHtml(r, ri))
+                            // 仅当存在「带可见前导符」的制表位时才启用 flex 前导线渲染；
+                            // 其余情形（无制表位 / 制表位无 leader）按普通段落渲染，\t 退化为空白，不引入布局回归。
+                            val visibleLeaderTabs = b.props.tabs.filter { it.leader.isNotBlank() && it.leader != "none" }
+                            val useFlex = visibleLeaderTabs.isNotEmpty()
+                            val cls = if (useFlex) "doc-para doc-para-flex" else "doc-para"
+                            append("<p data-block='$idx' class='$cls' style='text-align:$align;$indent$lh$border' onclick=\"editBridge.startEdit($idx,-1,-1)\">")
+                            if (useFlex) {
+                                append(paraInnerWithTabs(b.runs, visibleLeaderTabs))
+                            } else {
+                                b.runs.forEachIndexed { ri, r ->
+                                    append(runToHtml(r, ri))
+                                }
                             }
                             append("</p>")
                         }
@@ -162,6 +171,12 @@ object DocxHtml {
         // 转换来的 \n 真实换行显示，避免内容被合并成一行
         append(".doc-para{margin:0;padding:0;white-space:pre-line;}")
         append(".doc-para.first-indent{text-indent:24pt;}")
+        // 含前导符制表位的段落：flex 布局让前导线（.doc-leader）自动撑满到制表位，
+        // 还原公文「填空下划线 / 目录点线」。两端文字与线贴合，避免整体左对齐时线贴右边。
+        append(".doc-para-flex{display:flex;flex-wrap:nowrap;align-items:flex-end;width:100%;white-space:normal;}")
+        append(".doc-para-flex>span{display:inline-block;}")
+        // 前导线：靠 flex:1 撑满到制表位；下边框实线/点线/虚线分别还原填空下划线/目录点线
+        append(".doc-leader{flex:1 1 auto;min-width:24pt;display:inline-block;height:1.1em;border-bottom:1pt solid #000;margin:0 2px;}")
         // 表格：1px 黑实线、单元格居中、垂直居中
         append(".doc-table{width:100%;border-collapse:collapse;margin:6pt 0;table-layout:fixed;}")
         append(".doc-table td{border:1px solid #000;padding:4pt 6pt;vertical-align:middle;text-align:center;}")
@@ -173,6 +188,7 @@ object DocxHtml {
         append("@media (max-width:480px){.page{transform:scale(0.92);transform-origin:top center;}}")
         append("</style></head><body>")
     }
+
 
     /** 空白页（用于解析失败兜底） */
     private fun blankHtml(msg: String = ""): String = buildString {
@@ -187,8 +203,22 @@ object DocxHtml {
     }
 
 
+    /** OOXML 边框线型（w:val）→ CSS border-style 关键字 */
+    private fun borderStyleKeyword(value: String): String = when (value) {
+        "single", "thick", "thinThickSmallGap", "thickThinSmallGap", "thinThickThinSmallGap" -> "solid"
+        "double", "doubleWave" -> "double"
+        "dash", "dashed", "dotDash", "dotDotDash" -> "dashed"
+        "dot", "dotted", "sysDot" -> "dotted"
+        "wave" -> "wavy"
+        else -> "solid"
+    }
+
     /** 将单个 TextRun 转为 HTML span */
-    private fun runToHtml(r: TextRun, runIndex: Int): String {
+    private fun runToHtml(r: TextRun, runIndex: Int): String =
+        "<span data-run='$runIndex'${runStyleAttr(r)}>${r.text.escapeHtml()}</span>"
+
+    /** 计算单个 run 的内联 style 属性（含前导空格），供整段渲染与制表位分段渲染复用 */
+    private fun runStyleAttr(r: TextRun): String {
         val styles = mutableListOf<String>()
         if (r.font.isNotBlank()) styles += "font-family:'${r.font.escapeHtml()}',serif"
         if (r.sizePt > 0) styles += "font-size:${r.sizePt}pt"
@@ -199,8 +229,14 @@ object DocxHtml {
         if (r.underline) deco += "underline"
         if (r.strike) deco += "line-through"
         if (deco.isNotEmpty()) styles += "text-decoration:${deco.joinToString(" ")}"
-        val style = if (styles.isNotEmpty()) " style='${styles.joinToString(";")}'" else ""
-        return "<span data-run='$runIndex'$style>${r.text.escapeHtml()}</span>"
+        // 字符边框（w:bdr）：单字强调框 / 印章占位框
+        r.border?.let { b ->
+            if (b.value != "none" && b.value != "nil") {
+                styles += "border:${"%.2f".format(b.szPt)}pt ${borderStyleKeyword(b.value)} ${b.color}"
+                styles += "padding:0 2px"
+            }
+        }
+        return if (styles.isNotEmpty()) " style='${styles.joinToString(";")}'" else ""
     }
 
     /** 段落边框 → CSS border-*（下边框常用于填空线/标题线/签名线） */
@@ -209,18 +245,46 @@ object DocxHtml {
         val sb = StringBuilder()
         fun side(border: ParaBorder?, cssSide: String) {
             if (border == null || border.value == "none" || border.value == "nil") return
-            val bs = when (border.value) {
-                "single", "thick", "thinThickSmallGap", "thickThinSmallGap", "thinThickThinSmallGap" -> "solid"
-                "double", "doubleWave" -> "double"
-                "dash", "dashed", "dotDash", "dotDotDash" -> "dashed"
-                "dot", "dotted", "sysDot" -> "dotted"
-                "wave" -> "wavy"
-                else -> "solid"
-            }
-            sb.append("border-$cssSide:${"%.2f".format(border.szPt)}pt $bs ${border.color};")
+            sb.append("border-$cssSide:${"%.2f".format(border.szPt)}pt ${borderStyleKeyword(border.value)} ${border.color};")
         }
         side(b.top, "top"); side(b.bottom, "bottom"); side(b.left, "left"); side(b.right, "right")
         return sb.toString()
+    }
+
+    /**
+     * 渲染带「前导符制表位」的段落内部 HTML：把 run 文本按 `\t` 拆分，
+     * 在每个制表位处插入一段可伸展的前导线（underline/dot/dash → 下边框实线/点线/虚线），
+     * 从而在预览中还原公文「填空下划线」「目录点线」这类第二类「下划线」。
+     *
+     * 依赖外层 <p> 使用 display:flex 使前导线 flex:1 自动撑满到制表位。
+     */
+    private fun paraInnerWithTabs(runs: List<TextRun>, leaderTabs: List<TabStop>): String = buildString {
+        var tabSeen = 0
+        runs.forEachIndexed { ri, r ->
+            val styleAttr = runStyleAttr(r)
+            val parts = r.text.split("\t")
+            parts.forEachIndexed { pi, seg ->
+                if (pi > 0) {
+                    // 一个制表符：取对应制表位的前导符样式（超出则沿用最后一个）
+                    val tab = leaderTabs.getOrNull(tabSeen) ?: leaderTabs.lastOrNull()
+                    tabSeen++
+                    val ls = when (tab?.leader) {
+                        "underline" -> "solid"
+                        "dot", "middleDot" -> "dotted"
+                        "dash" -> "dashed"
+                        else -> null
+                    }
+                    if (ls != null) {
+                        append("<span class='doc-leader' style='flex:1 1 auto;min-width:24pt;border-bottom:1pt $ls #000;margin:0 2px;'></span>")
+                    } else {
+                        append("<span style='flex:0 0 auto;min-width:24pt;'></span>")
+                    }
+                }
+                if (seg.isNotEmpty()) {
+                    append("<span data-run='$ri'$styleAttr>${seg.escapeHtml()}</span>")
+                }
+            }
+        }
     }
 
     // ========== 私有：document.xml → HTML ==========

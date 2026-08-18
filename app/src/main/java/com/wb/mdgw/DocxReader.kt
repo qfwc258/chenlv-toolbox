@@ -213,6 +213,16 @@ object DocxReader {
                 }
                 ParaBorders(top = borderOf("top"), bottom = borderOf("bottom"), left = borderOf("left"), right = borderOf("right"))
             }
+            // 制表位（含前导符 leader）：公务填空线/目录点线由它驱动，是第二类「下划线」。
+            // 旧字节路径未解析，导致这类效果在模型路径预览中整体缺失。这里解析并保留。
+            val tabs = pPr.child("w:tabs")?.let { tabsEl ->
+                tabsEl.childElements().filter { it.local() == "tab" }.mapNotNull { tab ->
+                    val pos = tab.attr("w:pos")?.toDoubleOrNull()?.div(20.0) ?: return@mapNotNull null // 缇 → 磅
+                    val al = tab.attr("w:val").orEmpty().let { if (it.isBlank()) "left" else it }
+                    val ld = tab.attr("w:leader").orEmpty().let { if (it.isBlank()) "none" else it }
+                    TabStop(posPt = pos, align = al, leader = ld)
+                }
+            }.orEmpty()
             val styleId = pPr.child("w:pStyle")?.attr("w:val")
             if (styleId != null) {
                 val sname = styleNames[styleId].orEmpty()
@@ -235,7 +245,7 @@ object DocxReader {
         }
         return Block.Para(
             finalRuns,
-            ParaProps(align = align, firstLineIndentPt = firstLinePt, lineSpacingPt = linePt, borders = borders)
+            ParaProps(align = align, firstLineIndentPt = firstLinePt, lineSpacingPt = linePt, borders = borders, tabs = tabs)
         )
     }
 
@@ -250,6 +260,7 @@ object DocxReader {
             var strike = false
             var font = ""
             var sz = 0.0
+            var border: ParaBorder? = null
             if (rPr != null) {
                 bold = isOn(rPr.child("w:b"))
                 italic = isOn(rPr.child("w:i"))
@@ -260,10 +271,19 @@ object DocxReader {
                     if (ea.isBlank()) attr("w:ascii").orEmpty() else ea
                 }.orEmpty()
                 sz = rPr.child("w:sz")?.attr("w:val")?.toDoubleOrNull()?.div(2.0) ?: 0.0
+                // 字符边框（w:rPr/w:bdr）：单字强调框 / 印章占位框。旧字节路径完全未处理，
+                // 导致这类「框线」在模型路径预览中缺失。这里解析并保留。
+                border = rPr.child("w:bdr")?.let { bd ->
+                    val v = bd.attr("w:val").orEmpty()
+                    if (v.isBlank() || v == "none" || v == "nil") return@let null
+                    val szPb = bd.attr("w:sz")?.toDoubleOrNull()?.div(8.0) ?: 1.0 // 八分之一磅 → 磅
+                    val color = bd.attr("w:color")?.let { if (it != "auto") "#$it" else "#000000" } ?: "#000000"
+                    ParaBorder(value = v, szPt = szPb, color = color)
+                }
             }
             val sb = StringBuilder()
             appendText(r, sb)
-            runs += TextRun(sb.toString(), font, sz, bold, italic, underline, strike)
+            runs += TextRun(sb.toString(), font, sz, bold, italic, underline, strike, border)
         }
         return runs
     }

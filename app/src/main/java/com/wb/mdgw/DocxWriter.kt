@@ -43,6 +43,13 @@ fun xmlEscape(s: String): String = buildString(s.length + 16) {
     }
 }
 
+/** OOXML w:val 合法的边框线型（ST_Border）：字符边框 / 段落边框直接透传，其余归一到 single */
+val ST_BORDER_VALUES = setOf(
+    "single", "thick", "double", "dotted", "dashed", "dotDash", "dotDotDash", "doubleWave",
+    "wave", "dashSmallGap", "dashDotStroked", "threeDEngrave", "threeDEmboss", "outset", "inset",
+    "thinThickSmallGap", "thickThinSmallGap", "thinThickThinSmallGap", "thickBetweenThin"
+)
+
 /** 对齐方式 */
 @Serializable
 enum class Align(val v: String) { LEFT("left"), CENTER("center"), RIGHT("right"), BOTH("both") }
@@ -58,7 +65,10 @@ data class TextRun(
     /** 下划线：Word 中带下划线的文字，打开/编辑/保存后仍需保留 */
     val underline: Boolean = false,
     /** 删除线（strikethrough）：统一到模型路径后需保留，方能使预览与导出保真 */
-    val strike: Boolean = false
+    val strike: Boolean = false,
+    /** 字符边框（w:rPr/w:bdr）：给单个文字片段加方框，公文中「【】式」强调、
+     *  「印章位置」占位框常用。为 null 表示无边框。 */
+    val border: ParaBorder? = null
 )
 
 /**
@@ -84,6 +94,22 @@ data class ParaBorders(
 )
 
 /**
+ * 段落中的制表位（含前导符）。Word 用制表位 + leader（前导符）实现「目录点线」、
+ * 「填空下划线」等效果——这正是公文里常见的第二类「下划线」。
+ *
+ * @param posPt  制表位位置（从段落左边界起算，磅）
+ * @param align  制表位对齐：left（左对齐）/ center（居中）/ right（右对齐）/ decimal（小数点）
+ * @param leader 前导符：none（无）/ underline（实线）/ dot（点）/ dash（短横线）/ middleDot（中间点）
+ *               只有非 none 的 leader 才会在预览/打印里渲染出「线/点」，none 则只是跳到该位置。
+ */
+@Serializable
+data class TabStop(
+    val posPt: Double,
+    val align: String = "left",
+    val leader: String = "none"
+)
+
+/**
  * 段落属性。
  * firstLineIndentPt: 首行缩进（磅）；lineSpacingPt: 固定行距（磅）
  */
@@ -94,7 +120,9 @@ data class ParaProps(
     val lineSpacingPt: Double = 28.0,
     val spaceBeforePt: Double = 0.0,
     val spaceAfterPt: Double = 0.0,
-    val borders: ParaBorders? = null
+    val borders: ParaBorders? = null,
+    /** 段落制表位（含前导符）。公务填空线/目录点线常用的第二类「下划线」由它驱动。空列表表示无制表位。 */
+    val tabs: List<TabStop> = emptyList()
 )
 
 /** 文档中的块级元素 */
@@ -176,17 +204,51 @@ class DocxWriter(
             .append("\" w:cs=\"").append(f).append("\"/>")
         if (r.bold) sb.append("<w:b/><w:bCs/>")
         if (r.italic) sb.append("<w:i/><w:iCs/>")
+        // OOXML 顺序要求：u / strike 必须排在 sz / szCs 之前
         if (r.underline) sb.append("<w:u w:val=\"single\"/>")
+        if (r.strike) sb.append("<w:strike/>")
+        // 字符边框（w:bdr）：公文中单字强调框 / 印章占位框
+        r.border?.let { b ->
+            // w:bdr 取 ST_Border 枚举值：合法值直接透传，别名与未知值归一到 single
+            val v = when (b.value) {
+                in ST_BORDER_VALUES -> b.value
+                "dash" -> "dashed"
+                "dot" -> "dotted"
+                else -> "single"
+            }
+            val color = b.color.removePrefix("#")
+            sb.append("<w:bdr w:val=\"").append(v)
+                .append("\" w:sz=\"").append((b.szPt * 8).roundToInt().coerceIn(2, 96))
+                .append("\" w:space=\"0\" w:color=\"").append(xmlEscape(color)).append("\"/>")
+        }
         val hp = ptToHalfPt(r.sizePt)
         sb.append("<w:sz w:val=\"").append(hp).append("\"/>")
         sb.append("<w:szCs w:val=\"").append(hp).append("\"/>")
         sb.append("</w:rPr>")
-        sb.append("<w:t xml:space=\"preserve\">").append(xmlEscape(r.text)).append("</w:t>")
+        // 文字中的 \t / \n 拆成 w:tab / w:br，保证导出 Word 后制表位（含前导线）与软换行同原文一致
+        val t = r.text
+        if (t.isEmpty()) {
+            sb.append("<w:t xml:space=\"preserve\"></w:t>")
+        } else {
+            var i = 0
+            while (i < t.length) {
+                when (t[i]) {
+                    '\t' -> { sb.append("<w:tab/>"); i++ }
+                    '\n' -> { sb.append("<w:br/>"); i++ }
+                    else -> {
+                        var j = i
+                        while (j < t.length && t[j] != '\t' && t[j] != '\n') j++
+                        sb.append("<w:t xml:space=\"preserve\">").append(xmlEscape(t.substring(i, j))).append("</w:t>")
+                        i = j
+                    }
+                }
+            }
+        }
         sb.append("</w:r>")
         return sb.toString()
     }
 
-    /** 注意：OOXML 中 pPr 子元素顺序必须为 spacing -> ind -> jc，否则 Word 会判定文档损坏 */
+    /** 注意：OOXML 中 pPr 子元素顺序必须为 spacing -> ind -> jc，必须在 jc 之后紧跟 tabs，否则 Word 会判定文档损坏 */
     private fun pPrXml(p: ParaProps): String {
         val sb = StringBuilder()
         sb.append("<w:pPr>")
@@ -196,6 +258,26 @@ class DocxWriter(
             .append("\" w:lineRule=\"exact\"/>")
         sb.append("<w:ind w:firstLine=\"").append(ptToTwips(p.firstLineIndentPt)).append("\"/>")
         sb.append("<w:jc w:val=\"").append(p.align.v).append("\"/>")
+        // 制表位（含前导符 leader）：公务填空线/目录点线由它驱动。顺序在 jc 之后、其它 pPr 子项之前
+        if (p.tabs.isNotEmpty()) {
+            sb.append("<w:tabs>")
+            for (t in p.tabs) {
+                val al = when (t.align) {
+                    "center" -> "center"
+                    "right" -> "right"
+                    "decimal" -> "decimal"
+                    else -> "left"
+                }
+                val ld = when (t.leader) {
+                    "underline", "dot", "dash", "middleDot", "none" -> t.leader
+                    else -> "none"
+                }
+                sb.append("<w:tab w:val=\"").append(al).append("\" w:pos=\"").append(ptToTwips(t.posPt)).append("\"")
+                if (ld != "none") sb.append(" w:leader=\"").append(ld).append("\"")
+                sb.append("/>")
+            }
+            sb.append("</w:tabs>")
+        }
         sb.append("</w:pPr>")
         return sb.toString()
     }
