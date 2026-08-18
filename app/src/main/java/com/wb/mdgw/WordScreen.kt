@@ -296,6 +296,77 @@ fun WordScreen(
         saveName = if (govDoc?.originalDocx != null) "$base.docx" else base
         showSaveDialog = true
     }
+
+    /**
+     * 从 WebView 收集用户编辑的文本，回写到 GovDoc.blocks（同步等待 JS 完成）。
+     * 用于导出前确保所有编辑都已同步。
+     *
+     * 用 CompletableDeferred 而非 suspendCancellableCoroutine，避免协程库版本对
+     * suspendCancellableCoroutine 签名（onCancellation 形参是否必填）的影响。
+     */
+    suspend fun syncWebViewEditsSuspend(): GovDoc? {
+        val wv = webView ?: return null
+        val d = govDoc ?: return null
+
+        val deferred = CompletableDeferred<GovDoc?>(d)
+        wv.evaluateJavascript("collectEdits()") { json ->
+            // 回调到达前协程可能已取消（用户退出页面），防止重复完成 deferred
+            if (deferred.isCompleted) return@evaluateJavascript
+            try {
+                if (json == null || json == "null" || json.isBlank()) {
+                    deferred.complete(d)
+                    return@evaluateJavascript
+                }
+                val trimmed = json.trim().removeSurrounding("\"")
+                    .replace("\\\"", "\"")
+                // 解析编辑 JSON 数组（直接内联，绕开所有作用域相关的解析问题）
+                val edits = mutableListOf<EditEntry>()
+                val objRegex = Regex("""\{[^}]+\}""")
+                for (match in objRegex.findAll(trimmed)) {
+                    val obj = match.value
+                    val b = Regex(""""b"\s*:\s*(\d+)""").find(obj)?.groupValues?.get(1)?.toIntOrNull() ?: continue
+                    val row = Regex(""""row"\s*:\s*(-?\d+)""").find(obj)?.groupValues?.get(1)?.toIntOrNull() ?: -1
+                    val col = Regex(""""col"\s*:\s*(-?\d+)""").find(obj)?.groupValues?.get(1)?.toIntOrNull() ?: -1
+                    val t = Regex(""""t"\s*:\s*"((?:[^"\\]|\\.)*)"""").find(obj)?.groupValues?.get(1) ?: ""
+                    edits += EditEntry(b, row, col, t.replace("\\n", "\n").replace("\\t", "\t"))
+                }
+                if (edits.isEmpty()) {
+                    deferred.complete(d)
+                    return@evaluateJavascript
+                }
+                val blocks = d.blocks.toMutableList()
+                val newEdits = mutableSetOf<EditTarget>()
+                for (edit in edits) {
+                    val b = blocks.getOrNull(edit.blockIndex) ?: continue
+                    when {
+                        edit.row < 0 && b is Block.Para -> {
+                            val dist = distributeRunsRespectingFormat(b.runs, edit.text)
+                            val newRuns = b.runs.mapIndexed { k, r -> r.copy(text = dist[k]) }
+                            blocks[edit.blockIndex] = Block.Para(newRuns, b.props)
+                            newRuns.indices.forEach { newEdits += EditTarget(edit.blockIndex, runIndex = it) }
+                        }
+                        edit.row >= 0 && b is Block.Table -> {
+                            val cell = b.rows.getOrNull(edit.row)?.getOrNull(edit.col) ?: continue
+                            val dist = distributeRunsRespectingFormat(cell, edit.text)
+                            val newCell = cell.mapIndexed { k, r -> r.copy(text = dist[k]) }
+                            val newRows = b.rows.mapIndexed { ri, row ->
+                                if (ri != edit.row) row else row.mapIndexed { ci, c ->
+                                    if (ci != edit.col) c else newCell
+                                }
+                            }
+                            blocks[edit.blockIndex] = Block.Table(newRows)
+                            newCell.indices.forEach { newEdits += EditTarget(edit.blockIndex, edit.row, edit.col, runIndex = it) }
+                        }
+                    }
+                }
+                deferred.complete(d.copy(blocks = blocks, edits = d.edits + newEdits))
+            } catch (e: Exception) {
+                deferred.complete(d)
+            }
+        }
+        return deferred.await()
+    }
+
     fun performSave(name: String) {
         // 区分来源：Word 文档源以 .docx 另存（先将 WebView 就地编辑同步进公文模型再生成）；
         // Markdown 源保持原 .md 逻辑（可写回原文件或另存）。
@@ -466,76 +537,6 @@ fun WordScreen(
         pendingKind = kind
         exportName = FileUtils.baseName(d.title).ifBlank { "公文" }
         showExportDialog = true
-    }
-
-    /**
-     * 从 WebView 收集用户编辑的文本，回写到 GovDoc.blocks（同步等待 JS 完成）。
-     * 用于导出前确保所有编辑都已同步。
-     *
-     * 用 CompletableDeferred 而非 suspendCancellableCoroutine，避免协程库版本对
-     * suspendCancellableCoroutine 签名（onCancellation 形参是否必填）的影响。
-     */
-    suspend fun syncWebViewEditsSuspend(): GovDoc? {
-        val wv = webView ?: return null
-        val d = govDoc ?: return null
-
-        val deferred = CompletableDeferred<GovDoc?>(d)
-        wv.evaluateJavascript("collectEdits()") { json ->
-            // 回调到达前协程可能已取消（用户退出页面），防止重复完成 deferred
-            if (deferred.isCompleted) return@evaluateJavascript
-            try {
-                if (json == null || json == "null" || json.isBlank()) {
-                    deferred.complete(d)
-                    return@evaluateJavascript
-                }
-                val trimmed = json.trim().removeSurrounding("\"")
-                    .replace("\\\"", "\"")
-                // 解析编辑 JSON 数组（直接内联，绕开所有作用域相关的解析问题）
-                val edits = mutableListOf<EditEntry>()
-                val objRegex = Regex("""\{[^}]+\}""")
-                for (match in objRegex.findAll(trimmed)) {
-                    val obj = match.value
-                    val b = Regex(""""b"\s*:\s*(\d+)""").find(obj)?.groupValues?.get(1)?.toIntOrNull() ?: continue
-                    val row = Regex(""""row"\s*:\s*(-?\d+)""").find(obj)?.groupValues?.get(1)?.toIntOrNull() ?: -1
-                    val col = Regex(""""col"\s*:\s*(-?\d+)""").find(obj)?.groupValues?.get(1)?.toIntOrNull() ?: -1
-                    val t = Regex(""""t"\s*:\s*"((?:[^"\\]|\\.)*)"""").find(obj)?.groupValues?.get(1) ?: ""
-                    edits += EditEntry(b, row, col, t.replace("\\n", "\n").replace("\\t", "\t"))
-                }
-                if (edits.isEmpty()) {
-                    deferred.complete(d)
-                    return@evaluateJavascript
-                }
-                val blocks = d.blocks.toMutableList()
-                val newEdits = mutableSetOf<EditTarget>()
-                for (edit in edits) {
-                    val b = blocks.getOrNull(edit.blockIndex) ?: continue
-                    when {
-                        edit.row < 0 && b is Block.Para -> {
-                            val dist = distributeRunsRespectingFormat(b.runs, edit.text)
-                            val newRuns = b.runs.mapIndexed { k, r -> r.copy(text = dist[k]) }
-                            blocks[edit.blockIndex] = Block.Para(newRuns, b.props)
-                            newRuns.indices.forEach { newEdits += EditTarget(edit.blockIndex, runIndex = it) }
-                        }
-                        edit.row >= 0 && b is Block.Table -> {
-                            val cell = b.rows.getOrNull(edit.row)?.getOrNull(edit.col) ?: continue
-                            val dist = distributeRunsRespectingFormat(cell, edit.text)
-                            val newCell = cell.mapIndexed { k, r -> r.copy(text = dist[k]) }
-                            val newRows = b.rows.mapIndexed { ri, row ->
-                                if (ri != edit.row) row else row.mapIndexed { ci, c ->
-                                    if (ci != edit.col) c else newCell
-                                }
-                            }
-                            blocks[edit.blockIndex] = Block.Table(newRows)
-                            newCell.indices.forEach { newEdits += EditTarget(edit.blockIndex, edit.row, edit.col, runIndex = it) }
-                        }
-                    }
-                }
-                deferred.complete(d.copy(blocks = blocks, edits = d.edits + newEdits))
-            } catch (e: Exception) {
-                deferred.complete(d)
-            }
-        }
-        return deferred.await()
     }
 
     /**
