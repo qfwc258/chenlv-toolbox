@@ -1212,91 +1212,102 @@ private fun PaperPreview(
 }
 
 /**
- * A4 纸面模拟：灰底白页 + 阴影，页面宽度拉满手机屏幕，内容区按 A4 公文页边距比例留白。
- * 模拟 WPS / Word 的「页面视图」效果。
+ * A4 纸面模拟：灰底白页 + 阴影，页面宽度拉满手机屏幕，高度按 A4 比例 (1:√2) 约束。
+ * 模拟 WPS / Word 的「页面视图」效果，文本字号、边距均按页面比例缩放。
  */
 @Composable
 private fun GovDocPaper(doc: GovDoc, onStartEdit: (EditTarget) -> Unit) {
-    BoxWithConstraints(
-        Modifier
-            .fillMaxSize()
-            .background(Color(0xFFE8E8E8))
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 6.dp, vertical = 10.dp),
-        contentAlignment = Alignment.TopCenter
-    ) {
-        val pageW = maxWidth
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        // 页面宽度 = 屏幕宽度 - 阴影留白
+        val pageW = maxWidth - 12.dp
         val page = doc.page
-        // 按 A4 比例从页面宽度推算内容区边距（单位：dp）
+        // A4 高宽比：29.7 / 21 ≈ 1.414
+        val pageH = pageW * (page.heightCm / page.widthCm).toFloat()
+        val scale = pageW.value / (page.widthCm * 37.795f) // dp per cm ≈ 37.795, 用于字号缩放
+        // 内容区边距 = 页面宽度 × (边距cm / 页面宽度cm)
         val lPad = pageW * (page.leftCm / page.widthCm).toFloat()
         val rPad = pageW * (page.rightCm / page.widthCm).toFloat()
         val tPad = pageW * (page.topCm / page.widthCm).toFloat()
         val bPad = pageW * (page.bottomCm / page.widthCm).toFloat()
 
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(2.dp),
-            color = Color.White,
-            shadowElevation = 4.dp
+        Column(
+            Modifier
+                .fillMaxSize()
+                .background(Color(0xFFE8E8E8))
+                .verticalScroll(rememberScrollState())
+                .padding(vertical = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(start = lPad, end = rPad, top = tPad, bottom = bPad),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+            Surface(
+                modifier = Modifier
+                    .width(pageW)
+                    .heightIn(min = pageH),
+                shape = RoundedCornerShape(2.dp),
+                color = Color.White,
+                shadowElevation = 4.dp
             ) {
-                doc.blocks.forEachIndexed { idx, b ->
-                    when (b) {
-                        is Block.Para -> {
-                            if (b.runs.isEmpty()) {
-                                Spacer(Modifier.height(8.dp))
-                            } else {
-                                val sizePt = b.runs.firstOrNull()?.sizePt ?: doc.bodySizePt
-                                val align = when (b.props.align) {
-                                    Align.CENTER -> TextAlign.Center
-                                    Align.RIGHT -> TextAlign.End
-                                    Align.BOTH -> TextAlign.Justify
-                                    else -> TextAlign.Start
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(start = lPad, end = rPad, top = tPad, bottom = bPad),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    doc.blocks.forEachIndexed { idx, b ->
+                        when (b) {
+                            is Block.Para -> {
+                                if (b.runs.isEmpty()) {
+                                    Spacer(Modifier.height(8.dp))
+                                } else {
+                                    // 字号按页面比例缩放，使预览与打印一致
+                                    val sizePt = b.runs.firstOrNull()?.sizePt ?: doc.bodySizePt
+                                    val displaySize = (sizePt * scale).sp
+                                    val align = when (b.props.align) {
+                                        Align.CENTER -> TextAlign.Center
+                                        Align.RIGHT -> TextAlign.End
+                                        Align.BOTH -> TextAlign.Justify
+                                        else -> TextAlign.Start
+                                    }
+                                    val lhSp = (if (b.props.lineSpacingPt > 0) b.props.lineSpacingPt else doc.lineSpacingPt)
+                                    val displayLh = (lhSp * scale).sp
+                                    val first = b.runs.first()
+                                    Text(
+                                        text = runsToAnnotated(b.runs),
+                                        fontSize = displaySize,
+                                        fontFamily = fontFamilyOrNull(first.font),
+                                        textAlign = align,
+                                        lineHeight = displayLh,
+                                        color = Color(0xFF1A1A1A),
+                                        style = TextStyle(textIndent = TextIndent(firstLine = (b.props.firstLineIndentPt * scale).sp)),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { onStartEdit(EditTarget(idx)) }
+                                            .padding(vertical = 3.dp)
+                                    )
                                 }
-                                val lh = (if (b.props.lineSpacingPt > 0) b.props.lineSpacingPt else doc.lineSpacingPt).sp
-                                val first = b.runs.first()
-                                Text(
-                                    text = runsToAnnotated(b.runs),
-                                    fontSize = sizePt.sp,
-                                    fontFamily = fontFamilyOrNull(first.font),
-                                    textAlign = align,
-                                    lineHeight = lh,
-                                    color = Color(0xFF1A1A1A),
-                                    style = TextStyle(textIndent = TextIndent(firstLine = b.props.firstLineIndentPt.sp)),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable { onStartEdit(EditTarget(idx)) }
-                                        .padding(vertical = 3.dp)
-                                )
                             }
-                        }
-                        is Block.Table -> {
-                            Card(
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                                shape = RoundedCornerShape(6.dp),
-                                colors = CardDefaults.cardColors(containerColor = Color.White),
-                                border = BorderStroke(1.dp, Color(0xFFBDBDBD))
-                            ) {
-                                Column(Modifier.fillMaxWidth()) {
-                                    b.rows.forEachIndexed { r, row ->
-                                        Row(Modifier.fillMaxWidth()) {
-                                            row.forEachIndexed { c, cell ->
-                                                Text(
-                                                    text = runsToAnnotated(cell),
-                                                    fontSize = doc.bodySizePt.sp,
-                                                    fontFamily = fontFamilyOrNull(cell.firstOrNull()?.font ?: doc.bodyFont),
-                                                    color = Color(0xFF1A1A1A),
-                                                    modifier = Modifier
-                                                        .weight(1f)
-                                                        .clickable { onStartEdit(EditTarget(idx, r, c)) }
-                                                        .border(BorderStroke(0.5.dp, Color(0xFFBDBDBD)))
-                                                        .padding(8.dp)
-                                                )
+                            is Block.Table -> {
+                                Card(
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                    shape = RoundedCornerShape(6.dp),
+                                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                                    border = BorderStroke(1.dp, Color(0xFFBDBDBD))
+                                ) {
+                                    Column(Modifier.fillMaxWidth()) {
+                                        b.rows.forEachIndexed { r, row ->
+                                            Row(Modifier.fillMaxWidth()) {
+                                                row.forEachIndexed { c, cell ->
+                                                    Text(
+                                                        text = runsToAnnotated(cell),
+                                                        fontSize = (doc.bodySizePt * scale).sp,
+                                                        fontFamily = fontFamilyOrNull(cell.firstOrNull()?.font ?: doc.bodyFont),
+                                                        color = Color(0xFF1A1A1A),
+                                                        modifier = Modifier
+                                                            .weight(1f)
+                                                            .clickable { onStartEdit(EditTarget(idx, r, c)) }
+                                                            .border(BorderStroke(0.5.dp, Color(0xFFBDBDBD)))
+                                                            .padding(8.dp)
+                                                    )
+                                                }
                                             }
                                         }
                                     }
@@ -1304,8 +1315,8 @@ private fun GovDocPaper(doc: GovDoc, onStartEdit: (EditTarget) -> Unit) {
                             }
                         }
                     }
+                    Spacer(Modifier.height(8.dp))
                 }
-                Spacer(Modifier.height(8.dp))
             }
         }
     }
