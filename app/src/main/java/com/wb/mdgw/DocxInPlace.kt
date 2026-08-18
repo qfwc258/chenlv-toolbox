@@ -1,5 +1,6 @@
 package com.wb.mdgw
 
+import android.util.Log
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.StringWriter
@@ -7,6 +8,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 import javax.xml.parsers.DocumentBuilderFactory
+import javax.xml.transform.OutputKeys
 import javax.xml.transform.TransformerFactory
 import javax.xml.transform.dom.DOMSource
 import javax.xml.transform.stream.StreamResult
@@ -33,8 +35,12 @@ object DocxInPlace {
      * @param edits    用户编辑过的位置；仅这些位置会被替换，其余原样
      */
     fun edit(original: ByteArray, blocks: List<Block>, edits: Set<EditTarget>): ByteArray {
+        Log.d("DocxInPlace", "edit: blocks=${blocks.size}, edits=${edits.size}")
         // 没有任何编辑：原样返回源文件，字节级完全一致（最彻底保真）
-        if (edits.isEmpty()) return original
+        if (edits.isEmpty()) {
+            Log.w("DocxInPlace", "edit: edits is empty, returning original bytes unchanged")
+            return original
+        }
 
         // 1. 解包，保留全部部件
         val parts = mutableMapOf<String, ByteArray>()
@@ -60,6 +66,7 @@ object DocxInPlace {
         //    「run 级」编辑（runIndex>=0）——后者直接定位原始 run 写入，保留其各自 rPr，
         //    从而让带下划线 / 粗斜体的片段成为独立可编辑单元（字段跟着变长、互不干扰）。
         var bIdx = 0
+        var appliedCount = 0
         for (child in body.childElements()) {
             when (child.local()) {
                 "p" -> {
@@ -69,14 +76,21 @@ object DocxInPlace {
                         if (paraTargets.any { it.runIndex < 0 }) {
                             // 整段编辑：保留既有 distributeRespectingFormat 逻辑（向后兼容）
                             replaceParaText(child, para)
+                            appliedCount++
                         } else {
                             // run 级编辑：逐 run 定位原始 run 直接写入，保留各自 rPr
                             val runs = child.childElements().filter { it.local() == "r" }
+                            var runApplied = 0
                             for (t in paraTargets) {
                                 val run = runs.getOrNull(t.runIndex)
                                 val newText = para.runs.getOrNull(t.runIndex)?.text
-                                if (run != null && newText != null) setRunText(run, newText)
+                                if (run != null && newText != null) {
+                                    setRunText(run, newText)
+                                    runApplied++
+                                }
                             }
+                            if (runApplied > 0) appliedCount++
+                            Log.d("DocxInPlace", "edit: block[$bIdx] PARA, targets=${paraTargets.size}, runs=${runs.size}, applied=$runApplied")
                         }
                     }
                     bIdx++
@@ -84,6 +98,7 @@ object DocxInPlace {
                 "tbl" -> {
                     val table = blocks.getOrNull(bIdx) as? Block.Table
                     var r = 0
+                    var cellApplied = 0
                     for (tr in child.childElements()) {
                         if (tr.local() != "tr") continue
                         var c = 0
@@ -97,6 +112,7 @@ object DocxInPlace {
                                 if (cell != null) {
                                     if (cellTargets.any { it.runIndex < 0 }) {
                                         replaceCellText(tc, cell)
+                                        cellApplied++
                                     } else {
                                         val firstP = tc.childElements().firstOrNull { it.local() == "p" }
                                         val runs = firstP?.childElements()?.filter { it.local() == "r" }
@@ -104,7 +120,10 @@ object DocxInPlace {
                                         for (t in cellTargets) {
                                             val run = runs.getOrNull(t.runIndex)
                                             val newText = cell.getOrNull(t.runIndex)?.text
-                                            if (run != null && newText != null) setRunText(run, newText)
+                                            if (run != null && newText != null) {
+                                                setRunText(run, newText)
+                                                cellApplied++
+                                            }
                                         }
                                     }
                                 }
@@ -113,14 +132,22 @@ object DocxInPlace {
                         }
                         r++
                     }
+                    if (cellApplied > 0) appliedCount++
+                    Log.d("DocxInPlace", "edit: block[$bIdx] TABLE, rows=$r, cellsApplied=$cellApplied")
                     bIdx++
                 }
                 // sectPr 等其它节点原样不动
             }
         }
+        Log.d("DocxInPlace", "edit: total blocks processed=$bIdx, applied=$appliedCount")
 
         // 4. 用标准 Transformer 序列化（正确处理命名空间 / w: 前缀绑定），其余部件原样写回
-        parts["word/document.xml"] = (XML_DECL + serialize(docEl)).toByteArray(Charsets.UTF_8)
+        val serialized = serialize(docEl)
+        Log.d("DocxInPlace", "edit: serialized document.xml, checking namespace prefixes...")
+        // 确保序列化后的 XML 保留了 w: 命名空间前缀（某些 Transformer 实现可能用 ns1: 等自动前缀）
+        val fixed = fixNamespacePrefix(serialized)
+        parts["word/document.xml"] = (XML_DECL + fixed).toByteArray(Charsets.UTF_8)
+        Log.d("DocxInPlace", "edit: done, writing ${parts.size} zip entries")
         val bos = ByteArrayOutputStream(1 shl 18)
         ZipOutputStream(bos).use { zip ->
             for ((name, data) in parts) {
@@ -314,11 +341,63 @@ object DocxInPlace {
     /** 用标准 Transformer 序列化，正确处理命名空间与 w: 前缀绑定 */
     private fun serialize(el: Element): String {
         val tf = TransformerFactory.newInstance().newTransformer()
-        tf.setOutputProperty(javax.xml.transform.OutputKeys.OMIT_XML_DECLARATION, "yes")
-        tf.setOutputProperty(javax.xml.transform.OutputKeys.ENCODING, "UTF-8")
+        tf.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "yes")
+        tf.setOutputProperty(OutputKeys.ENCODING, "UTF-8")
+        tf.setOutputProperty(OutputKeys.METHOD, "xml")
         val sw = StringWriter()
         tf.transform(DOMSource(el), StreamResult(sw))
         return sw.toString()
+    }
+
+    /**
+     * 部分 Android Transformer 实现会将 w: 前缀替换为 ns1: 等自动前缀，
+     * 或使用默认命名空间（无前缀），导致输出的 document.xml 格式不正确。
+     * 此函数检测并修复这两种情况，确保输出始终使用 w: 前缀。
+     */
+    private fun fixNamespacePrefix(xml: String): String {
+        val nsUri = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+        // 检查 w: 前缀是否已保留（正常情况）
+        if (xml.contains(" xmlns:w=\"") || xml.contains(" xmlns:W=\"") || xml.contains("<w:") || xml.contains("</w:")) {
+            Log.d("DocxInPlace", "fixNamespacePrefix: w: prefix already present, no fix needed")
+            return xml
+        }
+        // 情况 1：检测自动生成的前缀（如 ns1:）并替换为 w:
+        val prefixRegex = Regex("xmlns:(\\w+)=\"" + Regex.escape(nsUri) + "\"")
+        val match = prefixRegex.find(xml)
+        if (match != null) {
+            val autoPrefix = match.groupValues[1]
+            if (autoPrefix != "w") {
+                Log.w("DocxInPlace", "fixNamespacePrefix: auto prefix '$autoPrefix' -> 'w'")
+                // 注意替换顺序：先替换属性（= 号），再替换标签
+                return xml
+                    .replace(":$autoPrefix=", ":w=")
+                    .replace(":$autoPrefix ", ":w ")
+                    .replace("<$autoPrefix:", "<w:")
+                    .replace("</$autoPrefix:", "</w:")
+            }
+        }
+        // 情况 2：检测默认命名空间（无前缀），将其转换为 w: 前缀
+        val defaultNsRegex = Regex("xmlns=\"" + Regex.escape(nsUri) + "\"")
+        if (defaultNsRegex.containsMatchIn(xml)) {
+            Log.w("DocxInPlace", "fixNamespacePrefix: default namespace -> w: prefix")
+            // 将默认命名空间声明改为 w: 前缀声明
+            var fixed = xml.replaceFirst("xmlns=\"$nsUri\"", "xmlns:w=\"$nsUri\"")
+            // 为所有无前缀的元素添加 w: 前缀（它们原本在默认命名空间中）
+            // 匹配 <tagName 或 </tagName，后跟空格、> 或 : 之一
+            // 如果后跟 : 说明该标签已有其他前缀（如 mc:），不添加 w: 前缀
+            val tagRegex = Regex("<(/)?([a-zA-Z][a-zA-Z0-9]*)([\\s>:])")
+            fixed = tagRegex.replace(fixed) { mr ->
+                val slash = mr.groupValues[1]
+                val tag = mr.groupValues[2]
+                val after = mr.groupValues[3]
+                // 跳过已带前缀的标签（后跟 :）、xml 声明、处理指令
+                if (after == ":" || tag in setOf("xml", "?xml")) mr.value
+                else "<${slash}w:$tag$after"
+            }
+            return fixed
+        }
+        Log.w("DocxInPlace", "fixNamespacePrefix: no namespace fix applied, returning as-is")
+        return xml
     }
 
     private fun Element.local(): String {

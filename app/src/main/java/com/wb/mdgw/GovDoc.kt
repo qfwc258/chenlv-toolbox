@@ -67,7 +67,22 @@ data class GovDoc(
     fun toDocx(): ByteArray {
         // Word 源：基于原文件原位修改，表格 / 样式 / 文档设置完全保留
         if (originalDocx != null) {
-            return DocxInPlace.edit(originalDocx, blocks, edits)
+            // 始终以 blocks 为唯一真源生成编辑目标，不依赖 edits 集合。
+            // edits 可能因序列化/反序列化丢失（@Transient originalDocx 被清空后
+            // 走 DocxWriter 重建分支，但若 originalDocx 仍在而 edits 异常，
+            // 则 edits.isEmpty() 条件不成立时也会丢失修改），
+            // 因此直接根据 blocks 内容生成全量编辑目标，确保所有修改不丢失。
+            val effectiveEdits = buildSet {
+                for ((idx, b) in blocks.withIndex()) {
+                    when (b) {
+                        is Block.Para -> b.runs.indices.forEach { add(EditTarget(idx, runIndex = it)) }
+                        is Block.Table -> b.rows.forEachIndexed { r, row ->
+                            row.forEachIndexed { c, _ -> add(EditTarget(idx, r, c)) }
+                        }
+                    }
+                }
+            }
+            return DocxInPlace.edit(originalDocx, blocks, effectiveEdits)
         }
         // Markdown / 新建：由 DocxWriter 重建规范公文
         val w = DocxWriter(
