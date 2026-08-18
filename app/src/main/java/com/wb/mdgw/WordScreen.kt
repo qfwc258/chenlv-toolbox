@@ -52,6 +52,14 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+// ============================================================
+// 顶部声明：WebView 编辑收集项 + 解析函数
+// 放在文件最前（在所有调用方之前），彻底解决 Unresolved reference。
+// 之前放在文件末尾 / Composable 内部 / 局部函数都被 Kotlin 编译器某些
+// 路径下误判为不可见。
+// ============================================================
+data class EditEntry(val blockIndex: Int, val row: Int, val col: Int, val text: String)
+
 // 设计 token 复用 com.wb.mdgw.UiTokens 的公共令牌（UI_SECTION_RADIUS / UI_CARD_RADIUS /
 // UI_BTN_RADIUS / UI_ACTION_HEIGHT），避免在各 tab 屏幕内重复定义（参见第8项 de-god）。
 
@@ -460,7 +468,17 @@ fun WordScreen(
                 }
                 val trimmed = json.trim().removeSurrounding("\"")
                     .replace("\\\"", "\"")
-                val edits = parseEditJson(trimmed)
+                // 解析编辑 JSON 数组（直接内联，绕开所有作用域相关的解析问题）
+                val edits = mutableListOf<EditEntry>()
+                val objRegex = Regex("""\{[^}]+\}""")
+                for (match in objRegex.findAll(trimmed)) {
+                    val obj = match.value
+                    val b = Regex(""""b"\s*:\s*(\d+)""").find(obj)?.groupValues?.get(1)?.toIntOrNull() ?: continue
+                    val row = Regex(""""row"\s*:\s*(-?\d+)""").find(obj)?.groupValues?.get(1)?.toIntOrNull() ?: -1
+                    val col = Regex(""""col"\s*:\s*(-?\d+)""").find(obj)?.groupValues?.get(1)?.toIntOrNull() ?: -1
+                    val t = Regex(""""t"\s*:\s*"((?:[^"\\]|\\.)*)"""").find(obj)?.groupValues?.get(1) ?: ""
+                    edits += EditEntry(b, row, col, t.replace("\\n", "\n").replace("\\t", "\t"))
+                }
                 if (edits.isEmpty()) {
                     deferred.complete(d)
                     return@evaluateJavascript
@@ -1450,28 +1468,4 @@ private fun SimpleTextFallback(
             }
         }
     }
-}
-
-// ============================================================
-// 顶部 data class：WebView 编辑收集项
-// 提升为文件顶级声明，避免嵌套在 Composable 内部时被 suspend 回调闭包
-// 解析失败（Unresolved reference: parseEditJson）。
-// ============================================================
-data class EditEntry(val blockIndex: Int, val row: Int, val col: Int, val text: String)
-
-/** 解析 collectEdits() 返回的 JSON 数组。顶级函数，避免局部作用域在
- *  suspend 回调深嵌套时编译器无法稳定解析（Unresolved reference）。 */
-fun parseEditJson(json: String): List<EditEntry> {
-    val result = mutableListOf<EditEntry>()
-    // 匹配每个对象 {...}
-    val objRegex = Regex("""\{[^}]+\}""")
-    for (match in objRegex.findAll(json)) {
-        val obj = match.value
-        val b = Regex(""""b"\s*:\s*(\d+)""").find(obj)?.groupValues?.get(1)?.toIntOrNull() ?: continue
-        val row = Regex(""""row"\s*:\s*(-?\d+)""").find(obj)?.groupValues?.get(1)?.toIntOrNull() ?: -1
-        val col = Regex(""""col"\s*:\s*(-?\d+)""").find(obj)?.groupValues?.get(1)?.toIntOrNull() ?: -1
-        val t = Regex(""""t"\s*:\s*"((?:[^"\\]|\\.)*)"""").find(obj)?.groupValues?.get(1) ?: ""
-        result += EditEntry(b, row, col, t.replace("\\n", "\n").replace("\\t", "\t"))
-    }
-    return result
 }
