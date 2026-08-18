@@ -498,9 +498,8 @@ fun WordScreen(
         return deferred.await()
     }
 
-    /** 简单解析 collectEdits() 返回的 JSON 数组 */
-    data class EditEntry(val blockIndex: Int, val row: Int, val col: Int, val text: String)
-
+    /** 简单解析 collectEdits() 返回的 JSON 数组。
+     *  EditEntry 已提升为顶级 data class（见文件末尾），便于在 suspend 回调内稳定解析。 */
     fun parseEditJson(json: String): List<EditEntry> {
         val result = mutableListOf<EditEntry>()
         // 匹配每个对象 {...}
@@ -1469,3 +1468,10 @@ private fun SimpleTextFallback(
         }
     }
 }
+
+// ============================================================
+// 顶部 data class：WebView 编辑收集项
+// 提升为文件顶级声明，避免嵌套在 Composable 内部时被 suspend 回调闭包
+// 解析失败（Unresolved reference: parseEditJson）。
+// ============================================================
+data class EditEntry(val blockIndex: Int, val row: Int, val col: Int, val text: String)
