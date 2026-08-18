@@ -10,7 +10,18 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -1192,60 +1203,128 @@ private fun PaperPreview(
                     }
                 }
             } else {
-                Card(
-                    modifier = Modifier.fillMaxWidth().widthIn(max = 480.dp),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-                ) {
-                    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 22.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        doc.blocks.forEachIndexed { idx, b ->
-                            when (b) {
-                                is Block.Para -> {
-                                    if (b.runs.isEmpty()) Spacer(Modifier.height(8.dp))
-                                    else {
-                                        val sizePt = b.runs.firstOrNull()?.sizePt ?: doc.bodySizePt
-                                        val size = sizePt.sp
-                                        val align = when (b.props.align) {
-                                            Align.CENTER -> TextAlign.Center
-                                            Align.RIGHT -> TextAlign.End
-                                            Align.BOTH -> TextAlign.Justify
-                                            else -> TextAlign.Start
-                                        }
-                                        val lh = (if (b.props.lineSpacingPt > 0) b.props.lineSpacingPt else doc.lineSpacingPt).sp
-                                        val first = b.runs.first()
-                                        Text(
-                                            text = runsToAnnotated(b.runs),
-                                            style = TextStyle(fontSize = size, textAlign = align, textIndent = TextIndent(firstLine = b.props.firstLineIndentPt.sp), lineHeight = lh,
-                                                fontWeight = if (first.bold) FontWeight.Bold else FontWeight.Normal, fontStyle = if (first.italic) FontStyle.Italic else FontStyle.Normal),
-                                            color = Color(0xFF1A1A1A),
-                                            modifier = Modifier.fillMaxWidth().clickable { onStartEdit(EditTarget(idx)) }.padding(vertical = 3.dp)
-                                        )
-                                    }
+                // A4 纸面模拟：灰底白页 + 阴影，页面宽度拉满屏幕，内容区按 A4 比例留边距
+                GovDocPaper(doc = doc, onStartEdit = onStartEdit)
+            }
+        }
+    }
+}
+
+/**
+ * A4 纸面模拟：灰底白页 + 阴影，页面宽度拉满手机屏幕，内容区按 A4 公文页边距比例留白。
+ * 模拟 WPS / Word 的「页面视图」效果。
+ */
+@Composable
+private fun GovDocPaper(doc: GovDoc, onStartEdit: (EditTarget) -> Unit) {
+    BoxWithConstraints(
+        Modifier
+            .fillMaxSize()
+            .background(Color(0xFFE8E8E8))
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 6.dp, vertical = 10.dp),
+        contentAlignment = Alignment.TopCenter
+    ) {
+        val pageW = maxWidth
+        val page = doc.page
+        // 按 A4 比例从页面宽度推算内容区边距（单位：dp）
+        val lPad = pageW * (page.leftCm / page.widthCm).toFloat()
+        val rPad = pageW * (page.rightCm / page.widthCm).toFloat()
+        val tPad = pageW * (page.topCm / page.widthCm).toFloat()
+        val bPad = pageW * (page.bottomCm / page.widthCm).toFloat()
+
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(2.dp),
+            color = Color.White,
+            shadowElevation = 4.dp
+        ) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = lPad, end = rPad, top = tPad, bottom = bPad),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                doc.blocks.forEachIndexed { idx, b ->
+                    when (b) {
+                        is Block.Para -> {
+                            if (b.runs.isEmpty()) {
+                                Spacer(Modifier.height(8.dp))
+                            } else {
+                                val sizePt = b.runs.firstOrNull()?.sizePt ?: doc.bodySizePt
+                                val align = when (b.props.align) {
+                                    Align.CENTER -> TextAlign.Center
+                                    Align.RIGHT -> TextAlign.End
+                                    Align.BOTH -> TextAlign.Justify
+                                    else -> TextAlign.Start
                                 }
-                                is Block.Table -> {
-                                    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), shape = RoundedCornerShape(6.dp),
-                                        colors = CardDefaults.cardColors(containerColor = Color.White), border = BorderStroke(1.dp, Color(0xFFBDBDBD))) {
-                                        Column(Modifier.fillMaxWidth()) {
-                                            b.rows.forEachIndexed { r, row ->
-                                                Row(Modifier.fillMaxWidth()) {
-                                                    row.forEachIndexed { c, cell ->
-                                                        Text(text = runsToAnnotated(cell), fontSize = doc.bodySizePt.sp, color = Color(0xFF1A1A1A),
-                                                            modifier = Modifier.weight(1f).clickable { onStartEdit(EditTarget(idx, r, c)) }
-                                                                .border(BorderStroke(0.5.dp, Color(0xFFBDBDBD))).padding(8.dp))
-                                                    }
-                                                }
+                                val lh = (if (b.props.lineSpacingPt > 0) b.props.lineSpacingPt else doc.lineSpacingPt).sp
+                                val first = b.runs.first()
+                                Text(
+                                    text = runsToAnnotated(b.runs),
+                                    fontSize = sizePt.sp,
+                                    fontFamily = fontFamilyOrNull(first.font),
+                                    textAlign = align,
+                                    textIndent = TextIndent(firstLine = b.props.firstLineIndentPt.sp),
+                                    lineHeight = lh,
+                                    color = Color(0xFF1A1A1A),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onStartEdit(EditTarget(idx)) }
+                                        .padding(vertical = 3.dp)
+                                )
+                            }
+                        }
+                        is Block.Table -> {
+                            Card(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                shape = RoundedCornerShape(6.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color.White),
+                                border = BorderStroke(1.dp, Color(0xFFBDBDBD))
+                            ) {
+                                Column(Modifier.fillMaxWidth()) {
+                                    b.rows.forEachIndexed { r, row ->
+                                        Row(Modifier.fillMaxWidth()) {
+                                            row.forEachIndexed { c, cell ->
+                                                Text(
+                                                    text = runsToAnnotated(cell),
+                                                    fontSize = doc.bodySizePt.sp,
+                                                    fontFamily = fontFamilyOrNull(cell.firstOrNull()?.font ?: doc.bodyFont),
+                                                    color = Color(0xFF1A1A1A),
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .clickable { onStartEdit(EditTarget(idx, r, c)) }
+                                                        .border(BorderStroke(0.5.dp, Color(0xFFBDBDBD)))
+                                                        .padding(8.dp)
+                                                )
                                             }
                                         }
                                     }
                                 }
                             }
                         }
-                        Spacer(Modifier.height(8.dp))
                     }
                 }
+                Spacer(Modifier.height(8.dp))
             }
         }
+    }
+}
+
+/**
+ * 将字体名字符串转为 Compose FontFamily，支持系统内置中文字体。
+ * 无法匹配时返回 null，由 Text 使用默认字体。
+ */
+private fun fontFamilyOrNull(name: String): FontFamily? {
+    val n = name.trim().lowercase()
+    if (n.isEmpty()) return null
+    return when {
+        n.contains("仿宋") || n.contains("fangsong") -> FontFamily.Serif
+        n.contains("黑体") || n.contains("hei") || n.contains("sans") -> FontFamily.SansSerif
+        n.contains("楷") || n.contains("kai") -> FontFamily.Cursive
+        n.contains("宋") || n.contains("song") || n.contains("serif") || n.contains("times") -> FontFamily.Serif
+        // 英文等宽 / 无衬线等
+        n.contains("mono") || n.contains("courier") -> FontFamily.Monospace
+        else -> null // 默认系统字体
     }
 }
 
