@@ -13,6 +13,9 @@ import kotlin.math.roundToInt
  *  - 正文             : 仿宋_GB2312 三号，首行缩进 2 字符(32pt)，固定行距 28pt
  *  - `ll ` 前缀       : 顶格（不缩进）
  *  - `rr ` 前缀       : 右对齐（落款用，如具状人 / 日期）
+ *  - `tab ` / `tab.` / `tab-` 前缀：制表位前导符填空线（公文填空下划线 / 目录点线）。
+ *    可选 `@Ncm` 指定制表位位置（缺省=右侧页边距）；内容可用 `::` 分隔左 / 右文字。
+ *    例：`tab 甲方（盖章）：`、`tab. 第一章 总则::1`、`tab@12cm 乙方（签字）：`
  *  - `---`            : 正常 Markdown 水平线（渲染为空行分隔），不再触发落款右对齐
  *  - 表格             : 三线/全框线表格，单元格不缩进
  *  - `**粗体**` `*斜体*` 行内样式
@@ -220,6 +223,25 @@ object MdToGongwen {
     private val ENUM_CN_RE = Regex("^[一二三四五六七八九十百]+[、.．]")   // 中文序号条目
     private val ENUM_NUM_RE = Regex("^[（(]?\\d+[）)、.．]")           // 数字条目
 
+    /**
+     * 制表位前导符填空线（扩展语法）。公文常见「填空下划线 / 目录点线」——这类第二类「下划线」
+     * 由 Word 的制表位 + leader（前导符）实现，纯 Markdown 无法直接表达，故加本前缀。
+     *
+     * 形式：`tab` + 可选前导线 token（`.`=点线 / `-`=虚线 / 缺省=下划线）+ 可选制表位位置
+     * `@Ncm`（缺省=右侧页边距，即整行撑满）+ 空格 + 内容；内容可用 `::` 把「左侧文字」与
+     * 「右侧文字（制表位后右对齐，如目录页码）」分开。
+     *
+     * 例：
+     *   `tab 甲方（盖章）：`        → 下划线填空线（公文填空 / 签名）
+     *   `tab. 第一章 总则::1`       → 点线目录（页码「1」右对齐到右侧制表位）
+     *   `tab- 项目::说明`          → 虚线
+     *   `tab@12cm 乙方（签字）：`   → 指定制表位位置（距段落左边界 12cm）
+     *
+     * 解析结果：左侧文字 + 一个 `\t` run + 右侧文字；段落 props.tabs 写入对应制表位
+     * （leader=underline/dot/dash），由预览 flex 前导线与导出 w:tabs 共同还原效果。
+     */
+    private val TAB_LINE_RE = Regex("""^tab(\.|\-|@(\d+(?:\.\d+)?)cm)?\s+(.*)$""")
+
     /** 智能引号：把成对的直引号转成中文弯引号 */
     private fun applySmartQuotes(line: String): String {
         val sb = StringBuilder(line.length)
@@ -340,6 +362,43 @@ object MdToGongwen {
             // `ll ` 前缀 -> 强制顶格（手动控制，优先级最高）
             if (text.startsWith("ll ")) {
                 doc.addParagraph(parseInline(text.substring(3), bodyFont, bodySize), noIndentProps)
+                bodyStarted = true
+                i++
+                continue
+            }
+
+            // 制表位前导符填空线（扩展语法）：`tab` / `tab.` / `tab-` + 可选 `@Ncm` 位置。
+            // 还原公文「填空下划线 / 目录点线」——这类第二类「下划线」由制表位 leader 实现。
+            val tabMatch = TAB_LINE_RE.matchEntire(text)
+            if (tabMatch != null) {
+                val raw = tabMatch.groupValues[1]          // "." / "-" / "@Ncm" / ""
+                val leader = when {
+                    raw == "." -> "dot"
+                    raw == "-" -> "dash"
+                    else -> "underline"
+                }
+                val usableCm = page.widthCm - page.leftCm - page.rightCm
+                val posCm = tabMatch.groupValues[2].toDoubleOrNull() ?: usableCm
+                val content = tabMatch.groupValues[3]
+                val (left, right) = content.split("::", limit = 2).let {
+                    (it.getOrNull(0) ?: "") to (it.getOrNull(1) ?: "")
+                }
+                val tabRun = TextRun("\t", bodyFont, bodySize)
+                val runs = if (right.isNotEmpty())
+                    parseInline(left, bodyFont, bodySize) + tabRun + parseInline(right, bodyFont, bodySize)
+                else
+                    parseInline(left, bodyFont, bodySize) + tabRun
+                doc.addParagraph(
+                    runs,
+                    bodyProps.copy(
+                        align = Align.LEFT,
+                        firstLineIndentPt = 0.0,
+                        lineSpacingPt = spacing,
+                        tabs = listOf(
+                            TabStop(posPt = cmToTwips(posCm) / 20.0, align = "right", leader = leader)
+                        )
+                    )
+                )
                 bodyStarted = true
                 i++
                 continue

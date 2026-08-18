@@ -70,6 +70,7 @@ object MarkdownSnippets {
             "| 列1 | 列2 |\n| --- | --- |\n| 内容 | 内容 |\n".length
         ),
         Snippet("hr", "分割线", "---\n", 4),
+        Snippet("tabline", "填空线", "tab 甲方（盖章）：", 4),
         Snippet(
             "sign", "落款",
             "\n（此致）\n\n敬礼！\n\nrr 申请人：\nrr 二〇二六年八月十一日\n",

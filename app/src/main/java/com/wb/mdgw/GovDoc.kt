@@ -122,8 +122,24 @@ data class GovDoc(
     fun toMarkdown(): String = buildString {
         for (b in blocks) when (b) {
             is Block.Para -> {
-                val t = runsToMd(b.runs)
-                if (t.isBlank()) appendLine() else appendLine(t)
+                // 含可见前导符制表位的段落：反向还原为 `tab` 扩展语法，保证往返一致
+                val visibleLeader = b.props.tabs.any { it.leader.isNotBlank() && it.leader != "none" }
+                if (visibleLeader) {
+                    val tok = when (b.props.tabs.first().leader) { "dot" -> "."; "dash" -> "-"; else -> "" }
+                    val tabIdx = b.runs.indexOfFirst { it.text.contains('\t') }
+                    val leftRuns = if (tabIdx >= 0)
+                        b.runs.subList(0, tabIdx).map { it.copy(text = it.text.substringBefore('\t')) }
+                    else b.runs
+                    val rightRuns = if (tabIdx >= 0)
+                        b.runs.subList(tabIdx + 1, b.runs.size).map { it.copy(text = it.text.substringAfter('\t')) }
+                    else emptyList()
+                    val left = runsToMd(leftRuns)
+                    val right = runsToMd(rightRuns)
+                    appendLine("tab$tok ${left}${if (right.isNotEmpty()) "::$right" else ""}")
+                } else {
+                    val t = runsToMd(b.runs)
+                    if (t.isBlank()) appendLine() else appendLine(t)
+                }
             }
             is Block.Table -> {
                 if (b.rows.isEmpty()) continue
