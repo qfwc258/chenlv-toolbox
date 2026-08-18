@@ -216,156 +216,6 @@ fun WordScreen(
         dirty = true
     }
 
-    /**
-     * 统一「打开」：根据扩展名分流。
-     *  - MD / TXT：载入编辑区，可编辑（切到「编辑」子页）。
-     *  - DOCX / DOC：解析为公文模型，放入预览区可编辑，同时在编辑区生成对应 Markdown。
-     */
-    fun openFile(uri: Uri) {
-        scope.launch {
-            busy = true
-            runCatching {
-                context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                withContext(Dispatchers.IO) {
-                    val name = FileUtils.displayName(context, uri)
-                    val lower = name.lowercase()
-                    if (lower.endsWith(".docx") || lower.endsWith(".doc")) {
-                        name to DocxReader.read(FileUtils.readBytes(context, uri), selectedSpec)
-                    } else {
-                        name to FileUtils.readText(context, uri)
-                    }
-                }
-            }.onSuccess { (name, payload) ->
-                if (payload is GovDoc) {
-                    val md = payload.toMarkdown()
-                    commitGov(payload)
-                    fidelityNotes = payload.originalDocx?.let { DocxFidelity.scan(it) } ?: emptyList()
-                    fileName = name; sourceName = name
-                    tfv = TextFieldValue(md); undoStack.clear(); redoStack.clear(); lastGenSource = md
-                    originalUri = uri; dirty = false; autoSaved = false
-                    govDirty = false; govAutoSaved = false
-                    DraftStore.clear(context); GovDocDraftStore.clear(context); resultUri = null
-                    subView = SubView.PREVIEW
-                    val extra = if (fidelityNotes.isNotEmpty()) "（含特殊内容，已原样保留）" else ""
-                    snackbar.showSnackbar("已打开：$name$extra，已生成对应 Markdown")
-                } else {
-                    val content = payload as String
-                    fileName = name
-                    tfv = TextFieldValue(content); undoStack.clear(); redoStack.clear()
-                    originalUri = uri; dirty = false; autoSaved = false
-                    DraftStore.clear(context); resultUri = null; govDoc = null
-                    subView = SubView.EDIT
-                    snackbar.showSnackbar("已打开：$name")
-                }
-            }.onFailure {
-                snackbar.showSnackbar("打开失败：${it.message ?: "未知错误"}")
-            }
-            busy = false
-        }
-    }
-
-    val openPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        uri?.let { openFile(it) }
-    }
-
-    LaunchedEffect(initialUri) { initialUri?.let { openFile(it) } }
-
-    LaunchedEffect(Unit) {
-        if (initialUri == null && !DraftSession.handled) {
-            DraftSession.handled = true
-            DraftStore.load(context)?.let { d -> pendingDraft = d; showRestore = true }
-        }
-    }
-
-    // 源 Markdown 防抖自动保存
-    LaunchedEffect(tfv.text) {
-        if (dirty && tfv.text.isNotEmpty()) {
-            delay(1500)
-            DraftStore.save(context, fileName, tfv.text)
-            autoSaved = true
-        }
-    }
-
-    fun doSave() {
-        if (tfv.text.isEmpty() && originalUri == null && govDoc == null) {
-            scope.launch { snackbar.showSnackbar("没有可保存的内容") }
-            return
-        }
-        // Word 文档源：默认以 .docx 另存（原文件仅读权限，无法覆盖写回）
-        val base = FileUtils.baseName(fileName).ifBlank { "未命名" }
-        saveName = if (govDoc?.originalDocx != null) "$base.docx" else base
-        showSaveDialog = true
-    }
-
-    /**
-     * 从 WebView 收集用户编辑的文本，回写到 GovDoc.blocks（同步等待 JS 完成）。
-     * 用于导出前确保所有编辑都已同步。
-     *
-     * 用 CompletableDeferred 而非 suspendCancellableCoroutine，避免协程库版本对
-     * suspendCancellableCoroutine 签名（onCancellation 形参是否必填）的影响。
-     */
-    suspend fun syncWebViewEditsSuspend(): GovDoc? {
-        val wv = webView ?: return null
-        val d = govDoc ?: return null
-
-        val deferred = CompletableDeferred<GovDoc?>(d)
-        wv.evaluateJavascript("collectEdits()") { json ->
-            // 回调到达前协程可能已取消（用户退出页面），防止重复完成 deferred
-            if (deferred.isCompleted) return@evaluateJavascript
-            try {
-                if (json == null || json == "null" || json.isBlank()) {
-                    deferred.complete(d)
-                    return@evaluateJavascript
-                }
-                val trimmed = json.trim().removeSurrounding("\"")
-                    .replace("\\\"", "\"")
-                // 解析编辑 JSON 数组（直接内联，绕开所有作用域相关的解析问题）
-                val edits = mutableListOf<EditEntry>()
-                val objRegex = Regex("""\{[^}]+\}""")
-                for (match in objRegex.findAll(trimmed)) {
-                    val obj = match.value
-                    val b = Regex(""""b"\s*:\s*(\d+)""").find(obj)?.groupValues?.get(1)?.toIntOrNull() ?: continue
-                    val row = Regex(""""row"\s*:\s*(-?\d+)""").find(obj)?.groupValues?.get(1)?.toIntOrNull() ?: -1
-                    val col = Regex(""""col"\s*:\s*(-?\d+)""").find(obj)?.groupValues?.get(1)?.toIntOrNull() ?: -1
-                    val t = Regex(""""t"\s*:\s*"((?:[^"\\]|\\.)*)"""").find(obj)?.groupValues?.get(1) ?: ""
-                    edits += EditEntry(b, row, col, t.replace("\\n", "\n").replace("\\t", "\t"))
-                }
-                if (edits.isEmpty()) {
-                    deferred.complete(d)
-                    return@evaluateJavascript
-                }
-                val blocks = d.blocks.toMutableList()
-                val newEdits = mutableSetOf<EditTarget>()
-                for (edit in edits) {
-                    val b = blocks.getOrNull(edit.blockIndex) ?: continue
-                    when {
-                        edit.row < 0 && b is Block.Para -> {
-                            val dist = distributeRunsRespectingFormat(b.runs, edit.text)
-                            val newRuns = b.runs.mapIndexed { k, r -> r.copy(text = dist[k]) }
-                            blocks[edit.blockIndex] = Block.Para(newRuns, b.props)
-                            newRuns.indices.forEach { newEdits += EditTarget(edit.blockIndex, runIndex = it) }
-                        }
-                        edit.row >= 0 && b is Block.Table -> {
-                            val cell = b.rows.getOrNull(edit.row)?.getOrNull(edit.col) ?: continue
-                            val dist = distributeRunsRespectingFormat(cell, edit.text)
-                            val newCell = cell.mapIndexed { k, r -> r.copy(text = dist[k]) }
-                            val newRows = b.rows.mapIndexed { ri, row ->
-                                if (ri != edit.row) row else row.mapIndexed { ci, c ->
-                                    if (ci != edit.col) c else newCell
-                                }
-                            }
-                            blocks[edit.blockIndex] = Block.Table(newRows)
-                            newCell.indices.forEach { newEdits += EditTarget(edit.blockIndex, edit.row, edit.col, runIndex = it) }
-                        }
-                    }
-                }
-                deferred.complete(d.copy(blocks = blocks, edits = d.edits + newEdits))
-            } catch (e: Exception) {
-                deferred.complete(d)
-            }
-        }
-        return deferred.await()
-    }
 
     fun performSave(name: String) {
         // 区分来源：Word 文档源以 .docx 另存（先将 WebView 就地编辑同步进公文模型再生成）；
@@ -378,7 +228,7 @@ fun WordScreen(
             busy = true
             if (isDocxSource) {
                 // 同步预览区 WebView 的就地编辑 → 生成新 docx 字节 → 另存（原文件只读，无法写回）
-                val updated = syncWebViewEditsSuspend() ?: govDoc
+                val updated = govDoc
                 val bytes = updated?.toDocx()
                 if (bytes == null) {
                     busy = false; showSaveDialog = false
@@ -640,11 +490,6 @@ fun WordScreen(
 
     fun doExport(kind: String, name: String? = null) {
         scope.launch {
-            // 导出前同步 WebView 编辑内容到 GovDoc
-            syncWebViewEditsSuspend()?.let { updatedGov ->
-                commitGov(updatedGov)
-                govDirty = true; govAutoSaved = false; govEditVersion++
-            }
             val d = govDoc
             if (d == null) { snackbar.showSnackbar("没有可导出的内容"); return@launch }
             if (d.blocks.isEmpty()) { snackbar.showSnackbar("没有可导出的内容"); return@launch }
@@ -1335,8 +1180,9 @@ private fun PaperPreview(
  * 页面宽度拉满手机屏幕，高度按 A4 真实比例 210:297 约束。所有格式（字体、字号、颜色、粗斜体、
  * 下划线、删除线、高亮、表格列宽/边框）由 CSS 原生表达，无需逐个建模。
  *
- * 用户可直接在页面上编辑文字（contenteditable），导出前通过 [syncWebViewEdits] 收集。
- * 渲染失败时降级到 Compose PaperPreview，保证用户始终能预览。
+ * 编辑不依赖 contenteditable：段落 / 表格单元格带 data-block 钩子，点击经 JS 桥
+ * （editBridge.startEdit）回调触发结构化编辑弹窗，编辑结果写回 GovDoc 模型。
+ * 渲染失败时降级到 Compose SimpleTextFallback，保证用户始终能预览。
  */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -1354,7 +1200,7 @@ private fun GovDocPaper(
     // 自身为 key，模型变更时正常刷新。
     val htmlKey = remember(doc) { doc.originalDocx ?: doc }
     val htmlResult = remember(htmlKey) {
-        runCatching { doc.originalDocx?.let { DocxHtml.toHtml(it, doc.page) } ?: DocxHtml.govDocToHtml(doc) }
+        runCatching { DocxHtml.govDocToHtml(doc) }
     }
     if (loadFailed || htmlResult.isFailure) {
         // 渲染失败：降级到简化文本预览，避免递归调用 PaperPreview
@@ -1370,7 +1216,7 @@ private fun GovDocPaper(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    "可直接在页面上点按修改文字；改完后点顶部「保存」将另存为新的 Word 文档。",
+                    "点击段落或表格即可编辑文字；改完后点顶部「保存」将另存为新的 Word 文档。",
                     fontSize = 11.sp, lineHeight = 15.sp,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
@@ -1415,6 +1261,13 @@ private fun GovDocPaper(
                     // 固定 A4 真实比例 210:297（不按内容高度自适应），让任意屏幕下页面比例都是 A4
                     setInitialScale(100)
                     setBackgroundColor(0xFFE8E8E8.toInt())
+                    addJavascriptInterface(object : Any() {
+                        @JavascriptInterface
+                        fun startEdit(block: Int, row: Int, col: Int) {
+                            val t = if (row < 0) EditTarget(block, runIndex = -1) else EditTarget(block, row, col)
+                            onStartEdit(t)
+                        }
+                    }, "editBridge")
                     onWebViewReady(this)
                 }
             },

@@ -14,9 +14,10 @@ import javax.xml.parsers.DocumentBuilderFactory
  * 下划线、删除线、高亮、上标下标、表格边框/列宽/合并单元格）均通过 CSS 原生表达。
  *
  * 生成的 HTML 结构：
- *   - 每个 <w:p> → <p data-block="N">，内含 <span data-run="N"> 逐 run
- *   - 每个 <w:tbl> → <table data-block="N">，单元格含 data-row / data-col
- *   - 页面整体可 contenteditable，导出前通过 JS 收集编辑内容回写 GovDoc
+ *   - 每个 <w:p> → <p data-block="N" onclick="editBridge.startEdit(N,-1,-1)">，内含 <span data-run="N"> 逐 run
+ *   - 每个 <w:tbl> → <table data-block="N">，单元格 <td data-row data-col onclick="editBridge.startEdit(N,r,c)">
+ *   - 编辑不依赖 contenteditable：点击段落/单元格经 JS 桥（editBridge.startEdit）回调触发结构化编辑弹窗，
+ *     编辑结果直接写回 GovDoc 模型，导出由 GovDoc.toDocx() 生成文档（保格式）。
  */
 object DocxHtml {
 
@@ -69,10 +70,9 @@ object DocxHtml {
 
         return buildString {
             append(htmlHead(tPadPct, rPadPct, bPadPct, lPadPct))
-            append("<div class='page' contenteditable='true'>")
+            append("<div class='page'>")
             append(bodyHtml)
             append("</div>")
-            append(collectEditsScript())
             append("</body></html>")
         }
     }
@@ -105,7 +105,7 @@ object DocxHtml {
                                 "text-indent:${b.props.firstLineIndentPt}pt;" else ""
                             val lh = if (b.props.lineSpacingPt > 0)
                                 "line-height:${b.props.lineSpacingPt}pt;" else ""
-                            append("<p data-block='$idx' class='doc-para' style='text-align:$align;$indent$lh'>")
+                            append("<p data-block='$idx' class='doc-para' style='text-align:$align;$indent$lh' onclick=\"editBridge.startEdit($idx,-1,-1)\">")
                             b.runs.forEachIndexed { ri, r ->
                                 append(runToHtml(r, ri))
                             }
@@ -117,7 +117,7 @@ object DocxHtml {
                         b.rows.forEachIndexed { ri, row ->
                             append("<tr>")
                             row.forEachIndexed { ci, cell ->
-                                append("<td data-block='$idx' data-row='$ri' data-col='$ci'>")
+                                append("<td data-block='$idx' data-row='$ri' data-col='$ci' onclick=\"editBridge.startEdit($idx,$ri,$ci)\">")
                                 cell.forEachIndexed { runi, r ->
                                     append(runToHtml(r, runi))
                                 }
@@ -133,10 +133,9 @@ object DocxHtml {
 
         return buildString {
             append(htmlHead(tPadPct, rPadPct, bPadPct, lPadPct))
-            append("<div class='page' contenteditable='true'>")
+            append("<div class='page'>")
             append(bodyHtml)
             append("</div>")
-            append(collectEditsScript())
             append("</body></html>")
         }
     }
@@ -169,8 +168,6 @@ object DocxHtml {
         append(".doc-table tr:last-child td{border-bottom:1.5px solid #000;}")
         append(".doc-table td:first-child{border-left:1.5px solid #000;}")
         append(".doc-table td:last-child{border-right:1.5px solid #000;}")
-        // contenteditable 提示：聚焦时背景微变
-        append(".page:focus{outline:none;background:#FFFEFB;}")
         // 小屏适配：手机宽度 < A4 时整体缩放至 92%
         append("@media (max-width:480px){.page{transform:scale(0.92);transform-origin:top center;}}")
         append("</style></head><body>")
@@ -188,31 +185,6 @@ object DocxHtml {
         append("</div></div></body></html>")
     }
 
-    /** 收集编辑内容的 JS：被 WebView evaluateJavascript 调用，返回 JSON 数组 */
-    private fun collectEditsScript(): String = """
-<script>
-function collectEdits(){
-  var r=[];
-  var ps=document.querySelectorAll('p[data-block]');
-  ps.forEach(function(p){
-    var b=parseInt(p.getAttribute('data-block'));
-    var t='';
-    p.querySelectorAll('[data-run]').forEach(function(s){t+=s.textContent;});
-    r.push({b:b,row:-1,col:-1,t:t});
-  });
-  var tds=document.querySelectorAll('td[data-block]');
-  tds.forEach(function(td){
-    var b=parseInt(td.getAttribute('data-block'));
-    var row=parseInt(td.getAttribute('data-row'));
-    var col=parseInt(td.getAttribute('data-col'));
-    var t='';
-    td.querySelectorAll('[data-run]').forEach(function(s){t+=s.textContent;});
-    r.push({b:b,row:row,col:col,t:t});
-  });
-  return JSON.stringify(r);
-}
-</script>
-    """.trimIndent()
 
     /** 将单个 TextRun 转为 HTML span */
     private fun runToHtml(r: TextRun, runIndex: Int): String {
