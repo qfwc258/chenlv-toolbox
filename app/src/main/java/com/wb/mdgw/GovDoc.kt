@@ -156,13 +156,17 @@ private fun runsToMd(runs: List<TextRun>): String = buildString {
 // ============================================================
 
 /**
- * 把整段 / 整格的新文字 [newText] 回填到原始各 run，但**带格式（下划线 / 粗体 / 斜体）的
- * run 保持其原始字符长度不变**，新文字的增减全部由「无格式 run」吸收。
+ * 把整段 / 整格的新文字 [newText] 回填到原始各 run，同时尽量保持带格式（下划线 / 粗体 /
+ * 斜体）run 的原文在新文字中的位置不变。
  *
- * 这与 [DocxInPlace] 中 `distributeRespectingFormat` 的语义完全一致：根除「附近无下划线
- * 文字被误加上下划线」的 spill 瑕疵，同时让带下划线的字段（如「（盖章）」）始终完整保住
- * 其下划线、边界不被明文吞掉。每个 run 的 rPr（字体 / 字号 / 下划线 / 粗斜体）在导出时
- * 仍按原样保留，此处只决定各 run 各分到多少字。
+ * 算法分两阶段：
+ *  1. **智能匹配**：对每个格式化 run，在新文字中搜索其原文；若找到（且位置合理），
+ *     则将该 run 原位锁定，确保「用户增删只影响无格式 run，格式化文字始终完整」。
+ *  2. **回退切分**：若格式化 run 的原文在新文字中找不到，则回退到比例切分 + 长度锁定，
+ *     保证格式不溢出到无格式 run。
+ *
+ * 每个 run 的 rPr（字体 / 字号 / 下划线 / 粗斜体）在导出时仍按原样保留，
+ * 此处只决定各 run 各分到多少字。
  *
  * @return 与 [runs] 等长，每个元素是该 run 应写入的新文字。
  */
@@ -175,17 +179,131 @@ fun distributeRunsRespectingFormat(runs: List<TextRun>, newText: String): List<S
     val o = lens.sum()
     if (o <= 0) return List(n) { if (it == 0) newText else "" }
 
-    // 各 run 在原文中的累计起始位置（含结尾 O）
+    val locked = runs.map { it.bold || it.italic || it.underline }
+    val hasLocked = locked.any { it }
+
+    // 各 run 在原文中的累计起始位置
     val origStart = mutableListOf(0)
     for (l in lens) origStart += origStart.last() + l
 
-    // 各 run 边界按比例映射到新文本中的起始位置（取下界），pos.size == n + 1
+    // ---- 无格式 run：直接比例切分 ----
+    if (!hasLocked) {
+        val counts = proportionalSplit(lens, newText.length)
+        var cursor = 0
+        return counts.map { c ->
+            val end = (cursor + c).coerceAtMost(newText.length)
+            newText.substring(cursor, end).also { cursor = end }
+        }
+    }
+
+    // ---- 阶段 1：智能匹配格式化 run 的原文 ----
+    // 对每个格式化 run，在新文字中搜索其原文，匹配成功则记录精确位置
+    data class LockedSpan(val runIndex: Int, val start: Int, val end: Int)
+    val matchedSpans = mutableListOf<LockedSpan>()
+
+    for (i in runs.indices) {
+        if (!locked[i]) continue
+        val runText = runs[i].text
+        if (runText.isEmpty()) continue
+
+        // 以比例位置为中心，向外扩展搜索窗口
+        val hintStart = (origStart[i].toLong() * newText.length / o).toInt()
+        val hintEnd = (origStart[i + 1].toLong() * newText.length / o).toInt()
+        val window = (runText.length * 3).coerceAtLeast(30)
+        val searchStart = (hintStart - window).coerceAtLeast(0)
+        val searchEnd = (hintEnd + window).coerceAtMost(newText.length)
+
+        val found = newText.indexOf(runText, searchStart)
+        if (found >= 0 && found < searchEnd) {
+            matchedSpans += LockedSpan(i, found, found + runText.length)
+        }
+    }
+
+    // ---- 阶段 2：构建结果 ----
+    if (matchedSpans.isEmpty()) {
+        // 所有格式化 run 都未匹配到原文 → 回退到比例切分 + 长度锁定
+        return proportionalDistributionWithLocking(lens, locked, newText, origStart)
+    }
+
+    // 按新文字中的位置排序，解决重叠（后出现的 span 右移）
+    matchedSpans.sortBy { it.start }
+    for (j in 1 until matchedSpans.size) {
+        val prev = matchedSpans[j - 1]
+        if (matchedSpans[j].start < prev.end) {
+            val len = matchedSpans[j].end - matchedSpans[j].start
+            val newStart = prev.end
+            matchedSpans[j] = LockedSpan(
+                matchedSpans[j].runIndex,
+                newStart,
+                (newStart + len).coerceAtMost(newText.length)
+            )
+        }
+    }
+    val lockedMap = matchedSpans.associateBy { it.runIndex }
+
+    // 将连续的无格式 run 分组为"间隙"，按顺序填充
+    data class Gap(val runIndices: List<Int>, val textStart: Int, val textEnd: Int)
+    val gaps = mutableListOf<Gap>()
+    val result = MutableList(n) { "" }
+    var gapStart = 0
+    val gapIndices = mutableListOf<Int>()
+
+    for (i in 0 until n) {
+        val span = lockedMap[i]
+        if (span != null) {
+            if (gapIndices.isNotEmpty()) {
+                gaps += Gap(gapIndices.toList(), gapStart, span.start)
+                gapIndices.clear()
+            }
+            result[i] = newText.substring(span.start, span.end)
+            gapStart = span.end
+        } else {
+            gapIndices += i
+        }
+    }
+    if (gapIndices.isNotEmpty()) {
+        gaps += Gap(gapIndices.toList(), gapStart, newText.length)
+    }
+
+    // 每个间隙内按原始长度比例切分
+    for (gap in gaps) {
+        val gapText = newText.substring(gap.textStart, gap.textEnd)
+        val gapLens = gap.runIndices.map { lens[it] }
+        val gapTotal = gapLens.sum()
+        if (gapTotal <= 0) {
+            if (gap.runIndices.isNotEmpty()) result[gap.runIndices.first()] = gapText
+        } else {
+            val counts = proportionalSplit(gapLens, gapText.length)
+            var c = gap.textStart
+            for ((j, idx) in gap.runIndices.withIndex()) {
+                val end = (c + counts[j]).coerceAtMost(gap.textEnd)
+                result[idx] = newText.substring(c, end)
+                c = end
+            }
+        }
+    }
+
+    // 收尾：剩余文字（格式化 run 锁太紧导致总长不足）追加到最后一个 run
+    val totalUsed = result.sumOf { it.length }
+    if (totalUsed < newText.length) {
+        result[n - 1] = result[n - 1] + newText.substring(totalUsed)
+    }
+    return result
+}
+
+/**
+ * 回退策略：比例切分 + 格式化 run 长度锁定。
+ * 当智能匹配找不到格式化 run 的原文时使用。
+ */
+private fun proportionalDistributionWithLocking(
+    lens: List<Int>, locked: List<Boolean>, newText: String, origStart: List<Int>
+): List<String> {
+    val n = lens.size
+    val o = lens.sum()
     val pos = MutableList(n + 1) { 0 }
-    for (i in 1..n) pos[i] = (origStart[i].toLong() * newText.length / o).toInt() // 向下取整，避免向左吞并
+    for (i in 1..n) pos[i] = (origStart[i].toLong() * newText.length / o).toInt()
     pos[n] = newText.length
 
-    // 格式 run 锁定原始长度：平移其右边界，差值由右侧 run 吸收（多为无格式 run）
-    val locked = runs.map { it.bold || it.italic || it.underline }
     for (i in locked.indices) {
         if (!locked[i]) continue
         val cur = pos[i + 1] - pos[i]
@@ -200,7 +318,6 @@ fun distributeRunsRespectingFormat(runs: List<TextRun>, newText: String): List<S
         val s = newText.substring(cursor, end).also { cursor = end }
         s
     }
-    // 极端情形：仍有剩余文字（格式 run 全锁且总长不足），追加到最后一个 run
     if (cursor < newText.length) out[n - 1] = out[n - 1] + newText.substring(cursor)
     return out
 }
