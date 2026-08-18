@@ -139,6 +139,9 @@ dependencies {
     // 公文草稿序列化：GovDoc 模型 ↔ JSON（零反射、体积可控）
     implementation(libs.kotlinx.serialization.json)
 
+    // 协程（显式锁定 1.7.3，避免 suspendCancellableCoroutine 签名差异导致编译失败）
+    implementation(libs.kotlinx.coroutines.android)
+
     // 公众号排版：Markdown -> 微信公众号 HTML（commonmark-java 解析 + Jsoup 内联样式）
     implementation(libs.commonmark)
     implementation(libs.commonmark.gfm.tables)

@@ -46,10 +46,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlin.collections.ArrayDeque
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 
 // 设计 token 复用 com.wb.mdgw.UiTokens 的公共令牌（UI_SECTION_RADIUS / UI_CARD_RADIUS /
@@ -440,26 +440,29 @@ fun WordScreen(
     /**
      * 从 WebView 收集用户编辑的文本，回写到 GovDoc.blocks（同步等待 JS 完成）。
      * 用于导出前确保所有编辑都已同步。
+     *
+     * 用 CompletableDeferred 而非 suspendCancellableCoroutine，避免协程库版本对
+     * suspendCancellableCoroutine 签名（onCancellation 形参是否必填）的影响。
      */
-    suspend fun syncWebViewEditsSuspend(): GovDoc? = kotlinx.coroutines.suspendCancellableCoroutine<GovDoc?> { cont ->
-        val wv = webView
-        if (wv == null) { if (cont.isActive) cont.resume(null); return@suspendCancellableCoroutine }
-        val d = govDoc
-        if (d == null) { if (cont.isActive) cont.resume(null); return@suspendCancellableCoroutine }
-        if (d.originalDocx == null) { if (cont.isActive) cont.resume(d); return@suspendCancellableCoroutine }
+    suspend fun syncWebViewEditsSuspend(): GovDoc? {
+        val wv = webView ?: return null
+        val d = govDoc ?: return null
+        if (d.originalDocx == null) return d
+
+        val deferred = CompletableDeferred<GovDoc?>(d)
         wv.evaluateJavascript("collectEdits()") { json ->
-            // 回调到达前协程可能已取消（如用户退出页面），必须检查 isActive 避免写入失效状态
-            if (!cont.isActive) return@evaluateJavascript
+            // 回调到达前协程可能已取消（用户退出页面），防止重复完成 deferred
+            if (deferred.isCompleted) return@evaluateJavascript
             try {
                 if (json == null || json == "null" || json.isBlank()) {
-                    if (cont.isActive) cont.resume(d)
+                    deferred.complete(d)
                     return@evaluateJavascript
                 }
                 val trimmed = json.trim().removeSurrounding("\"")
                     .replace("\\\"", "\"")
                 val edits = parseEditJson(trimmed)
                 if (edits.isEmpty()) {
-                    if (cont.isActive) cont.resume(d)
+                    deferred.complete(d)
                     return@evaluateJavascript
                 }
                 val blocks = d.blocks.toMutableList()
@@ -487,11 +490,12 @@ fun WordScreen(
                         }
                     }
                 }
-                if (cont.isActive) cont.resume(d.copy(blocks = blocks, edits = d.edits + newEdits))
+                deferred.complete(d.copy(blocks = blocks, edits = d.edits + newEdits))
             } catch (e: Exception) {
-                if (cont.isActive) cont.resume(d)
+                deferred.complete(d)
             }
         }
+        return deferred.await()
     }
 
     /** 简单解析 collectEdits() 返回的 JSON 数组 */

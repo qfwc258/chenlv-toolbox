@@ -6,6 +6,7 @@
 [versions]
 agp = "8.1.4"
 kotlin = "1.9.22"
+coroutines = "1.7.3"                # 显式锁定版本，避免 onCancellation 签名差异
 composeCompiler = "1.5.10"          # 对应 Kotlin 1.9.22 的 Compose 编译器版本
 composeBom = "2024.02.00"
 coreKtx = "1.12.0"
@@ -39,6 +40,9 @@ junit = { group = "junit", name = "junit", version.ref = "junit" }
 
 # 公文草稿序列化
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "serialization" }
+
+# 协程（显式锁定 1.7.3，避免 suspendCancellableCoroutine 签名差异导致编译失败）
+kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
 
 # 公众号排版：Markdown -> HTML
 commonmark = { group = "org.commonmark", name = "commonmark", version.ref = "commonmark" }
