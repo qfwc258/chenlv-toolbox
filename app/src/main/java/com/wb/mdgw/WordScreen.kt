@@ -441,25 +441,27 @@ fun WordScreen(
      * 从 WebView 收集用户编辑的文本，回写到 GovDoc.blocks（同步等待 JS 完成）。
      * 用于导出前确保所有编辑都已同步。
      */
-    suspend fun syncWebViewEditsSuspend(): GovDoc? = kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+    suspend fun syncWebViewEditsSuspend(): GovDoc? = kotlinx.coroutines.suspendCancellableCoroutine(
+        onCancellation = { /* 协程取消时无需额外清理：evaluateJavascript 回调到达时会被 isActive 拦截 */ }
+    ) { cont ->
         val wv = webView
-        if (wv == null) { cont.resume(null); return@suspendCancellableCoroutine }
+        if (wv == null) { if (cont.isActive) cont.resume(null); return@suspendCancellableCoroutine }
         val d = govDoc
-        if (d == null) { cont.resume(null); return@suspendCancellableCoroutine }
-        if (d.originalDocx == null) { cont.resume(d); return@suspendCancellableCoroutine }
+        if (d == null) { if (cont.isActive) cont.resume(null); return@suspendCancellableCoroutine }
+        if (d.originalDocx == null) { if (cont.isActive) cont.resume(d); return@suspendCancellableCoroutine }
         wv.evaluateJavascript("collectEdits()") { json ->
             // 回调到达前协程可能已取消（如用户退出页面），必须检查 isActive 避免写入失效状态
             if (!cont.isActive) return@evaluateJavascript
             try {
                 if (json == null || json == "null" || json.isBlank()) {
-                    cont.resume(d)
+                    if (cont.isActive) cont.resume(d)
                     return@evaluateJavascript
                 }
                 val trimmed = json.trim().removeSurrounding("\"")
                     .replace("\\\"", "\"")
                 val edits = parseEditJson(trimmed)
                 if (edits.isEmpty()) {
-                    cont.resume(d)
+                    if (cont.isActive) cont.resume(d)
                     return@evaluateJavascript
                 }
                 val blocks = d.blocks.toMutableList()
@@ -487,17 +489,17 @@ fun WordScreen(
                         }
                     }
                 }
-                cont.resume(d.copy(blocks = blocks, edits = d.edits + newEdits))
+                if (cont.isActive) cont.resume(d.copy(blocks = blocks, edits = d.edits + newEdits))
             } catch (e: Exception) {
-                cont.resume(d)
+                if (cont.isActive) cont.resume(d)
             }
         }
     }
 
     /** 简单解析 collectEdits() 返回的 JSON 数组 */
-    private data class EditEntry(val blockIndex: Int, val row: Int, val col: Int, val text: String)
+    data class EditEntry(val blockIndex: Int, val row: Int, val col: Int, val text: String)
 
-    private fun parseEditJson(json: String): List<EditEntry> {
+    fun parseEditJson(json: String): List<EditEntry> {
         val result = mutableListOf<EditEntry>()
         // 匹配每个对象 {...}
         val objRegex = Regex("""\{[^}]+\}""")

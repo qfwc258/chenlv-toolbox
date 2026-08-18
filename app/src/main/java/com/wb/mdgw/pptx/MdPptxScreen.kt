@@ -1209,7 +1209,7 @@ private fun PreviewPager(
             CompositionSelector(
                 comp = comps[current] ?: CompositionResolver.compositionOf(curLayout),
                 applyToAll = applyToAll,
-                onApplyToAllChange = { applyToAll = it },
+                onApplyToAllChange = { onApplyToAllChange(it) },
                 theme = theme,
                 onCompositionChange = { newComp ->
                     if (applyToAll) {
@@ -1347,10 +1347,10 @@ private fun CompositionSelector(
             // 色块行：紧凑 Pill + 嵌入主题主色调的迷你色块图示
             CompositionRow("色块", compact = true) {
                 ColorBlock.values().forEach { c ->
-                    val (text, color) = colorBlockVisual(c)
+                    val (iconColor, _) = colorBlockVisual(c)   // 形状信息已通过 iconShape 单独传入
                     PillWithIcon(
                         text = c.label,
-                        iconColor = color,
+                        iconColor = iconColor,
                         iconShape = c,
                         selected = comp.colorBlock == c,
                         compact = true,
@@ -1403,7 +1403,7 @@ private fun CompositionSelector(
 /** 色块枚举 → (迷你图示色, 形状)。迷你图示在 Pill 左侧画出主题色的小色块。 */
 private fun colorBlockVisual(c: ColorBlock): Pair<String, Boolean> = when (c) {
     ColorBlock.NONE -> "#E0E0E0" to false   // 灰白底（无色块）
-    ColorBlock.FULL -> "theme" to false      // 主题色整块
+    ColorBlock.COVER -> "theme" to false     // 主题色整块
     ColorBlock.LEFT -> "theme" to true       // 主题色左侧竖条
     ColorBlock.TOP -> "theme" to false       // 主题色顶部横条
     ColorBlock.BOTTOM -> "theme" to false    // 主题色底部横条
@@ -1444,7 +1444,7 @@ private fun PillWithIcon(
                     .background(
                         when (iconShape) {
                             ColorBlock.NONE -> grayColor
-                            ColorBlock.FULL -> drawColor
+                            ColorBlock.COVER -> drawColor
                             ColorBlock.TOP -> drawColor
                             ColorBlock.BOTTOM -> drawColor
                             ColorBlock.LEFT -> drawColor
