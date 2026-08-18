@@ -249,6 +249,11 @@ object PptExportEngine {
             val barH = (slide.deco.bottomBarH.takeIf { it > 0 } ?: (style.canvasH / 60)).coerceAtLeast(1)
             sb.append(barShapeXml(Rect(0, style.canvasH - barH, style.canvasW, barH), bc, id++))
         }
+        // Logo 装饰（右下角）：红色斜角块 + LAWYER.C 文字
+        if (slide.deco?.logo == true) {
+            sb.append(logoShapeXml(style, id++))
+            id++ // 红块 + 文字两个 shape 各占一个 id
+        }
         // 标题/引用左侧强调竖条、封面色条、强调线等装饰矩形
         val barColor = slide.deco?.barColor ?: theme.accent
         slide.deco?.bars?.forEach { b -> sb.append(barShapeXml(b, barColor, id++)) }
@@ -322,6 +327,60 @@ object PptExportEngine {
                 """<p:spPr><a:xfrm><a:off x="${emu(rect.x)}" y="${emu(rect.y)}"/><a:ext cx="${emu(rect.w)}" cy="${emu(rect.h)}"/></a:xfrm>""" +
                 """<a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="$color"/></a:solidFill></p:spPr>""" +
                 """<p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr lang="zh-CN"/></a:p></p:txBody></p:sp>"""
+    }
+
+    /**
+     * Logo 装饰（右下角）：红色斜角四边形 + LAWYER.C 文字。
+     * 占画布宽 20%，等比缩放，红块用 custGeom 绘制自定义四边形。
+     */
+    private fun logoShapeXml(style: PptStyleSheet, id: Int): String {
+        val cw = style.canvasW   // 720pt
+        val ch = style.canvasH   // 405pt
+        val ls = PptLayoutEngine.logoScale
+        val logoW = (cw * ls).toInt()
+        val logoH = (logoW * 180f / 640f).toInt()
+        val lh = PptLayoutEngine.logoHAlign
+        val lv = PptLayoutEngine.logoVAlign
+        val x = if (lh == "right") cw - logoW else 0
+        val y = if (lv == "bottom") ch - logoH else 0
+        val logoRed = "D31B29"
+
+        // 红色四边形：4 个顶点 (xCol, yCol) 使用 custGeom
+        // 顶点坐标相对于 shape 自身 (0,0) 到 (logoW, logoH)
+        val x0 = 0;                          val y0 = 0
+        val x1 = (logoW * 0.195).toInt();    val y1 = (logoH * 0.02).toInt()
+        val x2 = (logoW * 0.170).toInt();    val y2 = logoH
+        val x3 = 0;                          val y3 = logoH
+
+        val redShape = """<p:sp><p:nvSpPr><p:cNvPr id="$id" name="LogoRed"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>""" +
+                """<p:spPr><a:xfrm><a:off x="${emu(x)}" y="${emu(y)}"/><a:ext cx="${emu(logoW)}" cy="${emu(logoH)}"/></a:xfrm>""" +
+                """<a:custGeom><a:avLst/><a:gdLst/><a:ahLst/><a:cxnLst/><a:rect l="l" t="t" r="r" b="b"/>""" +
+                """<a:pathLst><a:path w="${emu(logoW)}" h="${emu(logoH)}">""" +
+                """<a:moveTo><a:pt x="${emu(x0)}" y="${emu(y0)}"/></a:moveTo>""" +
+                """<a:lnTo><a:pt x="${emu(x1)}" y="${emu(y1)}"/></a:lnTo>""" +
+                """<a:lnTo><a:pt x="${emu(x2)}" y="${emu(y2)}"/></a:lnTo>""" +
+                """<a:lnTo><a:pt x="${emu(x3)}" y="${emu(y3)}"/></a:lnTo>""" +
+                """<a:close/></a:path></a:pathLst></a:custGeom>""" +
+                """<a:solidFill><a:srgbClr val="$logoRed"/></a:solidFill></p:spPr>""" +
+                """<p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr lang="zh-CN"/></a:p></p:txBody></p:sp>"""
+
+        // LAWYER.C 文字：白色，字号按比例缩放
+        val textFontSize = (logoW * 104f / 640f).toInt()   // ~23pt
+        val textX = x + (logoW * 0.21).toInt()
+        val textY = y + (logoH * 0.14).toInt()
+        val textW = (logoW * 0.58).toInt()   // 文字区域宽
+        val textH = (logoH * 0.72).toInt()   // 文字区域高
+
+        val textShape = """<p:sp><p:nvSpPr><p:cNvPr id="${id + 1}" name="LogoText"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>""" +
+                """<p:spPr><a:xfrm><a:off x="${emu(textX)}" y="${emu(textY)}"/><a:ext cx="${emu(textW)}" cy="${emu(textH)}"/></a:xfrm>""" +
+                """<a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/></p:spPr>""" +
+                """<p:txBody><a:bodyPr wrap="none" rtlCol="0" anchor="t"/>""" +
+                """<a:lstStyle/><a:p><a:r><a:rPr lang="en-US" sz="${textFontSize * 100}" b="1" dirty="0">""" +
+                """<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>""" +
+                """<a:latin typeface="Arial"/></a:rPr><a:t>LAWYER.C</a:t></a:r></a:p>""" +
+                """</p:txBody></p:sp>"""
+
+        return redShape + textShape
     }
 
     /** 引用块浅色圆角背景（roundRect，圆角 adj 取值约 20000 = 约 1/5 短边，柔和圆角卡片效果）。 */

@@ -232,7 +232,8 @@ data class SlideDeco(
     val wave: Boolean = false,
     val waveColor: String? = null,
     val bottomBar: Boolean = false,
-    val bottomBarH: Int = 0
+    val bottomBarH: Int = 0,
+    val logo: Boolean = false
 ) {
     /** 兼容旧调用：取首个装饰矩形（标题竖条）。 */
     val bar: Rect? get() = bars.firstOrNull()
@@ -272,6 +273,18 @@ enum class HAlign { LEFT, CENTER }
 /** 页面角色：叠加在组合之上，承载特殊页的专属内容行为（自动目录 / 默认致谢语 / 章节序号等）。 */
 enum class PageRole { NONE, COVER, TOC, ENDING, SECTION }
 
+/** 底部装饰：波浪 / 直线 / logo / 无。仅对无色块页面生效。 */
+enum class BottomDecoration(val key: String, val label: String) {
+    NONE("none", "无"),
+    WAVE("wave", "波浪"),
+    BAR("bar", "直线"),
+    LOGO("logo", "logo");
+
+    companion object {
+        fun fromKey(k: String) = values().firstOrNull { it.key == k } ?: NONE
+    }
+}
+
 /** 结构轴中文标签（UI 展示）。 */
 val Structure.label: String get() = when (this) {
     Structure.VERTICAL -> "上下"
@@ -283,11 +296,11 @@ val Structure.label: String get() = when (this) {
 /** 色块轴中文标签（UI 展示）。顺序即用户选择顺序：无 / 全色 / 左色 / 上色 / 下色 / 右色。 */
 val ColorBlock.label: String get() = when (this) {
     ColorBlock.NONE -> "无"
-    ColorBlock.COVER -> "全色"
-    ColorBlock.LEFT -> "左色"
-    ColorBlock.TOP -> "上色"
-    ColorBlock.BOTTOM -> "下色"
-    ColorBlock.RIGHT -> "右色"
+    ColorBlock.COVER -> "全"
+    ColorBlock.LEFT -> "左"
+    ColorBlock.TOP -> "上"
+    ColorBlock.BOTTOM -> "下"
+    ColorBlock.RIGHT -> "右"
 }
 
 /**
@@ -307,12 +320,16 @@ data class SlideComposition(
     val valign: VAlign,
     val halign: HAlign,
     val bandGap: Int = 24,
-    val role: PageRole = PageRole.NONE
+    val role: PageRole = PageRole.NONE,
+    val decoration: BottomDecoration = BottomDecoration.NONE
 ) {
     /** 编码为可持久化的字符串键（轴按固定顺序，便于 UI / 草稿 round-trip）。 */
-    val key: String get() = "${structure.name}|${colorBlock.name}|${valign.name}|${halign.name}|$bandGap|${role.name}"
+    val key: String get() = "${structure.name}|${colorBlock.name}|${valign.name}|${halign.name}|$bandGap|${role.name}|${decoration.key}"
 
     val isSpecial: Boolean get() = role != PageRole.NONE
+
+    /** 是否自身带大色块（整页底色 / 满高色条 / 顶部底部满宽色带等），此时不应叠加底部装饰。 */
+    val hasBigBlock: Boolean get() = role != PageRole.NONE || colorBlock != ColorBlock.NONE
 
     companion object {
         /** 从 [key] 反向解析；非法返回 null（兼容旧草稿 / 未知键）。 */
@@ -325,7 +342,8 @@ data class SlideComposition(
             val ha = HAlign.values().firstOrNull { it.name == p[3] } ?: return null
             val gap = p[4].toIntOrNull() ?: 0
             val role = PageRole.values().firstOrNull { it.name == p[5] } ?: PageRole.NONE
-            return SlideComposition(st, cb, va, ha, gap, role)
+            val deco = if (p.size > 6) BottomDecoration.fromKey(p[6]) else BottomDecoration.NONE
+            return SlideComposition(st, cb, va, ha, gap, role, deco)
         }
     }
 }

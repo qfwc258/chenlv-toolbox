@@ -37,6 +37,11 @@ object PptLayoutEngine {
     /** 当前生效波浪参数（由 UI 注入；默认=出厂效果=v1.7.9，保证「未调 = 原样」）。 */
     var waveParams: PptWaveParams = PptWaveParams()
 
+    /** Logo 装饰参数（由 UI 注入；控制大小与位置）。 */
+    var logoScale: Float = 0.20f       // 占画布宽比例，默认 20%
+    var logoHAlign: String = "right"   // "left" / "right"
+    var logoVAlign: String = "bottom"  // "top" / "bottom"
+
     enum class Align { LEFT, CENTER, RIGHT }
 
     /** 单页中的一个渲染单元（预览与导出都消费它）。坐标单位 pt。 */
@@ -293,16 +298,18 @@ object PptLayoutEngine {
      * 按页布局。封面页强制单列居中；其余按 [layoutOf] 选择模板。
      * 返回的 [LaidOutSlide] 携带该页 layout 与装饰信息，预览与导出共用，保证 1:1。
      *
-     * @param enableWave 是否在内容页底部添加波浪装饰（带大色块的页面不添加：封面/章节/目录/结尾）
-     * @param enableBar 是否在内容页底部添加直线色块装饰（与波浪并列、可独立开关；高度=画布高 1/N、默认 1/60、满屏宽、贴齐页底；颜色固定跟随主题主色调）
+     * 底部装饰（波浪/直线色块）由每页组合的 [SlideComposition.decoration] 决定，
+     * 仅对「自身不带大色块」的页面生效（hasBigBlock 为 false）。
+     * 波浪参数 [waveParams] 和直线色块高度 [barHeightDenom] 为全局视觉参数，由 UI 设置面板控制。
+     *
      * @param barHeightDenom 直线色块高度分母 N（高度 = 画布高 / N，默认 60；范围建议 30~100，越小越厚）
      */
-    fun layout(result: PaginationResult, theme: PptTheme, layoutOf: (Int) -> SlideLayout, compOf: (Int) -> SlideComposition? = { null }, enableWave: Boolean = false, enableBar: Boolean = false, barHeightDenom: Int = 60): List<LaidOutSlide> {
+    fun layout(result: PaginationResult, theme: PptTheme, layoutOf: (Int) -> SlideLayout, compOf: (Int) -> SlideComposition? = { null }, barHeightDenom: Int = 60): List<LaidOutSlide> {
         var sectionSeq = 0   // 章节页序号计数（用于超大序号 01/02...）
         // 底部装饰仅用于「自身不带大色块」的版式。大色块版式集合统一由母版模板注册表驱动（需求 3），
         // 凡版式自绘大色块（封面整页底色、章节左侧满高色条、目录顶部满宽色带、结尾底部满宽色带，
-        // 或组合中的全色色块），都不再叠加波浪/直线色块，避免与既有色块冲突或重叠。
-        // 判定见下方 layout() 内 hasBigBlock（组合驱动）。
+        // 或组合中的任意色块），都不再叠加波浪/直线色块，避免与既有色块冲突或重叠。
+        // 判定：使用 SlideComposition.hasBigBlock（role!=NONE 或 colorBlock!=NONE）。
         // 全文标题（H1/H2）：用于目录页自动补条目、避免空白页
         val docHeadings = result.pages.flatMap { it.blocks }
             .filterIsInstance<MdBlock.TextBlock>()
@@ -315,15 +322,17 @@ object PptLayoutEngine {
                 // 封面页：如果用户显式选了 COVER 版式或页面本身 isCover，都用封面布局
                 val requested = layoutOf(idx)
                 val comp = compOf(idx) ?: CompositionResolver.compositionOf(requested)
-                // 特殊页角色 或 全色色块 自身带大色块 → 不叠加波浪/直线色块（需求 2）
-                val hasBigBlock = comp.role != PageRole.NONE || comp.colorBlock == ColorBlock.COVER
+                // 特殊页角色或任意色块 → 自身带大色块，不叠加底部装饰
+                val hasBigBlock = comp.hasBigBlock
                 if (comp.role == PageRole.COVER) {
                     val (units, deco) = layoutCover(slide.blocks, comp)
                     return@mapIndexed LaidOutSlide(units, true, requested, deco, null, comp)
                 }
-                // 该页是否叠加波浪 / 直线色块：决定内容底部安全线（仅波浪需要上移正文；直线色块位于底部边距区内，不挤压正文）
-                val waveOn = enableWave && !hasBigBlock
-                val barOn = enableBar && !hasBigBlock
+                // 该页是否叠加波浪 / 直线色块 / logo：从 composition.decoration 读取，且仅当无大色块时生效
+                val bottomDeco = comp.decoration
+                val waveOn = !hasBigBlock && bottomDeco == BottomDecoration.WAVE
+                val barOn = !hasBigBlock && bottomDeco == BottomDecoration.BAR
+                val logoOn = !hasBigBlock && bottomDeco == BottomDecoration.LOGO
                 val barH = (style.canvasH / barHeightDenom).coerceAtLeast(1)
                 val effBottom = if (waveOn) {
                     val baseBottom = style.canvasH - style.marginBottom
@@ -339,20 +348,15 @@ object PptLayoutEngine {
                     PageRole.NONE -> { val (u, d) = layoutComposition(comp, slide.blocks, theme); Triple(u, d, comp.colorBlock == ColorBlock.COVER) }
                     else -> { val (u, d) = layoutCover(slide.blocks, comp); Triple(u, d, true) } // COVER 已在上方处理，兜底
                 }
-                // 底部装饰：波浪 + 直线色块（与波浪并列、可独立开关），内容页且开关打开时添加
+                // 底部装饰：波浪 / 直线色块 / logo（互斥，仅当页底装饰开关打开时添加）
                 // 直线色块颜色固定跟随主题主色调（theme.accent），高度由 barH 决定（画布高 1/N）
                 val finalDeco = when {
-                    waveOn && barOn -> deco?.copy(
-                        wave = true, waveColor = theme.accent,
-                        bottomBar = true, bottomBarH = barH
-                    ) ?: SlideDeco(
-                        wave = true, waveColor = theme.accent,
-                        bottomBar = true, bottomBarH = barH
-                    )
                     waveOn -> deco?.copy(wave = true, waveColor = theme.accent)
                         ?: SlideDeco(wave = true, waveColor = theme.accent)
                     barOn -> deco?.copy(bottomBar = true, bottomBarH = barH)
                         ?: SlideDeco(bottomBar = true, bottomBarH = barH)
+                    logoOn -> deco?.copy(logo = true)
+                        ?: SlideDeco(logo = true)
                     else -> deco
                 }
                 LaidOutSlide(units, cover, requested, finalDeco, null, comp)

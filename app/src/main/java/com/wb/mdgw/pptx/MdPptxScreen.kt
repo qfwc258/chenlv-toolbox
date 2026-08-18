@@ -49,6 +49,10 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalDensity
@@ -137,8 +141,6 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
     var themeId by remember { mutableStateOf(draft?.themeId ?: PptThemes.ALL[0].id) }
     var customColor by remember { mutableStateOf(draft?.customColor ?: "2E5FA3") }
     var autoPaginate by remember { mutableStateOf(draft?.autoPaginate ?: true) }
-    var waveDeco by remember { mutableStateOf(draft?.waveDeco ?: false) }
-    var barDeco by remember { mutableStateOf(draft?.barDeco ?: false) }
     var barHeightDenom by remember { mutableStateOf(draft?.barHeightDenom ?: 60) }   // 直线色块高度分母（1/N 页高）
     var bandGap by remember { mutableStateOf(draft?.bandGap ?: 24) }   // 版式间距：色块与正文间距（pt，全局统一）
     // 所有页面默认版式固定为「上下」（组合 = 上下/无/上左对齐）。预设选择器已移除，
@@ -161,6 +163,11 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
 
     // 波浪装饰可调参数（浪高 / 透明度 / 层次对比）：默认 = 出厂效果 v1.7.9（保底）。持久化由 PptWaveStore 负责。
     var waveParams by remember { mutableStateOf(PptWaveStore.load(context)) }
+
+    // Logo 装饰参数（大小 / 位置），持久化在 PptDraftStore 中
+    var logoScale by remember { mutableStateOf(draft?.logoScale ?: 0.20f) }
+    var logoHAlign by remember { mutableStateOf(draft?.logoHAlign ?: "right") }
+    var logoVAlign by remember { mutableStateOf(draft?.logoVAlign ?: "bottom") }
     // 统一设置弹窗（自动分页 / 波浪 / 波浪参数 / 样式 全部收进弹窗，规避原横条芯片点击失效）
     var showSettings by remember { mutableStateOf(false) }
 
@@ -180,22 +187,23 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
         t
     }
 
-    // 实时：解析 → 分页 → 布局（布局随逐页选择/默认布局/自定义主色/波浪装饰/直线色块/波浪参数/全局间距联动）
-    val slides by remember(markdown, autoPaginate, themeId, customColor, defaultLayout, waveDeco, barDeco, barHeightDenom, bandGap, cssText, waveParams) {
+    // 实时：解析 → 分页 → 布局（布局随逐页选择/默认布局/自定义主色/波浪参数/直线色块高度/全局间距联动）
+    val slides by remember(markdown, autoPaginate, themeId, customColor, defaultLayout, barHeightDenom, bandGap, cssText, waveParams, logoScale) {
         derivedStateOf {
-            // 开启波浪时，先按「上移波浪占用高度」的内容底边设置样式，使分页与布局共用同一安全区，
-            // 文字框整体位于波浪之上、与页底保持清晰边距（避免分页已触底、布局再降底边导致重叠）。
-            val effBottom = PptLayoutEngine.waveAwareContentBottom(waveDeco)
+            // 若任一页面组合开启了波浪装饰，则内容区底边上移以预留波浪空间。
+            val anyWave = comps.values.any { it.decoration == BottomDecoration.WAVE }
+            val effBottom = PptLayoutEngine.waveAwareContentBottom(anyWave)
             PptLayoutEngine.style = if (effBottom >= 0) style.copy(contentBottomOverride = effBottom) else style
             PptLayoutEngine.waveParams = waveParams
+            PptLayoutEngine.logoScale = logoScale
+            PptLayoutEngine.logoHAlign = logoHAlign
+            PptLayoutEngine.logoVAlign = logoVAlign
             val r = MdAstParser.parse(markdown)
             val paginated = MdAutoPaginator.paginate(r.blocks, autoPaginate, r.coverTitle)
             PptLayoutEngine.layout(
                 paginated, theme, { _ -> defaultLayout },
                 // 间距为全局设置（设置面板输入框）：渲染时统一覆盖每页组合的 bandGap
                 compOf = { i -> comps[i]?.copy(bandGap = bandGap) },
-                enableWave = waveDeco,
-                enableBar = barDeco,
                 barHeightDenom = barHeightDenom
             )
         }
@@ -204,7 +212,7 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
     val scope = rememberCoroutineScope()
 
     // 自动保存草稿（编辑内容/布局变化后防抖落盘，下次进入自动恢复）
-    LaunchedEffect(markdown, themeId, customColor, autoPaginate, waveDeco, barDeco, barHeightDenom, bandGap, defaultLayout, layoutsVersion) {
+    LaunchedEffect(markdown, themeId, customColor, autoPaginate, barHeightDenom, bandGap, defaultLayout, logoScale, logoHAlign, logoVAlign, layoutsVersion) {
         delay(500)
         PptDraftStore.save(
             context,
@@ -213,10 +221,11 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
                 themeId = themeId,
                 customColor = customColor,
                 autoPaginate = autoPaginate,
-                waveDeco = waveDeco,
-                barDeco = barDeco,
                 barHeightDenom = barHeightDenom,
                 bandGap = bandGap,
+                logoScale = logoScale,
+                logoHAlign = logoHAlign,
+                logoVAlign = logoVAlign,
                 defaultLayout = defaultLayout.key,
                 layouts = emptyMap(),
                 comps = comps.mapValues { it.value.key }
@@ -264,6 +273,9 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
                 withContext(Dispatchers.Main) { exportProgress = "正在生成 PPTX（共 ${cur.size} 页）..." }
                 val baos = java.io.ByteArrayOutputStream()
                 PptLayoutEngine.waveParams = waveParams
+                PptLayoutEngine.logoScale = logoScale
+                PptLayoutEngine.logoHAlign = logoHAlign
+                PptLayoutEngine.logoVAlign = logoVAlign
                 PptExportEngine.exportPptx(cur, theme, style, baos)
                 val bytes = baos.toByteArray()
                 val sf = FileUtils.saveToDownloads(context, name, bytes, PPTX_MIME)
@@ -393,16 +405,18 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
                 PptxSettingsDialog(
                     autoPaginate = autoPaginate,
                     onAuto = { autoPaginate = it },
-                    waveDeco = waveDeco,
-                    onWave = { waveDeco = it },
                     params = waveParams,
                     onParamsChange = { waveParams = it },
-                    barDeco = barDeco,
-                    onBar = { barDeco = it },
                     barHeightDenom = barHeightDenom,
                     onBarHeightDenom = { barHeightDenom = it },
                     bandGap = bandGap,
                     onBandGap = { bandGap = it },
+                    logoScale = logoScale,
+                    onLogoScale = { logoScale = it },
+                    logoHAlign = logoHAlign,
+                    onLogoHAlign = { logoHAlign = it },
+                    logoVAlign = logoVAlign,
+                    onLogoVAlign = { logoVAlign = it },
                     onStyle = { showSettings = false; showStyleDialog = true },
                     onDismiss = { showSettings = false }
                 )
@@ -480,23 +494,26 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
 /**
  * 设置面板：内联覆盖层（Box + Surface 卡片），不依赖 Dialog window。
  * 作为 Scaffold content 根 Box 的子项，必然显示在内容区之上，规避此前 AlertDialog 不显示问题。
- * 内含：自动分页 / 波浪装饰 开关、版式间距数值输入框、波浪三滑块（开启时）、自定义样式(CSS) 入口。
+ * 内含：自动分页 / 版式间距 / 波浪参数 / 直线色块高度 / 自定义样式(CSS)。
+ * 底部装饰的开关已移至每页的「版式组合」选择器中，此处仅保留全局视觉参数。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PptxSettingsDialog(
     autoPaginate: Boolean,
     onAuto: (Boolean) -> Unit,
-    waveDeco: Boolean,
-    onWave: (Boolean) -> Unit,
     params: PptWaveParams,
     onParamsChange: (PptWaveParams) -> Unit,
-    barDeco: Boolean,
-    onBar: (Boolean) -> Unit,
     barHeightDenom: Int,
     onBarHeightDenom: (Int) -> Unit,
     bandGap: Int,
     onBandGap: (Int) -> Unit,
+    logoScale: Float,
+    onLogoScale: (Float) -> Unit,
+    logoHAlign: String,
+    onLogoHAlign: (String) -> Unit,
+    logoVAlign: String,
+    onLogoVAlign: (String) -> Unit,
     onStyle: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -574,80 +591,120 @@ private fun PptxSettingsDialog(
                     }
                     GapNumField(value = bandGap, onChange = onBandGap)
                 }
-                // 波浪装饰
-                SettingToggleRow(
-                    icon = Icons.Default.Waves,
-                    title = "波浪装饰",
-                    desc = "页底流动海浪背景",
-                    checked = waveDeco,
-                    onCheckedChange = onWave
-                )
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                SectionLabel("底部装饰参数（全局 · 在版式组合中逐页开关）")
 
-                // 波浪参数（仅开启时显示）：收进浅色子面板，更紧凑
-                if (waveDeco) {
-                    Spacer(Modifier.height(6.dp))
-                    Surface(
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-                            Text(
-                                "波浪参数（100% = 出厂效果）",
-                                fontSize = 12.sp, fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(Modifier.height(6.dp))
-                            WaveParamSlider(label = "波浪高度", value = params.heightScale, rangeMin = 0.4f, rangeMax = 1.6f, step = 0.05f) { onParamsChange(params.copy(heightScale = it)) }
-                            WaveParamSlider(label = "波浪透明度", value = params.opacityScale, rangeMin = 0.3f, rangeMax = 1.2f, step = 0.05f) { onParamsChange(params.copy(opacityScale = it)) }
-                            WaveParamSlider(label = "层次对比", value = params.contrast, rangeMin = 0.0f, rangeMax = 1.6f, step = 0.05f) { onParamsChange(params.copy(contrast = it)) }
-                        }
+                // 波浪参数（始终显示）：高度 / 透明度 / 层次对比，100% = 出厂效果
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                        Text(
+                            "波浪参数（100% = 出厂效果）",
+                            fontSize = 12.sp, fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        WaveParamSlider(label = "波浪高度", value = params.heightScale, rangeMin = 0.4f, rangeMax = 1.6f, step = 0.05f) { onParamsChange(params.copy(heightScale = it)) }
+                        WaveParamSlider(label = "波浪透明度", value = params.opacityScale, rangeMin = 0.3f, rangeMax = 1.2f, step = 0.05f) { onParamsChange(params.copy(opacityScale = it)) }
+                        WaveParamSlider(label = "层次对比", value = params.contrast, rangeMin = 0.0f, rangeMax = 1.6f, step = 0.05f) { onParamsChange(params.copy(contrast = it)) }
                     }
                 }
 
-                // 直线色块装饰（与波浪并列、可独立开关）
-                SettingToggleRow(
-                    icon = Icons.Default.Minimize,
-                    title = "直线色块装饰",
-                    desc = "页底纯色色条",
-                    checked = barDeco,
-                    onCheckedChange = onBar
-                )
+                Spacer(Modifier.height(6.dp))
 
-                // 直线色块参数（仅开启时显示）：高度可调（默认 1/60 页高），颜色跟随主题主色调
-                if (barDeco) {
-                    Spacer(Modifier.height(6.dp))
-                    Surface(
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-                            Row(
-                                Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Text("色块高度", fontSize = 13.sp, modifier = Modifier.weight(1f))
-                                Text(
-                                    "1/${barHeightDenom} 页高",
-                                    fontSize = 12.sp, fontWeight = FontWeight.Medium,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                            Spacer(Modifier.height(6.dp))
-                            Slider(
-                                value = barHeightDenom.toFloat(),
-                                onValueChange = { onBarHeightDenom(it.roundToInt()) },
-                                valueRange = 30f..100f,
-                                steps = ((100f - 30f) / 5f - 1f).toInt().coerceAtLeast(0),
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            Spacer(Modifier.height(6.dp))
+                // 直线色块参数（始终显示）：高度可调（默认 1/60 页高），颜色跟随主题主色调
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text("直线色块高度", fontSize = 13.sp, modifier = Modifier.weight(1f))
                             Text(
-                                "越小越厚（1/30~1/100）；颜色跟随主题主色调，满屏宽、贴齐页底",
-                                fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+                                "1/${barHeightDenom} 页高",
+                                fontSize = 12.sp, fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.primary
                             )
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Slider(
+                            value = barHeightDenom.toFloat(),
+                            onValueChange = { onBarHeightDenom(it.roundToInt()) },
+                            valueRange = 30f..100f,
+                            steps = ((100f - 30f) / 5f - 1f).toInt().coerceAtLeast(0),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "越小越厚（1/30~1/100）；颜色跟随主题主色调，满屏宽、贴齐页底",
+                            fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                // Logo 参数（始终显示）：大小 / 水平位置 / 垂直位置
+                Spacer(Modifier.height(6.dp))
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                        Text(
+                            "Logo 参数（右下角 · 在版式组合中逐页开关）",
+                            fontSize = 12.sp, fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        // 大小
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text("大小", fontSize = 13.sp, modifier = Modifier.weight(1f))
+                            Text(
+                                "${(logoScale * 100).roundToInt()}%",
+                                fontSize = 12.sp, fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        Slider(
+                            value = logoScale,
+                            onValueChange = onLogoScale,
+                            valueRange = 0.10f..0.30f,
+                            steps = ((0.30f - 0.10f) / 0.02f - 1f).toInt().coerceAtLeast(0),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        // 水平位置
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text("水平", fontSize = 13.sp, modifier = Modifier.weight(0.3f))
+                            Pill("左", logoHAlign == "left") { onLogoHAlign("left") }
+                            Pill("右", logoHAlign == "right") { onLogoHAlign("right") }
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        // 垂直位置
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text("垂直", fontSize = 13.sp, modifier = Modifier.weight(0.3f))
+                            Pill("上", logoVAlign == "top") { onLogoVAlign("top") }
+                            Pill("下", logoVAlign == "bottom") { onLogoVAlign("bottom") }
                         }
                     }
                 }
@@ -1258,6 +1315,23 @@ private fun CompositionSelector(
                     onCompositionChange(comp.copy(valign = VAlign.CENTER, halign = HAlign.CENTER))
                 }
             }
+            // 底部装饰：仅无色块页面可选；有色块页面自动禁用
+            CompositionRow("装饰") {
+                if (comp.hasBigBlock) {
+                    Text(
+                        "有色块时不可用",
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                        modifier = Modifier.padding(horizontal = 4.dp)
+                    )
+                } else {
+                    BottomDecoration.values().forEach { d ->
+                        Pill(d.label, comp.decoration == d) {
+                            onCompositionChange(comp.copy(decoration = d))
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -1337,6 +1411,56 @@ private fun SlideCanvas(slide: PptLayoutEngine.LaidOutSlide, theme: PptTheme, mo
                         .height((barHpt * scale).dp)
                         .background(hexToColor(barColorStr))
                 )
+            }
+            // Logo 装饰（右下角）：红色斜角块 + LAWYER.C 文字
+            if (slide.deco?.logo == true) {
+                val logoRed = Color(0xFFD31B29)
+                val ls = PptLayoutEngine.logoScale
+                val logoW = (PptLayoutEngine.style.canvasW * scale * ls).dp
+                val logoH = (logoW.value * 180f / 640f).dp
+                val lh = PptLayoutEngine.logoHAlign
+                val lv = PptLayoutEngine.logoVAlign
+                val logoX = if (lh == "right") (PptLayoutEngine.style.canvasW * scale * (1f - ls)).dp else 0.dp
+                val logoY = if (lv == "bottom") (PptLayoutEngine.style.canvasH * scale - logoH.value).dp else 0.dp
+                val textMeasurer = rememberTextMeasurer()
+                Box(
+                    Modifier
+                        .offset(x = logoX, y = logoY)
+                        .size(logoW, logoH)
+                ) {
+                    Canvas(Modifier.fillMaxSize()) {
+                        val cw = size.width
+                        val ch = size.height
+                        // 红色斜角四边形
+                        val redShape = ComposePath().apply {
+                            moveTo(0f, 0f)
+                            lineTo(cw * 0.195f, ch * 0.02f)
+                            lineTo(cw * 0.170f, ch)
+                            lineTo(0f, ch)
+                            close()
+                        }
+                        drawPath(path = redShape, color = logoRed)
+                        // LAWYER.C 文字
+                        val textStyle = TextStyle(
+                            fontSize = (logoW.value * 104f / 640f).sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        val measured = textMeasurer.measure("LAWYER.C", textStyle)
+                        val textOffset = Offset(x = cw * 0.21f, y = ch * 0.14f)
+                        drawText(
+                            textLayoutResult = measured,
+                            topLeft = textOffset,
+                            drawStyle = Stroke(width = cw * 0.003f),
+                            color = Color(0xFFCFCFCF)
+                        )
+                        drawText(
+                            textLayoutResult = measured,
+                            topLeft = textOffset,
+                            color = Color.White
+                        )
+                    }
+                }
             }
             // 标题 / 引用左侧强调竖条、封面色条、强调线等装饰矩形
             val barColor = slide.deco?.barColor ?: theme.accent

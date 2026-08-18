@@ -25,10 +25,13 @@ object PptDraftStore : JsonFileStore<PptDraftStore.PptDraft>() {
         val themeId: String = "navy",
         val customColor: String = "2E5FA3",   // 自定义主色调（themeId == "custom" 时生效）
         val autoPaginate: Boolean = true,
-        val waveDeco: Boolean = false,          // 底部波浪装饰开关
-        val barDeco: Boolean = false,           // 底部直线色块装饰开关（与波浪并列）
+        val waveDeco: Boolean = false,          // 底部波浪装饰开关（已废弃，改用逐页组合 decoration 字段）
+        val barDeco: Boolean = false,           // 底部直线色块装饰开关（已废弃，改用逐页组合 decoration 字段）
         val barHeightDenom: Int = 60,           // 直线色块高度分母（1/N 页高，默认 60；越小越厚）
         val bandGap: Int = 24,                  // 版式间距：色块与正文的间距（pt，全局；仅左/上/下色块生效）
+        val logoScale: Float = 0.20f,           // Logo 宽度占画布宽比例（0.10~0.30，默认 0.20）
+        val logoHAlign: String = "right",       // Logo 水平位置：left / right
+        val logoVAlign: String = "bottom",      // Logo 垂直位置：top / bottom
         val defaultLayout: String = "standard",   // 对应 SlideLayout.STANDARD.key
         val layouts: Map<Int, String> = emptyMap(),   // 页索引 -> 布局 key（预设版式，兼容旧草稿）
         val comps: Map<Int, String> = emptyMap()      // 页索引 -> 组合 key（阶段二自由组合；缺省视为使用预设版式）
