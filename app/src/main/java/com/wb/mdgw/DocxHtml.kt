@@ -142,25 +142,37 @@ object DocxHtml {
     }
 
     /** 公共 HTML 头部：DOCTYPE + meta + 中文字体堆栈 + 页面基础样式。
-     *  字体堆栈优先用系统中文字体（思源宋体 / Noto Serif CJK），避免首次加载时字体闪烁。 */
+     *  字体堆栈优先用系统中文字体（思源宋体 / Noto Serif CJK），避免首次加载时字体闪烁。
+     *  页面固定为 A4（210mm × 297mm）打印纸张比例：白纸投影居中，符合 WPS 打印预览观感。 */
     private fun htmlHead(tPadPct: String, rPadPct: String, bPadPct: String, lPadPct: String): String = buildString {
         append("<!DOCTYPE html><html><head><meta charset='utf-8'>")
         append("<meta name='viewport' content='width=device-width,initial-scale=1.0,maximum-scale=3.0,user-scalable=yes'>")
         append("<style>")
         append("*{box-sizing:border-box;margin:0;padding:0;}")
-        // 中文优先：思源宋体 / Noto Serif CJK / 宋体 / SimSun / serif
-        append("body{background:#E8E8E8;font-family:'Source Han Serif SC','Noto Serif CJK SC','Songti SC','宋体',SimSun,serif;")
-        append("padding:8px;-webkit-text-size-adjust:100%;}")
-        append(".page{background:white;max-width:100%;margin:0 auto;")
+        // 中文优先：思源宋体 / Noto Serif CJK / 宋体 / SimSun / serif；正文 12pt / 1.75 行距
+        append("body{background:#E8E8E8;font-family:'Source Han Serif SC','Noto Serif CJK SC','宋体',SimSun,serif;")
+        append("padding:12px;-webkit-text-size-adjust:100%;}")
+        // A4 页面（210mm × 297mm）：固定大小、居中、加投影——与 WPS 打印预览视觉一致
+        append(".page{background:white;width:210mm;min-height:297mm;margin:0 auto 14px auto;")
         append("padding:${tPadPct}% ${rPadPct}% ${bPadPct}% ${lPadPct}%;")
-        append("box-shadow:0 2px 12px rgba(0,0,0,0.12);min-height:90vh;}")
-        append(".doc-para{margin:0;padding:3px 0;}")
-        append(".doc-table{width:100%;border-collapse:collapse;margin:6px 0;}")
-        append(".doc-table td{border:1px solid #333;padding:4px 6px;vertical-align:top;}")
-        append(".doc-table tr:first-child td{border-top:1.5px solid #333;}")
-        append(".doc-table tr:last-child td{border-bottom:1.5px solid #333;}")
-        append(".doc-table td:first-child{border-left:1.5px solid #333;}")
-        append(".doc-table td:last-child{border-right:1.5px solid #333;}")
+        append("box-shadow:0 4px 20px rgba(0,0,0,0.18);font-family:'宋体',SimSun,'Source Han Serif SC',serif;")
+        append("line-height:1.75;font-size:12pt;color:#000;")
+        append("text-align:justify;text-justify:inter-ideograph;}")
+        // 段落：保留 1.75 行距，首行缩进 2 字符（pt=24pt）；white-space:pre-line 让 w:br
+        // 转换来的 \n 真实换行显示，避免内容被合并成一行
+        append(".doc-para{margin:0;padding:0;white-space:pre-line;}")
+        append(".doc-para.first-indent{text-indent:24pt;}")
+        // 表格：1px 黑实线、单元格居中、垂直居中
+        append(".doc-table{width:100%;border-collapse:collapse;margin:6pt 0;table-layout:fixed;}")
+        append(".doc-table td{border:1px solid #000;padding:4pt 6pt;vertical-align:middle;text-align:center;}")
+        append(".doc-table tr:first-child td{border-top:1.5px solid #000;}")
+        append(".doc-table tr:last-child td{border-bottom:1.5px solid #000;}")
+        append(".doc-table td:first-child{border-left:1.5px solid #000;}")
+        append(".doc-table td:last-child{border-right:1.5px solid #000;}")
+        // contenteditable 提示：聚焦时背景微变
+        append(".page:focus{outline:none;background:#FFFEFB;}")
+        // 小屏适配：手机宽度 < A4 时整体缩放至 92%
+        append("@media (max-width:480px){.page{transform:scale(0.92);transform-origin:top center;}}")
         append("</style></head><body>")
     }
 
@@ -341,7 +353,7 @@ function collectEdits(){
         return "<span data-run='$runIdx'$styleStr>${text.escapeHtml()}</span>"
     }
 
-    /** 递归收集 run 内的文字：w:t 取字、w:tab → 制表符、w:br → <br> */
+    /** 递归收集 run 内的文字：w:t 取字、w:tab → 制表符、w:br → 换行符（导出时由 distributeRuns 拆回） */
     private fun collectRunText(node: Element): String = buildString {
         val nodes = node.childNodes
         for (i in 0 until nodes.length) {
@@ -350,7 +362,10 @@ function collectEdits(){
                 when (n.local()) {
                     "t" -> append(n.textContent)
                     "tab" -> append("\t")
-                    "br" -> {}
+                    // 关键修复：原代码 "br" -> {} 直接吞掉了 w:br 换行符，导致原文
+                    // 「受援人：xxx  承办人：xxx」这种用 w:br 分行的段落被错误地合并成一行。
+                    // 现在用 \n 占位，导出会按此切分到原 run。
+                    "br" -> append("\n")
                     else -> append(collectRunText(n))
                 }
             }

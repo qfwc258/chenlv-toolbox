@@ -455,7 +455,6 @@ fun WordScreen(
     suspend fun syncWebViewEditsSuspend(): GovDoc? {
         val wv = webView ?: return null
         val d = govDoc ?: return null
-        if (d.originalDocx == null) return d
 
         val deferred = CompletableDeferred<GovDoc?>(d)
         wv.evaluateJavascript("collectEdits()") { json ->
@@ -1322,7 +1321,11 @@ private fun GovDocPaper(
     var loadProgress by remember { mutableStateOf(0) }
     var loadFailed by remember { mutableStateOf(false) }
     // 预生成 HTML：失败时不进入 WebView 而走降级
-    val htmlResult = remember(doc) {
+    // 关键：Word 打开场景下以 originalDocx 为 key，避免导出后 commitGov 触发 recomposition
+    // 把已编辑的 WebView 重新加载回原始内容（覆盖用户刚改的字）。Markdown 场景下以 doc
+    // 自身为 key，模型变更时正常刷新。
+    val htmlKey = remember(doc) { doc.originalDocx ?: doc }
+    val htmlResult = remember(htmlKey) {
         runCatching { doc.originalDocx?.let { DocxHtml.toHtml(it, doc.page) } ?: DocxHtml.govDocToHtml(doc) }
     }
     if (loadFailed || htmlResult.isFailure) {
