@@ -1206,12 +1206,13 @@ private fun PaperPreview(
 @Composable
 private fun GovDocPaper(doc: GovDoc, onStartEdit: (EditTarget) -> Unit) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        // 页面宽度 = 屏幕宽度 - 阴影留白
-        val pageW = maxWidth - 12.dp
+        // 页面宽度 = 屏幕宽度
+        val pageW = maxWidth
         val page = doc.page
         // A4 高宽比：29.7 / 21 ≈ 1.414
         val pageH = pageW * (page.heightCm / page.widthCm).toFloat()
-        val scale = pageW.value / (page.widthCm * 37.795f) // dp per cm ≈ 37.795, 用于字号缩放
+        // 1pt = 1/72inch = 2.54/72cm → 1cm = 72/2.54pt ≈ 28.35pt
+        val scale = pageW.value / (page.widthCm * 28.35f)
         // 内容区边距 = 页面宽度 × (边距cm / 页面宽度cm)
         val lPad = pageW * (page.leftCm / page.widthCm).toFloat()
         val rPad = pageW * (page.rightCm / page.widthCm).toFloat()
@@ -1274,11 +1275,12 @@ private fun GovDocPaper(doc: GovDoc, onStartEdit: (EditTarget) -> Unit) {
                                 }
                             }
                             is Block.Table -> {
-                                Card(
+                                // 打印样式表格：直角边框 + 行分隔线，与 Word 打印效果一致
+                                Surface(
                                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                                    shape = RoundedCornerShape(6.dp),
-                                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                                    border = BorderStroke(1.dp, Color(0xFFBDBDBD))
+                                    shape = RoundedCornerShape(0.dp),
+                                    color = Color.White,
+                                    border = BorderStroke(1.dp, Color(0xFF333333))
                                 ) {
                                     Column(Modifier.fillMaxWidth()) {
                                         b.rows.forEachIndexed { r, row ->
@@ -1292,10 +1294,17 @@ private fun GovDocPaper(doc: GovDoc, onStartEdit: (EditTarget) -> Unit) {
                                                         modifier = Modifier
                                                             .weight(1f)
                                                             .clickable { onStartEdit(EditTarget(idx, r, c)) }
-                                                            .border(BorderStroke(0.5.dp, Color(0xFFBDBDBD)))
-                                                            .padding(8.dp)
+                                                            .border(
+                                                                border = BorderStroke(0.5.dp, Color(0xFF999999)),
+                                                                shape = RoundedCornerShape(0.dp)
+                                                            )
+                                                            .padding(horizontal = 6.dp, vertical = 5.dp)
                                                     )
                                                 }
+                                            }
+                                            // 行间分隔线（最后一行不加）
+                                            if (r < b.rows.size - 1) {
+                                                HorizontalDivider(thickness = 0.5.dp, color = Color(0xFF999999))
                                             }
                                         }
                                     }
