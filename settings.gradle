@@ -9,7 +9,9 @@ pluginManagement {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
     repositories {
-        maven { url 'https://maven.aliyun.com/repository/public' }
+        // 注意：不放阿里云镜像。CI 在 GitHub Actions 上可直连 google()/mavenCentral()，
+        // 而阿里云对部分构件（如 lint 依赖 sdk-common）会间歇性返回 502，
+        // Gradle 遇 5xx 不会回退到下一个仓库，直接导致整个解析失败。
         google()
         mavenCentral()
     }
