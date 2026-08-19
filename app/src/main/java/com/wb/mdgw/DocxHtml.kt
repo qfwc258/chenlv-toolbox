@@ -54,12 +54,6 @@ object DocxHtml {
         val body = dom.documentElement.childElements().firstOrNull { it.local() == "body" }
             ?: return blankHtml("文档结构异常：缺少 body")
 
-        // 边距比例（相对于页面宽度）
-        val lPadPct = (page.leftCm / page.widthCm * 100).let { "%.1f".format(it) }
-        val rPadPct = (page.rightCm / page.widthCm * 100).let { "%.1f".format(it) }
-        val tPadPct = (page.topCm / page.widthCm * 100).let { "%.1f".format(it) }
-        val bPadPct = (page.bottomCm / page.widthCm * 100).let { "%.1f".format(it) }
-
         val bodyHtml = try {
             buildBodyHtml(body)
         } catch (e: Exception) {
@@ -69,7 +63,7 @@ object DocxHtml {
         Log.d(TAG, "toHtml: generated ${bodyHtml.length} chars of body HTML")
 
         return buildString {
-            append(htmlHead(tPadPct, rPadPct, bPadPct, lPadPct))
+            append(htmlHead(page))
             append("<div class='page'>")
             append(bodyHtml)
             append("</div>")
@@ -83,10 +77,6 @@ object DocxHtml {
      */
     fun govDocToHtml(doc: GovDoc): String {
         val page = doc.page
-        val lPadPct = (page.leftCm / page.widthCm * 100).let { "%.1f".format(it) }
-        val rPadPct = (page.rightCm / page.widthCm * 100).let { "%.1f".format(it) }
-        val tPadPct = (page.topCm / page.widthCm * 100).let { "%.1f".format(it) }
-        val bPadPct = (page.bottomCm / page.widthCm * 100).let { "%.1f".format(it) }
 
         val bodyHtml = buildString {
             doc.blocks.forEachIndexed { idx, b ->
@@ -142,7 +132,7 @@ object DocxHtml {
         }
 
         return buildString {
-            append(htmlHead(tPadPct, rPadPct, bPadPct, lPadPct))
+            append(htmlHead(page))
             append("<div class='page'>")
             append(bodyHtml)
             append("</div>")
@@ -150,20 +140,29 @@ object DocxHtml {
         }
     }
 
-    /** 公共 HTML 头部：DOCTYPE + meta + 中文字体堆栈 + 页面基础样式。
-     *  字体堆栈优先用系统中文字体（思源宋体 / Noto Serif CJK），避免首次加载时字体闪烁。
-     *  页面固定为 A4（210mm × 297mm）打印纸张比例：白纸投影居中，符合 WPS 打印预览观感。 */
-    private fun htmlHead(tPadPct: String, rPadPct: String, bPadPct: String, lPadPct: String): String = buildString {
+    /**
+     * 公共 HTML 头部：DOCTYPE + meta + 中文字体堆栈 + 页面基础样式。
+     *
+     * 页面适配方案（修复「预览页与屏幕同宽 / 不居中」）：
+     * - 纸页宽度 / 高度 / 页边距取文档真实 [PageSetup]（不再硬编码 210mm，也不再
+     *   用百分比边距——百分比按容器宽解析，与页宽不一致会引入偏差）。
+     * - viewport 声明固定布局宽 = 页宽 + 两侧留白：手机上 WebView（已开 useWideViewPort
+     *   + loadWithOverviewMode）把整个布局等比缩放到屏宽，白页 margin:0 auto 居中、
+     *   两侧露出灰底，呈 WPS/Word 打印预览观感；文字等比缩放，换行与导出 PDF 一致。
+     */
+    private fun htmlHead(page: PageSetup): String = buildString {
+        // 布局宽 = 页宽(px) + 两侧留白；cm→px 按 CSS 96dpi
+        val layoutW = (page.widthCm / 2.54 * 96.0 + 48.0).toInt()
         append("<!DOCTYPE html><html><head><meta charset='utf-8'>")
-        append("<meta name='viewport' content='width=device-width,initial-scale=1.0,maximum-scale=3.0,user-scalable=yes'>")
+        append("<meta name='viewport' content='width=$layoutW,user-scalable=yes'>")
         append("<style>")
         append("*{box-sizing:border-box;margin:0;padding:0;}")
         // 中文优先：思源宋体 / Noto Serif CJK / 宋体 / SimSun / serif；正文 12pt / 1.75 行距
         append("body{background:#E8E8E8;font-family:'Source Han Serif SC','Noto Serif CJK SC','宋体',SimSun,serif;")
-        append("padding:12px;-webkit-text-size-adjust:100%;}")
-        // A4 页面（210mm × 297mm）：固定大小、居中、加投影——与 WPS 打印预览视觉一致
-        append(".page{background:white;width:210mm;min-height:297mm;margin:0 auto 14px auto;")
-        append("padding:${tPadPct}% ${rPadPct}% ${bPadPct}% ${lPadPct}%;")
+        append("-webkit-text-size-adjust:100%;}")
+        // 纸页：真实页宽、margin auto 水平居中、真实页边距（cm）、投影——WPS 打印预览观感
+        append(".page{background:white;width:${page.widthCm}cm;min-height:${page.heightCm}cm;margin:0 auto 14px;")
+        append("padding:${page.topCm}cm ${page.rightCm}cm ${page.bottomCm}cm ${page.leftCm}cm;")
         append("box-shadow:0 4px 20px rgba(0,0,0,0.18);font-family:'宋体',SimSun,'Source Han Serif SC',serif;")
         append("line-height:1.75;font-size:12pt;color:#000;")
         append("text-align:justify;text-justify:inter-ideograph;}")
@@ -184,8 +183,6 @@ object DocxHtml {
         append(".doc-table tr:last-child td{border-bottom:1.5px solid #000;}")
         append(".doc-table td:first-child{border-left:1.5px solid #000;}")
         append(".doc-table td:last-child{border-right:1.5px solid #000;}")
-        // 小屏适配：手机宽度 < A4 时整体缩放至 92%
-        append("@media (max-width:480px){.page{transform:scale(0.92);transform-origin:top center;}}")
         append("</style></head><body>")
     }
 

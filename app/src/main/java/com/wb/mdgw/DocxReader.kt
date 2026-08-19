@@ -42,7 +42,7 @@ object DocxReader {
             }
         }
         val docData = docXml ?: error("不是有效的 Word 文档（缺少 document.xml）")
-        val styleNames = parseStyles(stylesXml)
+        val styles = parseStyleTable(stylesXml)
 
         val dom = parseDom(docData)
         val body = dom.documentElement.childElements().firstOrNull { it.local() == "body" }
@@ -52,14 +52,14 @@ object DocxReader {
         for (child in body.childElements()) {
             when (child.local()) {
                 "p" -> {
-                    val para = parsePara(child, styleNames)
+                    val para = parsePara(child, styles)
                     blocks += para
                     if (title.isBlank()) {
                         val t = para.runs.joinToString("") { it.text }.trim()
                         if (t.isNotEmpty()) title = t
                     }
                 }
-                "tbl" -> blocks += parseTable(child)
+                "tbl" -> blocks += parseTable(child, styles)
                 // sectPr 等其它节点忽略
             }
         }
@@ -150,22 +150,125 @@ object DocxReader {
         return if (cm in 0.3..5.0) cm else 1.75
     }
 
-    private fun parseStyles(xml: ByteArray?): Map<String, String> {
-        val map = mutableMapOf<String, String>()
-        if (xml == null) return map
-        runCatching {
+    /**
+     * 解析 styles.xml：样式名表 + 各样式的字符属性（粗体 / 斜体 / 下划线 / 删除线 /
+     * 字体 / 字号）与段落对齐，含 basedOn 继承链。
+     *
+     * 真实 Word 文档（法院模板、WPS 导出等）的粗体 / 下划线大量只存在于样式层
+     * （run 上无 w:b / w:u，靠 w:pStyle / w:rStyle 继承），只取样式名会导致
+     * 这些格式在预览中整体丢失。此处完整解析，供 [parseRuns] 按 OOXML 优先级
+     * （docDefaults < 段落样式 < 字符样式 < 直接格式）合并。
+     */
+    private fun parseStyleTable(xml: ByteArray?): StyleTable {
+        val empty = StyleTable(emptyMap(), emptyMap(), StyleProps())
+        if (xml == null) return empty
+        return runCatching {
             val dom = parseDom(xml)
+            val names = mutableMapOf<String, String>()
+            val defs = mutableMapOf<String, StyleDef>()
+            var defaults = StyleProps()
             for (s in dom.documentElement.childElements()) {
-                if (s.local() != "style") continue
-                val id = s.attr("w:styleId") ?: continue
-                val name = s.child("w:name")?.attr("w:val") ?: ""
-                map[id] = name
+                when (s.local()) {
+                    "docDefaults" -> s.child("w:rPrDefault")?.child("w:rPr")?.let {
+                        defaults = mergeProps(defaults, readRunProps(it))
+                    }
+                    "style" -> {
+                        val id = s.attr("w:styleId") ?: continue
+                        val name = s.child("w:name")?.attr("w:val") ?: ""
+                        names[id] = name
+                        val basedOn = s.child("w:basedOn")?.attr("w:val")
+                        val props = s.child("w:rPr")?.let { readRunProps(it) } ?: StyleProps()
+                        val align = s.child("w:pPr")?.child("w:jc")?.attr("w:val")
+                        defs[id] = StyleDef(name, basedOn, props, align)
+                    }
+                }
             }
-        }
-        return map
+            StyleTable(names, defs, defaults)
+        }.getOrDefault(empty)
     }
 
-    private fun parseTable(tbl: Element): Block.Table {
+    /** 三态字符属性：null=未声明（继承下层），false=显式关闭。样式合并的载体。 */
+    private class StyleProps(
+        val bold: Boolean? = null,
+        val italic: Boolean? = null,
+        val underline: Boolean? = null,
+        val strike: Boolean? = null,
+        val font: String? = null,
+        val sizePt: Double? = null
+    )
+
+    /** 单个样式定义：名称、父样式（basedOn）、字符属性、段落对齐（仅段落样式有意义） */
+    private class StyleDef(
+        val name: String,
+        val basedOn: String?,
+        val props: StyleProps,
+        val align: String?
+    )
+
+    /** styles.xml 解析结果：样式表 + 文档级默认字符属性（docDefaults/rPrDefault） */
+    private class StyleTable(
+        val names: Map<String, String>,
+        private val defs: Map<String, StyleDef>,
+        val defaults: StyleProps
+    ) {
+        /** 样式 id → 沿 basedOn 链继承合并后的有效字符属性（子样式覆盖父样式） */
+        fun propsOf(id: String?): StyleProps {
+            var cur = id
+            var depth = 0
+            val chain = mutableListOf<StyleDef>()
+            while (cur != null && depth < 8) { // 深度上限防循环引用
+                val d = defs[cur] ?: break
+                chain += d
+                cur = d.basedOn
+                depth++
+            }
+            var acc = StyleProps()
+            for (i in chain.indices.reversed()) acc = mergeProps(acc, chain[i].props)
+            return acc
+        }
+
+        /** 段落样式链上的对齐声明（子样式优先），供段落未直接声明 w:jc 时继承 */
+        fun alignOf(id: String?): String? {
+            var cur = id
+            var depth = 0
+            while (cur != null && depth < 8) {
+                val d = defs[cur] ?: return null
+                d.align?.let { return it }
+                cur = d.basedOn
+                depth++
+            }
+            return null
+        }
+    }
+
+    /** 从 w:rPr 读取直接字符属性（三态）；w:bCs/w:iCs 为复杂文种开关，与 w:b/w:i 取并 */
+    private fun readRunProps(rPr: Element): StyleProps = StyleProps(
+        bold = triOn(rPr.child("w:b")) ?: triOn(rPr.child("w:bCs")),
+        italic = triOn(rPr.child("w:i")) ?: triOn(rPr.child("w:iCs")),
+        underline = triUnderline(rPr.child("w:u")),
+        strike = triOn(rPr.child("w:strike")),
+        font = rPr.child("w:rFonts")?.run {
+            val ea = attr("w:eastAsia").orEmpty()
+            if (ea.isBlank()) attr("w:ascii").orEmpty() else ea
+        }?.takeIf { it.isNotBlank() },
+        sizePt = rPr.child("w:sz")?.attr("w:val")?.toDoubleOrNull()?.div(2.0)
+    )
+
+    private fun triOn(node: Element?): Boolean? = if (node == null) null else isOn(node)
+
+    private fun triUnderline(node: Element?): Boolean? = if (node == null) null else isUnderline(node)
+
+    /** 属性合并：over 中声明的属性生效，未声明（null）的沿用 base */
+    private fun mergeProps(base: StyleProps, over: StyleProps): StyleProps = StyleProps(
+        bold = over.bold ?: base.bold,
+        italic = over.italic ?: base.italic,
+        underline = over.underline ?: base.underline,
+        strike = over.strike ?: base.strike,
+        font = over.font ?: base.font,
+        sizePt = over.sizePt ?: base.sizePt
+    )
+
+    private fun parseTable(tbl: Element, styles: StyleTable): Block.Table {
         val rows = mutableListOf<List<List<TextRun>>>()
         for (tr in tbl.childElements()) {
             if (tr.local() != "tr") continue
@@ -175,7 +278,8 @@ object DocxReader {
                 val runs = mutableListOf<TextRun>()
                 for (p in tc.childElements()) {
                     if (p.local() != "p") continue
-                    runs += parseRuns(p)
+                    val pid = p.child("w:pPr")?.child("w:pStyle")?.attr("w:val")
+                    runs += parseRuns(p, styles, pid)
                 }
                 cells += if (runs.isEmpty()) emptyList() else runs
             }
@@ -184,7 +288,7 @@ object DocxReader {
         return Block.Table(rows)
     }
 
-    private fun parsePara(p: Element, styleNames: Map<String, String>): Block.Para {
+    private fun parsePara(p: Element, styles: StyleTable): Block.Para {
         var align = Align.LEFT
         var firstLinePt = 0.0
         var linePt = MdToGongwen.LINE_SPACING
@@ -193,13 +297,23 @@ object DocxReader {
         var borders: ParaBorders? = null
         var tabs: List<TabStop> = emptyList()
         val pPr = p.child("w:pPr")
+        // 段落样式 id：既用于标题识别，也作为 run 字符属性的继承底座
+        val styleId = pPr?.child("w:pStyle")?.attr("w:val")
         if (pPr != null) {
-            pPr.child("w:jc")?.attr("w:val")?.let { v ->
-                align = when (v) {
+            val jc = pPr.child("w:jc")?.attr("w:val")
+            if (jc != null) {
+                align = when (jc) {
                     "center" -> Align.CENTER
                     "right" -> Align.RIGHT
                     "both" -> Align.BOTH
                     else -> Align.LEFT
+                }
+            } else {
+                // 段落未直接声明对齐时继承段落样式（「标题」等样式常自带居中）
+                when (styles.alignOf(styleId)) {
+                    "center" -> align = Align.CENTER
+                    "right" -> align = Align.RIGHT
+                    "both" -> align = Align.BOTH
                 }
             }
             pPr.child("w:ind")?.attr("w:firstLine")?.toDoubleOrNull()?.let { firstLinePt = it / 20.0 }
@@ -227,16 +341,15 @@ object DocxReader {
                     TabStop(posPt = pos, align = al, leader = ld)
                 }
             }.orEmpty()
-            val styleId = pPr.child("w:pStyle")?.attr("w:val")
             if (styleId != null) {
-                val sname = styleNames[styleId].orEmpty()
+                val sname = styles.names[styleId].orEmpty()
                 // Word 标题样式（含「标题」/heading）视为公文标题：居中、加粗
                 if (sname.contains("标题") || sname.contains("heading", ignoreCase = true)) {
                     align = Align.CENTER
                 }
             }
         }
-        val runs = parseRuns(p)
+        val runs = parseRuns(p, styles, styleId)
         val effSize = runs.firstNotNullOfOrNull { if (it.sizePt > 0) it.sizePt else null }
             ?: MdToGongwen.SIZE_NORMAL
         val effFont = runs.firstOrNull { it.font.isNotBlank() }?.font
@@ -253,41 +366,46 @@ object DocxReader {
         )
     }
 
-    private fun parseRuns(p: Element): List<TextRun> {
+    /**
+     * 解析段落内所有 run。字符属性按 OOXML 优先级合并：
+     * docDefaults < 段落样式(w:pStyle) < 字符样式(w:rStyle) < 直接格式(w:rPr)。
+     * 真实文档的粗体 / 下划线常只存在于样式层（run 上无 w:b / w:u），
+     * 不做合并的话这些格式会在预览中显示为普通文字。
+     */
+    private fun parseRuns(p: Element, styles: StyleTable, paraStyleId: String? = null): List<TextRun> {
         val runs = mutableListOf<TextRun>()
         for (r in p.childElements()) {
             if (r.local() != "r") continue
             val rPr = r.child("w:rPr")
-            var bold = false
-            var italic = false
-            var underline = false
-            var strike = false
-            var font = ""
-            var sz = 0.0
-            var border: ParaBorder? = null
-            if (rPr != null) {
-                bold = isOn(rPr.child("w:b"))
-                italic = isOn(rPr.child("w:i"))
-                underline = isUnderline(rPr.child("w:u"))
-                strike = isOn(rPr.child("w:strike"))
-                font = rPr.child("w:rFonts")?.run {
-                    val ea = attr("w:eastAsia").orEmpty()
-                    if (ea.isBlank()) attr("w:ascii").orEmpty() else ea
-                }.orEmpty()
-                sz = rPr.child("w:sz")?.attr("w:val")?.toDoubleOrNull()?.div(2.0) ?: 0.0
-                // 字符边框（w:rPr/w:bdr）：单字强调框 / 印章占位框。旧字节路径完全未处理，
-                // 导致这类「框线」在模型路径预览中缺失。这里解析并保留。
-                border = rPr.child("w:bdr")?.let { bd ->
-                    val v = bd.attr("w:val").orEmpty()
-                    if (v.isBlank() || v == "none" || v == "nil") return@let null
-                    val szPb = bd.attr("w:sz")?.toDoubleOrNull()?.div(8.0) ?: 1.0 // 八分之一磅 → 磅
-                    val color = bd.attr("w:color")?.let { if (it != "auto") "#$it" else "#000000" } ?: "#000000"
-                    ParaBorder(value = v, szPt = szPb, color = color)
-                }
+            val direct = if (rPr != null) readRunProps(rPr) else StyleProps()
+            val rStyleId = rPr?.child("w:rStyle")?.attr("w:val")
+            val eff = mergeProps(
+                mergeProps(
+                    mergeProps(styles.defaults, styles.propsOf(paraStyleId)),
+                    styles.propsOf(rStyleId)
+                ),
+                direct
+            )
+            // 字符边框（w:rPr/w:bdr）：单字强调框 / 印章占位框，仅直接格式支持
+            val border = rPr?.child("w:bdr")?.let { bd ->
+                val v = bd.attr("w:val").orEmpty()
+                if (v.isBlank() || v == "none" || v == "nil") return@let null
+                val szPb = bd.attr("w:sz")?.toDoubleOrNull()?.div(8.0) ?: 1.0 // 八分之一磅 → 磅
+                val color = bd.attr("w:color")?.let { if (it != "auto") "#$it" else "#000000" } ?: "#000000"
+                ParaBorder(value = v, szPt = szPb, color = color)
             }
             val sb = StringBuilder()
             appendText(r, sb)
-            runs += TextRun(sb.toString(), font, sz, bold, italic, underline, strike, border)
+            runs += TextRun(
+                sb.toString(),
+                eff.font.orEmpty(),
+                eff.sizePt ?: 0.0,
+                eff.bold == true,
+                eff.italic == true,
+                eff.underline == true,
+                eff.strike == true,
+                border
+            )
         }
         return runs
     }
