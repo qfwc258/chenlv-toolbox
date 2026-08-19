@@ -452,6 +452,12 @@ fun WordScreen(
         showExportDialog = true
     }
 
+    /** 表格改单元格：替换 (row,col) 的 runs，其余原样 */
+    fun copyCell(tbl: Block.Table, row: Int, col: Int, newRuns: List<TextRun>): Block.Table =
+        Block.Table(tbl.rows.mapIndexed { ri, r ->
+            if (ri != row) r else r.mapIndexed { ci, c -> if (ci != col) c else newRuns }
+        })
+
     /**
      * 就地编辑「改格式」：把 [FormatEdits] 应用到当前编辑目标的所有 run。
      * 只改用户请求的字段，其余属性保持原样（null = 不动）。段落级属性（对齐/行距）
@@ -523,11 +529,15 @@ fun WordScreen(
         govDirty = true; govAutoSaved = false; govEditVersion++
     }
 
-    /** 表格改单元格：替换 (row,col) 的 runs，其余原样 */
-    private fun copyCell(tbl: Block.Table, row: Int, col: Int, newRuns: List<TextRun>): Block.Table =
-        Block.Table(tbl.rows.mapIndexed { ri, r ->
-            if (ri != row) r else r.mapIndexed { ci, c -> if (ci != col) c else newRuns }
-        })
+    /** 把 drop 索引的段落并入 keep（保留 keep 的 props + run 顺序），随后删除 drop */
+    fun mergeP(blocks: MutableList<Block>, keep: Int, drop: Int) {
+        if (drop !in blocks.indices) return
+        val a = blocks[keep] as? Block.Para ?: return
+        val bb = blocks[drop] as? Block.Para ?: return
+        val lo = minOf(keep, drop); val hi = maxOf(keep, drop)
+        blocks[lo] = Block.Para(a.runs + bb.runs, a.props)
+        blocks.removeAt(hi)
+    }
 
     /**
      * 段落级就地操作：删除 / 上方插入 / 下方插入 / 与上段合并 / 与下段合并。
@@ -550,16 +560,6 @@ fun WordScreen(
         commitGov(d.copy(blocks = blocks, formatTouched = true))
         govDirty = true; govAutoSaved = false; govEditVersion++
         editing = null
-    }
-
-    /** 把 drop 索引的段落并入 keep（保留 keep 的 props + run 顺序），随后删除 drop */
-    private fun mergeP(blocks: MutableList<Block>, keep: Int, drop: Int) {
-        if (drop !in blocks.indices) return
-        val a = blocks[keep] as? Block.Para ?: return
-        val bb = blocks[drop] as? Block.Para ?: return
-        val lo = minOf(keep, drop); val hi = maxOf(keep, drop)
-        blocks[lo] = Block.Para(a.runs + bb.runs, a.props)
-        blocks.removeAt(hi)
     }
 
     /**
@@ -613,7 +613,7 @@ fun WordScreen(
         val newBlocks = d.blocks.map { b ->
             when (b) {
                 is Block.Para -> Block.Para(repl(b.runs), b.props)
-                is Block.Table -> Block.Table(b.rows.map { row -> row.map(repl) })
+                is Block.Table -> Block.Table(b.rows.map { row -> row.map { repl(it) } })
             }
         }
         if (count > 0) {
