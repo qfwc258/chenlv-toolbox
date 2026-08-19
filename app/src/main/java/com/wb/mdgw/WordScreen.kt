@@ -450,6 +450,53 @@ fun WordScreen(
     }
 
     /**
+     * 就地编辑「改格式」：把 [FormatEdits] 应用到当前编辑目标的所有 run。
+     * 只改用户请求的字段，其余属性保持原样（null = 不动）。段落级属性（对齐/行距）
+     * 仅对 Block.Para 生效。应用后立即刷新预览，并置 formatTouched 使导出切到重建路径。
+     * 应用后保持弹窗打开，便于连续调整；文字保存在保存按钮走 applyEditSingle。
+     */
+    fun applyFormat(f: FormatEdits) {
+        val d = govDoc ?: return
+        val t = editing ?: return
+        val blocks = d.blocks.toMutableList()
+        val b = blocks.getOrNull(t.blockIndex) ?: return
+        val patchRun: (TextRun) -> TextRun = { r ->
+            r.copy(
+                bold = f.bold ?: r.bold,
+                italic = f.italic ?: r.italic,
+                underline = f.underline ?: r.underline,
+                strike = f.strike ?: r.strike,
+                color = when {
+                    f.color == null -> r.color
+                    f.color == "black" -> null          // 恢复默认黑
+                    else -> f.color
+                },
+                sizePt = f.sizePt ?: r.sizePt
+            )
+        }
+        when (b) {
+            is Block.Para -> {
+                val newRuns = b.runs.map(patchRun)
+                val np = b.props.copy(
+                    align = f.align ?: b.props.align,
+                    lineSpacingPt = f.lineSpacingPt ?: b.props.lineSpacingPt
+                )
+                blocks[t.blockIndex] = Block.Para(newRuns, np)
+            }
+            is Block.Table -> {
+                if (t.row < 0) return
+                val cell = b.rows.getOrNull(t.row)?.getOrNull(t.col) ?: return
+                val newCell = cell.map(patchRun)
+                blocks[t.blockIndex] = Block.Table(
+                    b.rows.mapIndexed { ri, row -> if (ri != t.row) row else row.mapIndexed { ci, c -> if (ci != t.col) c else newCell } }
+                )
+            }
+        }
+        commitGov(d.copy(blocks = blocks, formatTouched = true))
+        govDirty = true; govAutoSaved = false; govEditVersion++
+    }
+
+    /**
      * 「预览」即自动生成公文：切到预览子页时，若源 Markdown 非空且与上次生成不一致，
      * 则后台把当前 Markdown 转为公文模型并刷新预览；已是最新则直接显示（保留就地编辑）。
      */
@@ -899,6 +946,16 @@ fun WordScreen(
         var splitMode by remember(t) { mutableStateOf(false) }
         var fullText by remember(t) { mutableStateOf(runs.joinToString("") { it.text }) }
         var groupTexts by remember(t) { mutableStateOf(groups.map { it.text }) }
+        // 当前段落 / 单元格格式（用于格式条高亮当前态；更新后随 govDoc 重算）
+        val editProps = (govDoc?.blocks?.getOrNull(t.blockIndex) as? Block.Para)?.props
+        val curBold = runs.isNotEmpty() && runs.all { it.bold }
+        val curItalic = runs.isNotEmpty() && runs.all { it.italic }
+        val curUnderline = runs.isNotEmpty() && runs.all { it.underline }
+        val curStrike = runs.isNotEmpty() && runs.all { it.strike }
+        val curIsRed = runs.isNotEmpty() && runs.all { it.color == "#FF0000" }
+        val curIsBlack = runs.isNotEmpty() && runs.all { it.color == null }
+        val curAlign = editProps?.align ?: Align.LEFT
+        val curLineSpacing = editProps?.lineSpacingPt ?: 0.0
 
         AlertDialog(
             onDismissRequest = { editing = null },
@@ -916,6 +973,40 @@ fun WordScreen(
                 Column(Modifier.verticalScroll(rememberScrollState()).fillMaxWidth()) {
                     Surface(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
                         Text("整段内容：${runs.joinToString("") { it.text }}", fontSize = 11.sp, lineHeight = 16.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(10.dp))
+                    }
+                    Text("格式（点击即应用到整段）", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 6.dp))
+                    Column(Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
+                        Row(Modifier.fillMaxWidth().padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            FmtChip("粗", curBold) { applyFormat(FormatEdits(bold = true)) }
+                            FmtChip("斜", curItalic) { applyFormat(FormatEdits(italic = true)) }
+                            FmtChip("下划线", curUnderline) { applyFormat(FormatEdits(underline = true)) }
+                            FmtChip("删除线", curStrike) { applyFormat(FormatEdits(strike = true)) }
+                            FmtChip("红", curIsRed) { applyFormat(FormatEdits(color = "#FF0000")) }
+                            FmtChip("黑", curIsBlack) { applyFormat(FormatEdits(color = "black")) }
+                        }
+                        Row(Modifier.fillMaxWidth().padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            FmtChip("左", curAlign == Align.LEFT) { applyFormat(FormatEdits(align = Align.LEFT)) }
+                            FmtChip("居中", curAlign == Align.CENTER) { applyFormat(FormatEdits(align = Align.CENTER)) }
+                            FmtChip("右", curAlign == Align.RIGHT) { applyFormat(FormatEdits(align = Align.RIGHT)) }
+                            FmtChip("两端", curAlign == Align.BOTH) { applyFormat(FormatEdits(align = Align.BOTH)) }
+                            if (editProps != null) {
+                                when {
+                                    curLineSpacing <= 24.0 -> FmtChip("行距:紧", true) { applyFormat(FormatEdits(lineSpacingPt = 24.0)) }
+                                    curLineSpacing <= 28.0 -> FmtChip("行距:标", true) { applyFormat(FormatEdits(lineSpacingPt = 28.0)) }
+                                    else -> FmtChip("行距:宽", true) { applyFormat(FormatEdits(lineSpacingPt = 34.0)) }
+                                }
+                            }
+                        }
+                        Row(
+                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            FORMAT_SIZES.forEach { s ->
+                                val active = runs.isNotEmpty() && runs.all { it.sizePt >= s - 0.01 && it.sizePt <= s + 0.01 }
+                                FmtChip(FORMAT_SIZE_LABELS[s] ?: s.toInt().toString(), active) { applyFormat(FormatEdits(sizePt = s)) }
+                            }
+                        }
+                        Text("提示：也可先在下框改文字再选格式，保存后一并写入并刷新预览。", fontSize = 10.sp, lineHeight = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
                     }
                     if (splitMode) {
                         groups.forEachIndexed { gi, g ->
@@ -1236,9 +1327,9 @@ private fun PaperPreview(
 
 /**
  * A4 纸面模拟：用 WebView 渲染 HTML，实现与 WPS / Word 打印效果一致的预览。
- * 预览页宽与屏幕同宽并居中（大屏受文档页宽约束），页边距按页宽比例；
- * 字号 / 行距等格式（字体、字号、颜色、粗斜体、下划线、删除线、高亮、上下标、
- * 表格列宽/边框）由 CSS 原生表达，无需逐个建模。
+ * 纸页按文档真实物理尺寸渲染，加载后 JS 把整页等比缩放到屏宽——字号与纸页
+ * 同比例缩放，显示即真实打印比例（WYSIWYG）。字号 / 行距等格式（字体、字号、
+ * 颜色、粗斜体、下划线、删除线、高亮、上下标、表格列宽/边框）由 CSS 原生表达。
  *
  * 编辑不依赖 contenteditable：段落 / 表格单元格带 data-block 钩子，点击经 JS 桥
  * （editBridge.startEdit）回调触发结构化编辑弹窗，编辑结果写回 GovDoc 模型。
@@ -1318,9 +1409,8 @@ private fun GovDocPaper(
                         }
                     }
                     isVerticalScrollBarEnabled = true
-                    // 不设 initialScale：HTML viewport 已声明 device-width，白页 width:100%
-                    // 与屏同宽（大屏受 max-width 约束居中），无需 WebView 再干预缩放；
-                    // 双指缩放仍可用（maximum-scale=3.0）。
+                    // 不设 initialScale：HTML 内按真实页宽布局并 JS 整体 zoom 到视口宽，
+                    // 还原真实打印比例；双指缩放仍可用（maximum-scale=4.0）。
                     setBackgroundColor(0xFFE8E8E8.toInt())
                     addJavascriptInterface(object : Any() {
                         @JavascriptInterface
@@ -1343,10 +1433,55 @@ private fun GovDocPaper(
     }
 }
 
+/**
+ * 就地编辑「改格式」的一组变更声明。所有字段均可空：null 表示保持该 run 现状不变；
+ * 因此调用方只传想改的字段，其余 run 属性原样保留。
+ */
+private class FormatEdits(
+    val bold: Boolean? = null,
+    val italic: Boolean? = null,
+    val underline: Boolean? = null,
+    val strike: Boolean? = null,
+    /** 文字颜色；"black" 表示恢复默认黑（color=null），其余为 CSS 色（如 #FF0000） */
+    val color: String? = null,
+    val sizePt: Double? = null,
+    /** 对齐（段落级） */
+    val align: Align? = null,
+    /** 行距磅值（段落级） */
+    val lineSpacingPt: Double? = null
+)
+
+/** 常用公文字号（磅）：五号/小四/四号/小三/三号/小二/二号 */
+private val FORMAT_SIZES = listOf(10.5, 12.0, 14.0, 15.0, 16.0, 18.0, 22.0)
+
+/** 字号磅值 → 中文字号名（字号条展示用） */
+private val FORMAT_SIZE_LABELS = mapOf(
+    10.5 to "五号", 12.0 to "小四", 14.0 to "四号", 15.0 to "小三",
+    16.0 to "三号", 18.0 to "小二", 22.0 to "二号"
+)
+
 @Composable
 private fun StyleTag(label: String) {
     Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(6.dp)) {
         Text(label, fontSize = 10.sp, color = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+    }
+}
+
+/** 就地编辑格式条上的可点选小标签：选中高亮，点击回调 [onClick] */
+@Composable
+private fun FmtChip(text: String, active: Boolean, onClick: () -> Unit) {
+    val bg = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+    val fg = if (active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+    Surface(
+        color = bg,
+        shape = RoundedCornerShape(6.dp),
+        modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClick = onClick)
+    ) {
+        Text(
+            text, fontSize = 12.sp, color = fg,
+            fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+        )
     }
 }
 

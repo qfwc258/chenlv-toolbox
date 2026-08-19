@@ -61,12 +61,19 @@ data class GovDoc(
      * 用户编辑过的位置集合：段落用 [EditTarget.row]=-1 表示整体替换；
      * 表格单元格用 (blockIndex, row, col) 精确定位。用于导出时只改这些点。
      */
-    val edits: Set<EditTarget> = emptySet()
+    val edits: Set<EditTarget> = emptySet(),
+    /**
+     * 是否通过就地编辑改过段落的字符 / 段落格式（加粗、字号、颜色、对齐、行距等）。
+     * 对有 Word 源的文档：仅改文字仍走 DocxInPlace 原位修改（100% 保留原布局），
+     * 一旦动过格式则改为 DocxWriter 重建（原布局不再逐字保留，但新格式必须写进导出）。
+     */
+    val formatTouched: Boolean = false
 ) {
     /** 序列化为 .docx 字节流 */
     fun toDocx(): ByteArray {
-        // Word 源：基于原文件原位修改，表格 / 样式 / 文档设置完全保留
-        if (originalDocx != null) {
+        // Word 源 + 未动过格式 → 基于原文件原位修改，表格 / 样式 / 文档设置完全保留
+        // Word 源 + 改过格式 → 原位逐字修改无法写入新格式，降级为 DocxWriter 重建
+        if (originalDocx != null && !formatTouched) {
             // 始终以 blocks 为唯一真源生成编辑目标，不依赖 edits 集合。
             // edits 可能因序列化/反序列化丢失（@Transient originalDocx 被清空后
             // 走 DocxWriter 重建分支，但若 originalDocx 仍在而 edits 异常，
@@ -84,7 +91,7 @@ data class GovDoc(
             }
             return DocxInPlace.edit(originalDocx, blocks, effectiveEdits)
         }
-        // Markdown / 新建：由 DocxWriter 重建规范公文
+        // Markdown / 新建，或打开 Word 后改过格式：由 DocxWriter 重建规范公文
         val w = DocxWriter(
             page, bodyFont, bodySizePt, indentPt, lineSpacingPt,
             pageNumber = pageNumber, pageNumStyle = pageNumStyle
