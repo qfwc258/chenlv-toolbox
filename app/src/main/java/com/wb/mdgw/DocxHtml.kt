@@ -146,31 +146,33 @@ object DocxHtml {
     /**
      * 公共 HTML 头部：DOCTYPE + meta + 中文字体堆栈 + 页面基础样式。
      *
-     * 页面适配方案（预览页宽与屏幕同宽并居中）：
-     * - viewport 用 device-width：布局宽即屏宽，手机上白页 width:100% 恰好铺满屏幕，
-     *   大屏 / 横屏时受 max-width（文档真实页宽 @96dpi）约束并 margin:0 auto 居中。
-     * - 页边距用相对页宽的百分比：页宽随屏缩放时边距同比例缩放，
-     *   与原文档「边距/页宽」比例一致，不挤占正文。
-     * - 字号 / 行距保持 pt 值不缩放（WPS「适应手机」观感），双指可缩放查看细节。
+     * 页面适配（还原「实际打印效果」）：
+     * - 纸页按文档真实物理尺寸渲染（页宽 px = cm×96/2.54），字号 / 行距 / 边距全用
+     *   真实 pt 值——即 WYSIWYG，所见即打印。
+     * - 整体等比缩放：浏览器布局宽固定为该物理页宽，加载后 JS 把 .page 用 zoom
+     *   缩放到视口宽（zoom = min(视口宽/页宽, 1)）。这样字号和纸页同比例一起缩小，
+     *   手机上显示的就是真实打印比例（不会因 page 单独缩窄而让字看起来偏大）；
+     *   大屏 zoom=1，按真实 A4 居中显示。双指仍可缩放看细节。
      */
     private fun htmlHead(page: PageSetup): String = buildString {
-        // 页宽 px（cm→px 按 CSS 96dpi），作为大屏下的 max-width
+        // 页宽 px / 页高 px（cm→px 按 CSS 96dpi；纸张按物理尺寸渲染）
         val pageW = (page.widthCm / 2.54 * 96.0).toInt()
-        // 边距占页宽百分比（随页宽同比例缩放）
-        val lPad = "%.2f".format(page.leftCm / page.widthCm * 100)
-        val rPad = "%.2f".format(page.rightCm / page.widthCm * 100)
-        val tPad = "%.2f".format(page.topCm / page.widthCm * 100)
-        val bPad = "%.2f".format(page.bottomCm / page.widthCm * 100)
+        val pageH = (page.heightCm / 2.54 * 96.0).toInt()
+        // 页边距 px（cm→px，真实比例，随页面一起缩放）
+        val lPad = (page.leftCm / 2.54 * 96.0).toInt()
+        val rPad = (page.rightCm / 2.54 * 96.0).toInt()
+        val tPad = (page.topCm / 2.54 * 96.0).toInt()
+        val bPad = (page.bottomCm / 2.54 * 96.0).toInt()
         append("<!DOCTYPE html><html><head><meta charset='utf-8'>")
-        append("<meta name='viewport' content='width=device-width,initial-scale=1.0,maximum-scale=3.0,user-scalable=yes'>")
+        append("<meta name='viewport' content='width=device-width,initial-scale=1.0,maximum-scale=4.0,user-scalable=yes'>")
         append("<style>")
         append("*{box-sizing:border-box;margin:0;padding:0;}")
         // 中文优先：思源宋体 / Noto Serif CJK / 宋体 / SimSun / serif；正文 12pt / 1.75 行距
         append("body{background:#E8E8E8;font-family:'Source Han Serif SC','Noto Serif CJK SC','宋体',SimSun,serif;")
         append("-webkit-text-size-adjust:100%;}")
-        // 纸页：与屏同宽（大屏限页宽居中），边距按页宽比例，白底投影
-        append(".page{background:white;width:100%;max-width:${pageW}px;min-height:100vh;margin:0 auto;")
-        append("padding:$tPad% $rPad% $bPad% $lPad%;")
+        // 纸页：物理尺寸渲染，min-height=页高；margin auto 居中（zoom 后宽度=视口宽时居中）
+        append(".page{background:white;width:${pageW}px;min-height:${pageH}px;margin:0 auto;")
+        append("padding:${tPad}px ${rPad}px ${bPad}px ${lPad}px;")
         append("box-shadow:0 4px 20px rgba(0,0,0,0.18);font-family:'宋体',SimSun,'Source Han Serif SC',serif;")
         append("line-height:1.75;font-size:12pt;color:#000;")
         append("text-align:justify;text-justify:inter-ideograph;}")
@@ -191,7 +193,14 @@ object DocxHtml {
         append(".doc-table tr:last-child td{border-bottom:1.5px solid #000;}")
         append(".doc-table td:first-child{border-left:1.5px solid #000;}")
         append(".doc-table td:last-child{border-right:1.5px solid #000;}")
-        append("</style></head><body>")
+        append("</style></head><body><script>")
+        // 整页等比缩放到视口宽：字号与纸页同比例缩放，还原真实打印比例
+        append("(function(){var pw=${pageW};function fit(){var w=window.visualViewport?window.visualViewport.width:window.innerWidth;")
+        append("var z=w/pw;if(z>1)z=1;var p=document.querySelector('.page');if(p)p.style.zoom=z;}")
+        append("window.addEventListener?addEventListener('load',fit):0;")
+        append("window.addEventListener('resize',fit);")
+        append("window.addEventListener('orientationchange',fit);")
+        append("})();</script></head><body>")
     }
 
 
