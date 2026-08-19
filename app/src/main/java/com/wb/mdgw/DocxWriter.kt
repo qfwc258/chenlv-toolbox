@@ -50,6 +50,13 @@ val ST_BORDER_VALUES = setOf(
     "thinThickSmallGap", "thickThinSmallGap", "thinThickThinSmallGap", "thickBetweenThin"
 )
 
+/** OOXML 合法的下划线线型（ST_Underline）：直接透传，其余归一到 single */
+val ST_UNDERLINE_VALUES = setOf(
+    "single", "double", "thick", "dash", "dashed", "dashLong", "dotDash", "dotDotDash",
+    "dotted", "dottedHeavy", "dashDotHeavy", "dashDotDotHeavy", "wave", "wavyDouble",
+    "wavyHeavy", "words"
+)
+
 /** 对齐方式 */
 @Serializable
 enum class Align(val v: String) { LEFT("left"), CENTER("center"), RIGHT("right"), BOTH("both") }
@@ -64,8 +71,19 @@ data class TextRun(
     val italic: Boolean = false,
     /** 下划线：Word 中带下划线的文字，打开/编辑/保存后仍需保留 */
     val underline: Boolean = false,
+    /**
+     * 下划线线型（Word w:u/@w:val）：single/double/dash/dotted/wave/...
+     * null 表示普通单线（single）。样式层与直接格式均可能声明，需一并保真。
+     */
+    val underlineStyle: String? = null,
     /** 删除线（strikethrough）：统一到模型路径后需保留，方能使预览与导出保真 */
     val strike: Boolean = false,
+    /** 文字颜色（w:color），CSS 十六进制（如 #FF0000）；null 表示默认黑（auto） */
+    val color: String? = null,
+    /** 高亮（w:highlight）：Word 高亮颜色名（如 yellow）；null 表示无 */
+    val highlight: String? = null,
+    /** 上下标（w:vertAlign）："superscript" / "subscript"；null 表示正常 */
+    val vertAlign: String? = null,
     /** 字符边框（w:rPr/w:bdr）：给单个文字片段加方框，公文中「【】式」强调、
      *  「印章位置」占位框常用。为 null 表示无边框。 */
     val border: ParaBorder? = null
@@ -204,9 +222,27 @@ class DocxWriter(
             .append("\" w:cs=\"").append(f).append("\"/>")
         if (r.bold) sb.append("<w:b/><w:bCs/>")
         if (r.italic) sb.append("<w:i/><w:iCs/>")
-        // OOXML 顺序要求：u / strike 必须排在 sz / szCs 之前
-        if (r.underline) sb.append("<w:u w:val=\"single\"/>")
+        // OOXML 顺序要求：u / strike / color / highlight / vertAlign 必须排在 sz / szCs 之前
+        if (r.underline) {
+            // 线型透传（ST_Underline 枚举），未知值归一 single
+            val uv = r.underlineStyle?.takeIf { it in ST_UNDERLINE_VALUES } ?: "single"
+            sb.append("<w:u w:val=\"").append(uv).append("\"/>")
+        }
         if (r.strike) sb.append("<w:strike/>")
+        // 文字颜色：去掉 # 前缀写回 w:color（Word 端为 6 位 HEX）
+        r.color?.let { c ->
+            val hex = c.removePrefix("#").trim()
+            if (hex.isNotBlank() && hex != "auto") sb.append("<w:color w:val=\"").append(xmlEscape(hex)).append("\"/>")
+        }
+        // 高亮：Word 高亮颜色名直接透传（yellow/green/...）
+        r.highlight?.takeIf { it.isNotBlank() && it != "none" }?.let {
+            sb.append("<w:highlight w:val=\"").append(xmlEscape(it)).append("\"/>")
+        }
+        // 上下标
+        when (r.vertAlign) {
+            "superscript" -> sb.append("<w:vertAlign w:val=\"superscript\"/>")
+            "subscript" -> sb.append("<w:vertAlign w:val=\"subscript\"/>")
+        }
         // 字符边框（w:bdr）：公文中单字强调框 / 印章占位框
         r.border?.let { b ->
             // w:bdr 取 ST_Border 枚举值：合法值直接透传，别名与未知值归一到 single

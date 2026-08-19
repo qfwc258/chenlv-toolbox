@@ -1236,9 +1236,9 @@ private fun PaperPreview(
 
 /**
  * A4 纸面模拟：用 WebView 渲染 HTML，实现与 WPS / Word 打印效果一致的预览。
- * 页面按文档真实页宽等比缩放到屏宽，白页水平居中、两侧露出灰底；文字随页等比缩放，
- * 换行与导出 PDF 一致（WYSIWYG）。所有格式（字体、字号、颜色、粗斜体、下划线、
- * 删除线、表格列宽/边框）由 CSS 原生表达，无需逐个建模。
+ * 预览页宽与屏幕同宽并居中（大屏受文档页宽约束），页边距按页宽比例；
+ * 字号 / 行距等格式（字体、字号、颜色、粗斜体、下划线、删除线、高亮、上下标、
+ * 表格列宽/边框）由 CSS 原生表达，无需逐个建模。
  *
  * 编辑不依赖 contenteditable：段落 / 表格单元格带 data-block 钩子，点击经 JS 桥
  * （editBridge.startEdit）回调触发结构化编辑弹窗，编辑结果写回 GovDoc 模型。
@@ -1318,10 +1318,9 @@ private fun GovDocPaper(
                         }
                     }
                     isVerticalScrollBarEnabled = true
-                    // 不设 initialScale（默认 0）：配合 useWideViewPort + loadWithOverviewMode，
-                    // WebView 把 HTML 声明的固定布局宽（页宽+留白）整体等比缩放到屏宽，
-                    // 白页居中、两侧露灰底，呈打印预览观感。若强制 100% 会导致
-                    // 794px 宽的 A4 页面溢出手机视口（页面不居中、需横向滚动）。
+                    // 不设 initialScale：HTML viewport 已声明 device-width，白页 width:100%
+                    // 与屏同宽（大屏受 max-width 约束居中），无需 WebView 再干预缩放；
+                    // 双指缩放仍可用（maximum-scale=3.0）。
                     setBackgroundColor(0xFFE8E8E8.toInt())
                     addJavascriptInterface(object : Any() {
                         @JavascriptInterface

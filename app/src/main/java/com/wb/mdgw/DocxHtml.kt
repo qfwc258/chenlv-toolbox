@@ -95,13 +95,16 @@ object DocxHtml {
                                 "text-indent:${b.props.firstLineIndentPt}pt;" else ""
                             val lh = if (b.props.lineSpacingPt > 0)
                                 "line-height:${b.props.lineSpacingPt}pt;" else ""
+                            // 段前 / 段后间距：标题与正文的呼吸感，缺失会让版面挤成一片
+                            val mTop = if (b.props.spaceBeforePt > 0) "margin-top:${b.props.spaceBeforePt}pt;" else ""
+                            val mBot = if (b.props.spaceAfterPt > 0) "margin-bottom:${b.props.spaceAfterPt}pt;" else ""
                             val border = bordersToCss(b.props.borders)
                             // 仅当存在「带可见前导符」的制表位时才启用 flex 前导线渲染；
                             // 其余情形（无制表位 / 制表位无 leader）按普通段落渲染，\t 退化为空白，不引入布局回归。
                             val visibleLeaderTabs = b.props.tabs.filter { it.leader.isNotBlank() && it.leader != "none" }
                             val useFlex = visibleLeaderTabs.isNotEmpty()
                             val cls = if (useFlex) "doc-para doc-para-flex" else "doc-para"
-                            append("<p data-block='$idx' class='$cls' style='text-align:$align;$indent$lh$border' onclick=\"editBridge.startEdit($idx,-1,-1)\">")
+                            append("<p data-block='$idx' class='$cls' style='text-align:$align;$mTop$mBot$indent$lh$border' onclick=\"editBridge.startEdit($idx,-1,-1)\">")
                             if (useFlex) {
                                 append(paraInnerWithTabs(b.runs, visibleLeaderTabs))
                             } else {
@@ -143,26 +146,31 @@ object DocxHtml {
     /**
      * 公共 HTML 头部：DOCTYPE + meta + 中文字体堆栈 + 页面基础样式。
      *
-     * 页面适配方案（修复「预览页与屏幕同宽 / 不居中」）：
-     * - 纸页宽度 / 高度 / 页边距取文档真实 [PageSetup]（不再硬编码 210mm，也不再
-     *   用百分比边距——百分比按容器宽解析，与页宽不一致会引入偏差）。
-     * - viewport 声明固定布局宽 = 页宽 + 两侧留白：手机上 WebView（已开 useWideViewPort
-     *   + loadWithOverviewMode）把整个布局等比缩放到屏宽，白页 margin:0 auto 居中、
-     *   两侧露出灰底，呈 WPS/Word 打印预览观感；文字等比缩放，换行与导出 PDF 一致。
+     * 页面适配方案（预览页宽与屏幕同宽并居中）：
+     * - viewport 用 device-width：布局宽即屏宽，手机上白页 width:100% 恰好铺满屏幕，
+     *   大屏 / 横屏时受 max-width（文档真实页宽 @96dpi）约束并 margin:0 auto 居中。
+     * - 页边距用相对页宽的百分比：页宽随屏缩放时边距同比例缩放，
+     *   与原文档「边距/页宽」比例一致，不挤占正文。
+     * - 字号 / 行距保持 pt 值不缩放（WPS「适应手机」观感），双指可缩放查看细节。
      */
     private fun htmlHead(page: PageSetup): String = buildString {
-        // 布局宽 = 页宽(px) + 两侧留白；cm→px 按 CSS 96dpi
-        val layoutW = (page.widthCm / 2.54 * 96.0 + 48.0).toInt()
+        // 页宽 px（cm→px 按 CSS 96dpi），作为大屏下的 max-width
+        val pageW = (page.widthCm / 2.54 * 96.0).toInt()
+        // 边距占页宽百分比（随页宽同比例缩放）
+        val lPad = "%.2f".format(page.leftCm / page.widthCm * 100)
+        val rPad = "%.2f".format(page.rightCm / page.widthCm * 100)
+        val tPad = "%.2f".format(page.topCm / page.widthCm * 100)
+        val bPad = "%.2f".format(page.bottomCm / page.widthCm * 100)
         append("<!DOCTYPE html><html><head><meta charset='utf-8'>")
-        append("<meta name='viewport' content='width=$layoutW,user-scalable=yes'>")
+        append("<meta name='viewport' content='width=device-width,initial-scale=1.0,maximum-scale=3.0,user-scalable=yes'>")
         append("<style>")
         append("*{box-sizing:border-box;margin:0;padding:0;}")
         // 中文优先：思源宋体 / Noto Serif CJK / 宋体 / SimSun / serif；正文 12pt / 1.75 行距
         append("body{background:#E8E8E8;font-family:'Source Han Serif SC','Noto Serif CJK SC','宋体',SimSun,serif;")
         append("-webkit-text-size-adjust:100%;}")
-        // 纸页：真实页宽、margin auto 水平居中、真实页边距（cm）、投影——WPS 打印预览观感
-        append(".page{background:white;width:${page.widthCm}cm;min-height:${page.heightCm}cm;margin:0 auto 14px;")
-        append("padding:${page.topCm}cm ${page.rightCm}cm ${page.bottomCm}cm ${page.leftCm}cm;")
+        // 纸页：与屏同宽（大屏限页宽居中），边距按页宽比例，白底投影
+        append(".page{background:white;width:100%;max-width:${pageW}px;min-height:100vh;margin:0 auto;")
+        append("padding:$tPad% $rPad% $bPad% $lPad%;")
         append("box-shadow:0 4px 20px rgba(0,0,0,0.18);font-family:'宋体',SimSun,'Source Han Serif SC',serif;")
         append("line-height:1.75;font-size:12pt;color:#000;")
         append("text-align:justify;text-justify:inter-ideograph;}")
@@ -221,11 +229,30 @@ object DocxHtml {
         if (r.sizePt > 0) styles += "font-size:${r.sizePt}pt"
         if (r.bold) styles += "font-weight:bold"
         if (r.italic) styles += "font-style:italic"
-        // 下划线 + 删除线合并到同一 text-decoration，避免简写声明后者覆盖前者
+        // 下划线（含线型）+ 删除线合并到同一 text-decoration，避免简写声明后者覆盖前者
         val deco = mutableListOf<String>()
         if (r.underline) deco += "underline"
         if (r.strike) deco += "line-through"
-        if (deco.isNotEmpty()) styles += "text-decoration:${deco.joinToString(" ")}"
+        if (deco.isNotEmpty()) {
+            // 下划线线型（w:u/@w:val）→ text-decoration-style；wavy 等无对应 CSS 的用默认实线
+            val ds = when (r.underlineStyle) {
+                "double", "wavyDouble" -> "double"
+                "dash", "dashed", "dashLong", "dashDotHeavy", "dashDotDotHeavy" -> "dashed"
+                "dotted", "dottedHeavy" -> "dotted"
+                "dotDash", "dotDotDash" -> "dotted"
+                else -> null
+            }
+            styles += "text-decoration:${deco.joinToString(" ")}${ds?.let { " $it" } ?: ""}"
+        }
+        // 文字颜色（红头文件的红字 / 批注色）
+        r.color?.let { styles += "color:${it.escapeHtml()}" }
+        // 高亮底色（Word 高亮名 → CSS 色）
+        r.highlight?.let { highlightColor(it)?.let { c -> styles += "background-color:$c" } }
+        // 上标 / 下标
+        when (r.vertAlign) {
+            "superscript" -> styles += "vertical-align:super;font-size:75%"
+            "subscript" -> styles += "vertical-align:sub;font-size:75%"
+        }
         // 字符边框（w:bdr）：单字强调框 / 印章占位框
         r.border?.let { b ->
             if (b.value != "none" && b.value != "nil") {

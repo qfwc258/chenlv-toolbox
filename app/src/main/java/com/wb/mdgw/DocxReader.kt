@@ -194,7 +194,11 @@ object DocxReader {
         val underline: Boolean? = null,
         val strike: Boolean? = null,
         val font: String? = null,
-        val sizePt: Double? = null
+        val sizePt: Double? = null,
+        val underlineStyle: String? = null,
+        val color: String? = null,
+        val highlight: String? = null,
+        val vertAlign: String? = null
     )
 
     /** 单个样式定义：名称、父样式（basedOn）、字符属性、段落对齐（仅段落样式有意义） */
@@ -242,17 +246,33 @@ object DocxReader {
     }
 
     /** 从 w:rPr 读取直接字符属性（三态）；w:bCs/w:iCs 为复杂文种开关，与 w:b/w:i 取并 */
-    private fun readRunProps(rPr: Element): StyleProps = StyleProps(
-        bold = triOn(rPr.child("w:b")) ?: triOn(rPr.child("w:bCs")),
-        italic = triOn(rPr.child("w:i")) ?: triOn(rPr.child("w:iCs")),
-        underline = triUnderline(rPr.child("w:u")),
-        strike = triOn(rPr.child("w:strike")),
-        font = rPr.child("w:rFonts")?.run {
-            val ea = attr("w:eastAsia").orEmpty()
-            if (ea.isBlank()) attr("w:ascii").orEmpty() else ea
-        }?.takeIf { it.isNotBlank() },
-        sizePt = rPr.child("w:sz")?.attr("w:val")?.toDoubleOrNull()?.div(2.0)
-    )
+    private fun readRunProps(rPr: Element): StyleProps {
+        val uEl = rPr.child("w:u")
+        return StyleProps(
+            bold = triOn(rPr.child("w:b")) ?: triOn(rPr.child("w:bCs")),
+            italic = triOn(rPr.child("w:i")) ?: triOn(rPr.child("w:iCs")),
+            underline = triUnderline(uEl),
+            strike = triOn(rPr.child("w:strike")),
+            font = rPr.child("w:rFonts")?.run {
+                val ea = attr("w:eastAsia").orEmpty()
+                if (ea.isBlank()) attr("w:ascii").orEmpty() else ea
+            }?.takeIf { it.isNotBlank() },
+            sizePt = rPr.child("w:sz")?.attr("w:val")?.toDoubleOrNull()?.div(2.0)
+                ?: rPr.child("w:szCs")?.attr("w:val")?.toDoubleOrNull()?.div(2.0),
+            // 下划线线型（w:u/@w:val）：none 之外的合法线型透传
+            underlineStyle = uEl?.attr("w:val")?.takeIf { it.isNotBlank() && it != "none" },
+            // 文字颜色：Word 6 位 HEX → CSS；auto 表示默认色（视为未声明）
+            color = rPr.child("w:color")?.attr("w:val")
+                ?.takeIf { it.isNotBlank() && it != "auto" }
+                ?.let { "#$it" },
+            // 高亮颜色名（yellow/green/...）；none 视为未声明
+            highlight = rPr.child("w:highlight")?.attr("w:val")
+                ?.takeIf { it.isNotBlank() && it != "none" },
+            // 上标 / 下标
+            vertAlign = rPr.child("w:vertAlign")?.attr("w:val")
+                ?.takeIf { it == "superscript" || it == "subscript" }
+        )
+    }
 
     private fun triOn(node: Element?): Boolean? = if (node == null) null else isOn(node)
 
@@ -265,7 +285,11 @@ object DocxReader {
         underline = over.underline ?: base.underline,
         strike = over.strike ?: base.strike,
         font = over.font ?: base.font,
-        sizePt = over.sizePt ?: base.sizePt
+        sizePt = over.sizePt ?: base.sizePt,
+        underlineStyle = over.underlineStyle ?: base.underlineStyle,
+        color = over.color ?: base.color,
+        highlight = over.highlight ?: base.highlight,
+        vertAlign = over.vertAlign ?: base.vertAlign
     )
 
     private fun parseTable(tbl: Element, styles: StyleTable): Block.Table {
@@ -292,6 +316,9 @@ object DocxReader {
         var align = Align.LEFT
         var firstLinePt = 0.0
         var linePt = MdToGongwen.LINE_SPACING
+        // 段前 / 段后间距（缇 → 磅）：标题段与正文段的呼吸感由它决定，缺失会让预览版面挤成一片
+        var spaceBeforePt = 0.0
+        var spaceAfterPt = 0.0
         // 段落边框 / 制表位在 pPr 块内解析，但作用域须覆盖整个函数（返回值要用），
         // 因此先在块外声明、块内赋值，避免「Unresolved reference」。
         var borders: ParaBorders? = null
@@ -317,7 +344,11 @@ object DocxReader {
                 }
             }
             pPr.child("w:ind")?.attr("w:firstLine")?.toDoubleOrNull()?.let { firstLinePt = it / 20.0 }
-            pPr.child("w:spacing")?.attr("w:line")?.toDoubleOrNull()?.let { linePt = it / 20.0 }
+            pPr.child("w:spacing")?.let { sp ->
+                sp.attr("w:line")?.toDoubleOrNull()?.let { linePt = it / 20.0 }
+                sp.attr("w:before")?.toDoubleOrNull()?.let { spaceBeforePt = it / 20.0 }
+                sp.attr("w:after")?.toDoubleOrNull()?.let { spaceAfterPt = it / 20.0 }
+            }
             // 段落边框：公文填空线/标题线/签名线常用 w:pBdr 下边框实现。统一到模型路径后
             // 需解析并保留，否则预览中这类「下划线」整体缺失（旧字节路径已支持）。
             borders = pPr.child("w:pBdr")?.let { pBdr ->
@@ -362,7 +393,15 @@ object DocxReader {
         }
         return Block.Para(
             finalRuns,
-            ParaProps(align = align, firstLineIndentPt = firstLinePt, lineSpacingPt = linePt, borders = borders, tabs = tabs)
+            ParaProps(
+                align = align,
+                firstLineIndentPt = firstLinePt,
+                lineSpacingPt = linePt,
+                spaceBeforePt = spaceBeforePt,
+                spaceAfterPt = spaceAfterPt,
+                borders = borders,
+                tabs = tabs
+            )
         )
     }
 
@@ -403,7 +442,11 @@ object DocxReader {
                 eff.bold == true,
                 eff.italic == true,
                 eff.underline == true,
+                eff.underlineStyle,
                 eff.strike == true,
+                eff.color,
+                eff.highlight,
+                eff.vertAlign,
                 border
             )
         }
