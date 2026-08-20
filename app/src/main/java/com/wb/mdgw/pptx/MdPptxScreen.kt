@@ -1305,18 +1305,17 @@ private fun PreviewPager(
 }
 
 /**
- * 阶段二组合选择器：结构 × 色块 × 对齐，作为每页版式的唯一控制。
+ * 阶段二组合选择器：结构 × 色块 × 对齐 × 装饰，作为每页版式的唯一控制。
  *
- * 关键交互：
- *  - 色块行：每个 Pill 左侧嵌入迷你色块图示（用主题主色调渲染），让用户一眼看出
- *    「全=整页 / 上=顶部色带」等实际效果；
- *  - 对齐行：改用 2x2 网格布局，把 4 种常用对齐（上左/上中/中左/中中）摊成 2 行 2 列，
- *    比横排更直观，避免文字省略时撞车；
- *  - 装饰行：长按 Pill 弹 Tooltip 说明「波浪/直线/Logo」各自效果；
- *  - 顶部「全部应用：是/否」开关已挪到「装饰」行末尾，与"对所有页生效"语义更聚拢。
+ * 为腾出纵向空间让预览页宽拉满屏幕，改为「分段选项卡」式紧凑布局：
+ *  - 顶部一行 Segmented 轴标签（结构/色块/对齐/装饰）+ 右侧「全部应用」小开关，总高仅一行；
+ *  - 下方仅展示当前轴的一条选项（横向滚动），而非四行常驻，宽度不足时也能收进屏幕；
+ *  - 色块项带主题色迷你图示；装饰项支持长按 Pill 弹 Tooltip 说明效果。
  *
  * 「全部应用=是」时跳过特殊页（封面/目录/章节/结尾），由父级 PreviewPager 处理。
  */
+private enum class CompAxis { STRUCTURE, COLOR, ALIGN, DECOR }
+
 @Composable
 private fun CompositionSelector(
     comp: SlideComposition,
@@ -1325,79 +1324,131 @@ private fun CompositionSelector(
     theme: PptTheme,
     onCompositionChange: (SlideComposition) -> Unit
 ) {
+    var axis by remember { mutableStateOf(CompAxis.STRUCTURE) }
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
         shape = UI_CARD_RADIUS,
         modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp)
     ) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
-            // 标题
-            Text(
-                "版式组合",
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.outline,
-                modifier = Modifier.padding(bottom = 4.dp)
-            )
-            CompositionRow("结构") {
-                Structure.values().forEach { s ->
-                    Pill(s.label, comp.structure == s) { onCompositionChange(comp.copy(structure = s)) }
+        Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)) {
+            // 顶部行：轴 Segmented 标签（横向可滚）+ 右侧「全部应用」
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    Modifier.weight(1f, fill = false).horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    AxisTab("结构", axis == CompAxis.STRUCTURE) { axis = CompAxis.STRUCTURE }
+                    AxisTab("色块", axis == CompAxis.COLOR) { axis = CompAxis.COLOR }
+                    AxisTab("对齐", axis == CompAxis.ALIGN) { axis = CompAxis.ALIGN }
+                    AxisTab("装饰", axis == CompAxis.DECOR) { axis = CompAxis.DECOR }
                 }
-            }
-            // 色块行：紧凑 Pill + 嵌入主题主色调的迷你色块图示
-            CompositionRow("色块", compact = true) {
-                ColorBlock.values().forEach { c ->
-                    val (iconColor, _) = colorBlockVisual(c)   // 形状信息已通过 iconShape 单独传入
-                    PillWithIcon(
-                        text = c.label,
-                        iconColor = iconColor,
-                        iconShape = c,
-                        selected = comp.colorBlock == c,
-                        compact = true,
-                        theme = theme
-                    ) { onCompositionChange(comp.copy(colorBlock = c)) }
-                }
-            }
-            // 对齐行：2x2 网格
-            CompositionRow("对齐") {
-                AlignmentGrid(
-                    valign = comp.valign,
-                    halign = comp.halign,
-                    onChange = { v, h -> onCompositionChange(comp.copy(valign = v, halign = h)) }
-                )
-            }
-            // 装饰行：长按弹 tooltip；末尾并入「全部应用:是/否」开关
-            CompositionRow("装饰") {
-                if (comp.hasBigBlock) {
+                Spacer(Modifier.width(8.dp))
+                // 「全部应用」小开关
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "有色块时不可用",
+                        "全部应用",
                         fontSize = 10.sp,
-                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
-                        modifier = Modifier.padding(horizontal = 4.dp)
+                        color = MaterialTheme.colorScheme.outline,
+                        maxLines = 1,
+                        modifier = Modifier.padding(end = 4.dp)
                     )
-                } else {
-                    BottomDecoration.values().forEach { d ->
-                        PillWithTooltip(
-                            text = d.label,
-                            tip = decorationTip(d),
-                            selected = comp.decoration == d
-                        ) { onCompositionChange(comp.copy(decoration = d)) }
+                    Pill(if (applyToAll) "是" else "否", applyToAll, compact = true) {
+                        onApplyToAllChange(!applyToAll)
                     }
                 }
-                // 全部应用开关（右上角）挪到装饰行末尾
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    "全部应用",
-                    fontSize = 10.sp,
-                    color = MaterialTheme.colorScheme.outline,
-                    modifier = Modifier.padding(end = 4.dp)
-                )
-                Pill(if (applyToAll) "是" else "否", applyToAll, compact = true) {
-                    onApplyToAllChange(!applyToAll)
+            }
+
+            // 下方：仅当前轴的一条选项（横向滚动）
+            Spacer(Modifier.height(6.dp))
+            when (axis) {
+                CompAxis.STRUCTURE -> ToolRow {
+                    Structure.values().forEach { s ->
+                        Pill(s.label, comp.structure == s) { onCompositionChange(comp.copy(structure = s)) }
+                    }
+                }
+                CompAxis.COLOR -> ToolRow {
+                    ColorBlock.values().forEach { c ->
+                        val (iconColor, _) = colorBlockVisual(c)   // 形状信息已通过 iconShape 单独传入
+                        PillWithIcon(
+                            text = c.label,
+                            iconColor = iconColor,
+                            iconShape = c,
+                            selected = comp.colorBlock == c,
+                            compact = true,
+                            theme = theme
+                        ) { onCompositionChange(comp.copy(colorBlock = c)) }
+                    }
+                }
+                CompAxis.ALIGN -> ToolRow {
+                    AlignmentCell("上左", comp.valign == VAlign.TOP && comp.halign == HAlign.LEFT) {
+                        onCompositionChange(comp.copy(valign = VAlign.TOP, halign = HAlign.LEFT))
+                    }
+                    AlignmentCell("上中", comp.valign == VAlign.TOP && comp.halign == HAlign.CENTER) {
+                        onCompositionChange(comp.copy(valign = VAlign.TOP, halign = HAlign.CENTER))
+                    }
+                    AlignmentCell("中左", comp.valign == VAlign.CENTER && comp.halign == HAlign.LEFT) {
+                        onCompositionChange(comp.copy(valign = VAlign.CENTER, halign = HAlign.LEFT))
+                    }
+                    AlignmentCell("中中", comp.valign == VAlign.CENTER && comp.halign == HAlign.CENTER) {
+                        onCompositionChange(comp.copy(valign = VAlign.CENTER, halign = HAlign.CENTER))
+                    }
+                }
+                CompAxis.DECOR -> ToolRow {
+                    if (comp.hasBigBlock) {
+                        Text(
+                            "有色块时不可用",
+                            fontSize = 10.sp,
+                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                            modifier = Modifier.padding(horizontal = 4.dp)
+                        )
+                    } else {
+                        BottomDecoration.values().forEach { d ->
+                            PillWithTooltip(
+                                text = d.label,
+                                tip = decorationTip(d),
+                                selected = comp.decoration == d
+                            ) { onCompositionChange(comp.copy(decoration = d)) }
+                        }
+                    }
                 }
             }
         }
     }
+}
+
+/** 轴 Segmented 标签：选中态用主色容器高亮，圆角胶囊。 */
+@Composable
+private fun AxisTab(text: String, selected: Boolean, onClick: () -> Unit) {
+    val bg = if (selected) MaterialTheme.colorScheme.primaryContainer
+    else MaterialTheme.colorScheme.surfaceVariant
+    val fg = if (selected) MaterialTheme.colorScheme.primary
+    else MaterialTheme.colorScheme.onSurfaceVariant
+    Surface(
+        color = bg, shape = UI_BTN_RADIUS, onClick = onClick,
+        modifier = Modifier.height(28.dp)
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.padding(horizontal = 14.dp)
+        ) {
+            Text(text, fontSize = 11.sp, fontWeight = FontWeight.Medium, color = fg, maxLines = 1)
+        }
+    }
+}
+
+/** 单条横向滚动的选项行：承载某一个轴的全部 Pickable 项。 */
+@Composable
+private fun ToolRow(content: @Composable RowScope.() -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        content = content
+    )
 }
 
 /** 色块枚举 → (迷你图示色, 形状)。迷你图示在 Pill 左侧画出主题色的小色块。 */
@@ -1454,34 +1505,6 @@ private fun PillWithIcon(
             )
             Spacer(Modifier.width(4.dp))
             Text(text, fontSize = 10.sp, color = fg, maxLines = 1)
-        }
-    }
-}
-
-/** 对齐 2x2 网格：把 4 种常用组合（上左/上中/中左/中中）摊成 2 行 2 列，
- *  比横排更直观且视觉权重更均衡。 */
-@Composable
-private fun AlignmentGrid(
-    valign: VAlign,
-    halign: HAlign,
-    onChange: (VAlign, HAlign) -> Unit
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-            AlignmentCell("上左", valign == VAlign.TOP && halign == HAlign.LEFT) {
-                onChange(VAlign.TOP, HAlign.LEFT)
-            }
-            AlignmentCell("上中", valign == VAlign.TOP && halign == HAlign.CENTER) {
-                onChange(VAlign.TOP, HAlign.CENTER)
-            }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-            AlignmentCell("中左", valign == VAlign.CENTER && halign == HAlign.LEFT) {
-                onChange(VAlign.CENTER, HAlign.LEFT)
-            }
-            AlignmentCell("中中", valign == VAlign.CENTER && halign == HAlign.CENTER) {
-                onChange(VAlign.CENTER, HAlign.CENTER)
-            }
         }
     }
 }
@@ -1545,29 +1568,6 @@ private fun parseHexColor(hex: String): androidx.compose.ui.graphics.Color {
         blue = (v and 0xFF) / 255f,
         alpha = 1f
     )
-}
-
-/** 组合选择器中的单行分组：左侧固定宽标签 + 右侧横向滚动的选项行。
- *  [compact]=true 时行内 Pill 更小更密，用于「色块」这类有 5+ 选项的轴。 */
-@Composable
-private fun CompositionRow(label: String, compact: Boolean = false, content: @Composable RowScope.() -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().padding(vertical = if (compact) 2.dp else 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            label,
-            fontSize = if (compact) 10.sp else 11.sp,
-            color = MaterialTheme.colorScheme.outline,
-            modifier = Modifier.width(36.dp)
-        )
-        Row(
-            Modifier.weight(1f).horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(if (compact) 3.dp else 5.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            content = content
-        )
-    }
 }
 
 /** 紧凑胶囊按钮（仅文字，选中态实色填充）。
