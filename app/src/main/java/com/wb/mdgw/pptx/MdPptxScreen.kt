@@ -1314,7 +1314,11 @@ private fun PreviewPager(
  *
  * 「全部应用=是」时跳过特殊页（封面/目录/章节/结尾），由父级 PreviewPager 处理。
  */
-private enum class CompAxis { STRUCTURE, COLOR, ALIGN, DECOR }
+private enum class CompAxis { STRUCTURE, COLOR, ALIGN, DECOR, WIDTH }
+
+/** 是否为多栏结构（左右/三栏/四栏）：`栏宽` 轴只在此时启用。 */
+private val SlideComposition.isMultiCol: Boolean
+    get() = structure == Structure.TWO_COL || structure == Structure.THREE_COL || structure == Structure.FOUR_COL
 
 @Composable
 private fun CompositionSelector(
@@ -1325,6 +1329,9 @@ private fun CompositionSelector(
     onCompositionChange: (SlideComposition) -> Unit
 ) {
     var axis by remember { mutableStateOf(CompAxis.STRUCTURE) }
+    val isMultiCol = comp.isMultiCol
+    // 轴不在多栏结构上时，不让「栏宽」轴悬空显示
+    val shownAxis = if (axis == CompAxis.WIDTH && !isMultiCol) CompAxis.STRUCTURE else axis
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
         shape = UI_CARD_RADIUS,
@@ -1341,10 +1348,13 @@ private fun CompositionSelector(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    AxisTab("结构", axis == CompAxis.STRUCTURE) { axis = CompAxis.STRUCTURE }
-                    AxisTab("色块", axis == CompAxis.COLOR) { axis = CompAxis.COLOR }
-                    AxisTab("对齐", axis == CompAxis.ALIGN) { axis = CompAxis.ALIGN }
-                    AxisTab("装饰", axis == CompAxis.DECOR) { axis = CompAxis.DECOR }
+                    AxisTab("结构", shownAxis == CompAxis.STRUCTURE) { axis = CompAxis.STRUCTURE }
+                    AxisTab("色块", shownAxis == CompAxis.COLOR) { axis = CompAxis.COLOR }
+                    AxisTab("对齐", shownAxis == CompAxis.ALIGN) { axis = CompAxis.ALIGN }
+                    if (isMultiCol) {
+                        AxisTab("栏宽", shownAxis == CompAxis.WIDTH) { axis = CompAxis.WIDTH }
+                    }
+                    AxisTab("装饰", shownAxis == CompAxis.DECOR) { axis = CompAxis.DECOR }
                 }
                 Spacer(Modifier.width(8.dp))
                 // 「全部应用」小开关
@@ -1364,7 +1374,7 @@ private fun CompositionSelector(
 
             // 下方：仅当前轴的一条选项（横向滚动）
             Spacer(Modifier.height(6.dp))
-            when (axis) {
+            when (shownAxis) {
                 CompAxis.STRUCTURE -> ToolRow {
                     Structure.values().forEach { s ->
                         Pill(s.label, comp.structure == s) { onCompositionChange(comp.copy(structure = s)) }
@@ -1396,6 +1406,16 @@ private fun CompositionSelector(
                     AlignmentCell("中中", comp.valign == VAlign.CENTER && comp.halign == HAlign.CENTER) {
                         onCompositionChange(comp.copy(valign = VAlign.CENTER, halign = HAlign.CENTER))
                     }
+                }
+                CompAxis.WIDTH -> if (isMultiCol) ColumnWidthBar(comp.colRatio) {
+                    onCompositionChange(comp.copy(colRatio = it))
+                } else Row {
+                    Text(
+                        "上下 / 上窄下宽 无需分栏",
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                        modifier = Modifier.padding(horizontal = 4.dp)
+                    )
                 }
                 CompAxis.DECOR -> ToolRow {
                     if (comp.hasBigBlock) {
@@ -1449,6 +1469,39 @@ private fun ToolRow(content: @Composable RowScope.() -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         content = content
     )
+}
+
+/**
+ * 「栏宽」轴：主栏占比滑块 + 「智能」复位。
+ * - 滑块拖动 → 手动比例（非 null）；点「智能」→ 回到按内容自动配比（null，默认）。
+ */
+@Composable
+private fun ColumnWidthBar(colRatio: Int?, onRatioChange: (Int?) -> Unit) {
+    val current = colRatio ?: 50   // null(智能) 时用 50 作为滑块位置占位
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Pill(if (colRatio == null) "智能" else "手动", colRatio == null, compact = true) {
+                onRatioChange(null)
+            }
+            Text(
+                if (colRatio == null) "按内容分栏" else "主栏 ${colRatio}%",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f)
+            )
+        }
+        Slider(
+            value = current.toFloat(),
+            onValueChange = { onRatioChange(it.roundToInt()) },
+            valueRange = 20f..80f,
+            steps = 11,
+            modifier = Modifier.fillMaxWidth().height(28.dp)
+        )
+    }
 }
 
 /** 色块枚举 → (迷你图示色, 形状)。迷你图示在 Pill 左侧画出主题色的小色块。 */

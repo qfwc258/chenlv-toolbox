@@ -321,10 +321,17 @@ data class SlideComposition(
     val halign: HAlign,
     val bandGap: Int = 24,
     val role: PageRole = PageRole.NONE,
-    val decoration: BottomDecoration = BottomDecoration.NONE
+    val decoration: BottomDecoration = BottomDecoration.NONE,
+    /**
+     * 多栏（左右/三栏/四栏）的主栏宽度占比（百分比 15~85）。
+     * - null = 智能：各栏宽度按该栏内容高度自动配比（文字多则更宽）；
+     * - 非 null = 手动：第 0 栏固定占 [colRatio]%，其余栏均分剩余宽度。
+     * 仅影响多栏结构，上下 / 上窄下宽 忽略。
+     */
+    val colRatio: Int? = null
 ) {
     /** 编码为可持久化的字符串键（轴按固定顺序，便于 UI / 草稿 round-trip）。 */
-    val key: String get() = "${structure.name}|${colorBlock.name}|${valign.name}|${halign.name}|$bandGap|${role.name}|${decoration.key}"
+    val key: String get() = "${structure.name}|${colorBlock.name}|${valign.name}|${halign.name}|$bandGap|${role.name}|${decoration.key}|${colRatio ?: -1}"
 
     val isSpecial: Boolean get() = role != PageRole.NONE
 
@@ -343,7 +350,8 @@ data class SlideComposition(
             val gap = p[4].toIntOrNull() ?: 0
             val role = PageRole.values().firstOrNull { it.name == p[5] } ?: PageRole.NONE
             val deco = if (p.size > 6) BottomDecoration.fromKey(p[6]) else BottomDecoration.NONE
-            return SlideComposition(st, cb, va, ha, gap, role, deco)
+            val cr = if (p.size > 7) p[7].toIntOrNull()?.takeIf { it in 15..85 && it != -1 } else null
+            return SlideComposition(st, cb, va, ha, gap, role, deco, cr)
         }
     }
 }

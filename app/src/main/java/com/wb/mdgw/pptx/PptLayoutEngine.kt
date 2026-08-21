@@ -617,19 +617,22 @@ object PptLayoutEngine {
      * 左右分栏（结构=左右）。可传入 [frame] 与 [align]/[vCenter] 以适配「带色块内缩」或「组合对齐」。
      * 默认参数（整页内容区 / 垂直居中 / 左对齐）严格复现旧 layoutSplit 行为。
      */
-    private fun layoutSplitInFrame(blocks: List<MdBlock>, frame: Rect, vCenter: Boolean, align: Align): Pair<List<LaidOutUnit>, SlideDeco> {
+    private fun layoutSplitInFrame(blocks: List<MdBlock>, frame: Rect, vCenter: Boolean, align: Align, ratio: Int? = null): Pair<List<LaidOutUnit>, SlideDeco> {
         if (blocks.isEmpty()) return emptyList<LaidOutUnit>() to SlideDeco()
         val gap = style.splitGap
-        // 三七分：左窄(30%) 右宽(70%)
-        val leftW = ((frame.w - gap) * 0.30).toInt().coerceAtLeast(120)
-        val rightW = frame.w - leftW - gap
+        // 无标题需按宽度拆分时，先用等分宽估算
+        val nominalW = (frame.w - gap) / 2
         // 首个标题作为左栏（标题/要点），其余进右栏（正文）
         val first = blocks.firstOrNull { isHeading(it) }
         val (left, right) = if (first != null) {
             listOf(first) to blocks.filter { it !== first }
         } else {
-            partitionSplit(blocks, leftW)
+            partitionSplit(blocks, nominalW)
         }
+        // 主栏占比(ratio) 或按内容高度智能配比左右栏宽
+        val widths = columnWidths(listOf(left, right), frame.w, gap, nominalW, ratio)
+        val leftW = widths[0].coerceAtLeast(120)
+        val rightW = (frame.w - leftW - gap).coerceAtLeast(120)
         val lx = frame.x
         // ── 全页级三级及以下标题检测：任一栏有子级标题则统一缩进基准 ──
         val pageHasH3 = (left + right).any {
@@ -663,7 +666,7 @@ object PptLayoutEngine {
      * 三栏（结构=三栏）。标题置顶 + 其下左右两栏连续流分栏，顶端对齐。
      * 可传入 [frame] 与 [align] 以适配「带色块内缩」或「组合对齐」；默认参数严格复现旧 layoutThreeCol。
      */
-    private fun layoutThreeColInFrame(blocks: List<MdBlock>, frame: Rect, align: Align): Pair<List<LaidOutUnit>, SlideDeco> {
+    private fun layoutThreeColInFrame(blocks: List<MdBlock>, frame: Rect, align: Align, ratio: Int? = null): Pair<List<LaidOutUnit>, SlideDeco> {
         if (blocks.isEmpty()) return emptyList<LaidOutUnit>() to SlideDeco()
         val units = mutableListOf<LaidOutUnit>()
         val bars = mutableListOf<Rect>()
@@ -692,14 +695,18 @@ object PptLayoutEngine {
         val colW = (frame.w - gap) / 2
         // 连续分栏流：左栏放满后，放不下的段落自动流到右栏（按段落截断）
         val (left, right) = flowSplit(rest, colW, topY, frame.y + frame.h)
+        // 主栏占比(ratio) 或按内容高度智能配比左右栏宽
+        val widths = columnWidths(listOf(left, right), frame.w, gap, colW, ratio)
+        val leftW = widths[0].coerceAtLeast(120)
+        val rightW = widths[1].coerceAtLeast(120)
         // ── 全页级 H3 检测 ──
         val restHasH3 = (left + right).any { it is MdBlock.TextBlock && it.type.ordinal >= BlockType.H3.ordinal }
         val lx = frame.x
         // 若子列含 H3，右子列 x 右移与左子列 H3 缩进位对齐
-        val rx = frame.x + colW + gap + if (restHasH3) LEVEL_INDENT else 0
-        val actualColW = if (restHasH3) colW - LEVEL_INDENT else colW   // 右列 x 已右移 LEVEL_INDENT，宽度同减以贴齐页面右边
-        val (leftU, leftDeco) = layoutColumn(left, lx, actualColW.coerceAtLeast(120), topStart = topY, availBottom = frame.y + frame.h, alignOverride = align)
-        val (rightU, rightDeco) = layoutColumn(right, rx, actualColW.coerceAtLeast(120), topStart = topY, availBottom = frame.y + frame.h, alignOverride = align)
+        val rx = frame.x + leftW + gap + if (restHasH3) LEVEL_INDENT else 0
+        val actualRightW = if (restHasH3) rightW - LEVEL_INDENT else rightW   // 右列 x 已右移 LEVEL_INDENT，宽度同减以贴齐页面右边
+        val (leftU, leftDeco) = layoutColumn(left, lx, leftW.coerceAtLeast(120), topStart = topY, availBottom = frame.y + frame.h, alignOverride = align)
+        val (rightU, rightDeco) = layoutColumn(right, rx, actualRightW.coerceAtLeast(120), topStart = topY, availBottom = frame.y + frame.h, alignOverride = align)
         units.addAll(leftU); units.addAll(rightU)
         bars.addAll(leftDeco.bars); bars.addAll(rightDeco.bars)
         return units to SlideDeco(bars = bars, quoteBg = leftDeco.quoteBg + rightDeco.quoteBg)
@@ -716,7 +723,7 @@ object PptLayoutEngine {
      * 四栏（结构=四栏）。标题置顶 + 其下四栏连续流分栏，顶端对齐。
      * 可传入 [frame] 与 [align] 以适配「带色块内缩」或「组合对齐」。
      */
-    private fun layoutFourColInFrame(blocks: List<MdBlock>, frame: Rect, align: Align): Pair<List<LaidOutUnit>, SlideDeco> {
+    private fun layoutFourColInFrame(blocks: List<MdBlock>, frame: Rect, align: Align, ratio: Int? = null): Pair<List<LaidOutUnit>, SlideDeco> {
         if (blocks.isEmpty()) return emptyList<LaidOutUnit>() to SlideDeco()
         val units = mutableListOf<LaidOutUnit>()
         val bars = mutableListOf<Rect>()
@@ -741,10 +748,13 @@ object PptLayoutEngine {
         val colW = (frame.w - gap * 3) / 4
         // 按段落均衡分配到四栏
         val columns = splitToNColumns(rest, 4, colW, topY, frame.y + frame.h)
+        // 主栏占比(ratio) 或按内容高度智能配比各栏宽度
+        val widths = columnWidths(columns, frame.w, gap, colW, ratio)
         val restHasH3 = columns.flatten().any { it is MdBlock.TextBlock && it.type.ordinal >= BlockType.H3.ordinal }
         columns.forEachIndexed { ci, col ->
-            val cx = frame.x + ci * (colW + gap) + if (restHasH3 && ci > 0) LEVEL_INDENT else 0
-            val actualColW = if (restHasH3 && ci > 0) colW - LEVEL_INDENT else colW
+            val colW_ = widths[ci].coerceAtLeast(80)
+            val cx = frame.x + ci * (colW_ + gap) + if (restHasH3 && ci > 0) LEVEL_INDENT else 0
+            val actualColW = if (restHasH3 && ci > 0) colW_ - LEVEL_INDENT else colW_
             val (colU, colDeco) = layoutColumn(col, cx, actualColW.coerceAtLeast(80), topStart = topY, availBottom = frame.y + frame.h, alignOverride = align)
             units.addAll(colU); bars.addAll(colDeco.bars)
         }
@@ -806,6 +816,58 @@ object PptLayoutEngine {
             }
         }
         return columns
+    }
+
+    /**
+     * 计算多栏各栏宽度（宽度之积 + (n-1)*gap = frameW）。
+     * - [ratio] != null：手动，第 0 栏固定占 [ratio]%，其余栏均分剩余宽度；
+     * - [ratio] == null：智能，各栏宽度按该栏内容高度加权配比（文字多则更宽）。
+     * [nominalW] 仅用于智能模式估算每栏内容高度（栏实际宽未知时先用等分宽估算）。
+     */
+    private fun columnWidths(
+        columns: List<List<MdBlock>>,
+        frameW: Int,
+        gap: Int,
+        nominalW: Int,
+        ratio: Int?
+    ): List<Int> {
+        val n = columns.size
+        if (n <= 0) return emptyList()
+        val avail = (frameW - gap * (n - 1)).coerceAtLeast(80)
+        // 手动比例：主栏固定 + 其余均分
+        if (ratio != null) {
+            val first = (avail * ratio.coerceIn(15, 85) / 100).toInt().coerceAtLeast(80)
+            val rest = avail - first
+            val other = if (n > 1) rest / (n - 1) else rest
+            val widths = MutableList(n) { i -> if (i == 0) first else other }
+            val used = widths[0] + other * (n - 1)
+            if (n > 1 && rest > used) widths[n - 1] += rest - used
+            return widths
+        }
+        // 智能：按各栏内容高度加权
+        val hPerCol = columns.map { c ->
+            c.sumOf { b -> contentHeight(b, fontSizeOf(blockTypeOf(b)), nominalW).toLong() }
+        }
+        val sumH = hPerCol.sum()
+        if (sumH <= 0) {
+            val w = MutableList(n) { avail / n }
+            w[n - 1] += avail - avail / n * n
+            return w
+        }
+        val widths = hPerCol.map { (avail * it / sumH).toInt().coerceAtLeast(80) }.toMutableList()
+        var used = widths.sum()
+        // 极不对称内容时 min(80) 可能把总宽撑爆：按超出部分等比例压缩，保底 80
+        if (used > avail) {
+            val over = used - avail
+            val compressible = used - n * 80
+            if (compressible > 0) {
+                val scale = (compressible - over).coerceAtLeast(0).toFloat() / compressible.toFloat()
+                for (i in widths.indices) widths[i] = 80 + ((widths[i] - 80) * scale).toInt()
+                used = widths.sum()
+            }
+        }
+        if (used < avail) widths[n - 1] += avail - used
+        return widths
     }
 
     // ────────────────────────────────────────────────
@@ -907,9 +969,9 @@ object PptLayoutEngine {
                 val (u, d) = layoutColumn(blocks, frame.x, frame.w, topStart = frame.y, availBottom = frame.y + frame.h, vCenter = vCenter, alignOverride = align)
                 units = u; contentDeco = d
             }
-            Structure.TWO_COL -> { val (u, d) = layoutSplitInFrame(blocks, frame, vCenter = vCenter, align = align); units = u; contentDeco = d }
-            Structure.THREE_COL -> { val (u, d) = layoutThreeColInFrame(blocks, frame, align = align); units = u; contentDeco = d }
-            Structure.FOUR_COL -> { val (u, d) = layoutFourColInFrame(blocks, frame, align = align); units = u; contentDeco = d }
+            Structure.TWO_COL -> { val (u, d) = layoutSplitInFrame(blocks, frame, vCenter = vCenter, align = align, ratio = comp.colRatio); units = u; contentDeco = d }
+            Structure.THREE_COL -> { val (u, d) = layoutThreeColInFrame(blocks, frame, align = align, ratio = comp.colRatio); units = u; contentDeco = d }
+            Structure.FOUR_COL -> { val (u, d) = layoutFourColInFrame(blocks, frame, align = align, ratio = comp.colRatio); units = u; contentDeco = d }
             Structure.TOP_NARROW -> { val (u, d) = layoutTopNarrowInFrame(blocks, frame, vCenter = vCenter, align = align); units = u; contentDeco = d }
         }
         // 合并色块装饰（band）与内容装饰（H3 竖线 / 引用背景）
