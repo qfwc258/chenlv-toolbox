@@ -61,6 +61,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.material3.SnackbarHostState
 import com.wb.mdgw.MarkdownSnippets
+import com.wb.mdgw.MdEditorPane
 import com.wb.mdgw.SegmentedTabs
 import com.wb.mdgw.UI_CARD_RADIUS
 import com.wb.mdgw.UI_BTN_RADIUS
