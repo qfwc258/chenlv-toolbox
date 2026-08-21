@@ -37,6 +37,12 @@ object PptLayoutEngine {
     /** 当前生效波浪参数（由 UI 注入；默认=出厂效果=v1.7.9，保证「未调 = 原样」）。 */
     var waveParams: PptWaveParams = PptWaveParams()
 
+    /** 中文/英文标点字符集合，用于表格智能列宽权重判断。 */
+    private val PUNCTUATION_CHARS: Set<Char> = setOf(
+        '，', '。', '、', '；', '：', '！', '？',
+        '.', ',', ';', ':', '!', '?'
+    )
+
     /** Logo 装饰参数（由 UI 注入；控制大小与位置）。 */
     var logoScale: Float = 0.20f       // 占画布宽比例，默认 20%
     var logoHAlign: String = "right"   // "left" / "right"
@@ -1243,11 +1249,93 @@ object PptLayoutEngine {
         return PptLayoutTemplates.titleBarRect(block, x, y, h)
     }
 
-    // ── 表格：列等宽分配，按单元格换行估算行高 ──
+    // ── 表格：智能列宽分配（按内容加权），按单元格换行估算行高 ──
+
+    /**
+     * 根据单元格文本内容智能分配列宽：
+     * - 统计每列的内容权重（中文字≈1.0，西文≈0.55）
+     * - 短列（如序号、状态）拿最小宽度，长列拿剩余空间
+     * - 避免无脑均分导致的「短列浪费、长列挤压」
+     */
+    private fun smartTableColWidths(
+        header: List<List<InlineFragment>>,
+        rows: List<List<List<InlineFragment>>>,
+        totalW: Int,
+        minColW: Int = 40
+    ): List<Int> {
+        val cols = maxOf(header.size, rows.maxOfOrNull { it.size } ?: 0, 1)
+        if (cols <= 1) return listOf(totalW)
+
+        // 计算每列的内容权重
+        val weights = DoubleArray(cols)
+        for (c in 0 until cols) {
+            var weight = 0.0
+            val headerCell = header.getOrNull(c)
+            if (headerCell != null) {
+                weight += cellContentWeight(headerCell) * 1.2  // 表头略加权
+            }
+            for (row in rows) {
+                val cell = row.getOrNull(c) ?: continue
+                weight += cellContentWeight(cell)
+            }
+            weights[c] = weight.coerceAtLeast(1.0)
+        }
+
+        // 短列判定：权重低于平均值 30%
+        val avgWeight = weights.average()
+        val isShortCol = weights.map { it < avgWeight * 0.3 }
+
+        val remaining = (totalW - minColW * cols).coerceAtLeast(0)
+        val totalLongWeight = weights.mapIndexed { idx, w ->
+            if (isShortCol[idx]) 0.0 else w
+        }.sum()
+        val shortCount = isShortCol.count { it }
+        val longCount = cols - shortCount
+
+        val colW = IntArray(cols)
+        for (c in 0 until cols) {
+            if (isShortCol[c]) {
+                colW[c] = minColW
+            } else {
+                val share = if (totalLongWeight > 0 && longCount > 0) {
+                    (weights[c] / totalLongWeight * remaining).toInt().coerceAtLeast(minColW)
+                } else if (longCount > 0) {
+                    (remaining / longCount).toInt().coerceAtLeast(minColW)
+                } else {
+                    minColW
+                }
+                colW[c] = share
+            }
+        }
+
+        // 修正总和 = totalW（最后一列吃余数）
+        val sum = colW.sum()
+        if (sum != totalW) {
+            colW[cols - 1] += (totalW - sum)
+        }
+        return colW.toList()
+    }
+
+    /** 计算单元格内容的视觉宽度权重：中文≈1.0，西文≈0.55，标点≈0.3。 */
+    private fun cellContentWeight(frags: List<InlineFragment>): Double {
+        val text = frags.joinToString("") { it.text }
+        if (text.isEmpty()) return 0.5
+        var weight = 0.0
+        for (c in text) {
+            weight += when {
+                c in '0'..'9' -> 0.5
+                c in PUNCTUATION_CHARS -> 0.3
+                c.code in 0x4E00..0x9FFF -> 1.0   // CJK 汉字
+                c.code in 0x3000..0x303F -> 0.6   // CJK 兼容
+                c.isLetterOrDigit() -> 0.55
+                else -> 0.5
+            }
+        }
+        return weight
+    }
+
     private fun buildTableRender(block: MdBlock.TableBlock, w: Int): TableRender {
-        val cols = maxOf(block.header.size, block.rows.maxOfOrNull { it.size } ?: 0, 1)
-        val base = w / cols
-        val colW = List(cols) { base }.toMutableList().also { it[cols - 1] += w - base * cols }
+        val colW = smartTableColWidths(block.header, block.rows, w)
         val headerFs = style.fsBody + 2
         val cellFs = style.fsBody - 1
         val headerH = if (block.header.isNotEmpty()) tableRowH(block.header, colW, headerFs) else 0

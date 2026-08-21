@@ -41,6 +41,12 @@ object PdfExporter {
     /** 可与 ASCII 字母数字连成一个排版单元的符号（避免 GB/T、3.5、20% 被拆断） */
     private const val WORD_GLUE = ".-/%:"
 
+    /** 中文/英文标点字符集合，用于表格智能列宽权重判断。 */
+    private val PUNCTUATION_CHARS: Set<Char> = setOf(
+        '，', '。', '、', '；', '：', '！', '？',
+        '.', ',', ';', ':', '!', '?'
+    )
+
     /**
      * 把一行文本切成「排版单元」：
      *  - 连续的 ASCII 字母 / 数字（含 . - / % :）合成一个单元，断行与两端对齐都不拆开它
@@ -342,16 +348,92 @@ object PdfExporter {
         }
 
         /**
+         * 根据单元格文本内容智能分配列宽（Float 单位，对应磅）：
+         * - 统计每列的内容权重（中文字≈1.0，西文≈0.55）
+         * - 短列（如序号、状态）拿最小宽度，长列拿剩余空间
+         */
+        private fun smartTableColWidths(
+            rows: List<List<List<TextRun>>>,
+            totalW: Float,
+            minColW: Float = 40f  // ~40pt ≈ 1.4cm, 足够放序号
+        ): List<Float> {
+            val colCount = maxOf(rows.maxOfOrNull { it.size } ?: 1, 1)
+            if (colCount <= 1) return listOf(totalW)
+
+            // 计算每列的内容权重
+            val weights = DoubleArray(colCount)
+            for (c in 0 until colCount) {
+                var weight = 0.0
+                for (row in rows) {
+                    val cell = row.getOrNull(c) ?: continue
+                    weight += cellContentWeight(cell)
+                }
+                weights[c] = weight.coerceAtLeast(1.0)
+            }
+
+            // 短列判定：权重低于平均值 30%
+            val avgWeight = weights.average()
+            val isShortCol = weights.map { it < avgWeight * 0.3 }
+
+            val remaining = (totalW - minColW * colCount).coerceAtLeast(0f)
+            val totalLongWeight = weights.mapIndexed { idx, w ->
+                if (isShortCol[idx]) 0.0 else w
+            }.sum()
+            val longCount = colCount - isShortCol.count { it }
+
+            val colW = FloatArray(colCount)
+            for (c in 0 until colCount) {
+                if (isShortCol[c]) {
+                    colW[c] = minColW
+                } else {
+                    val share = if (totalLongWeight > 0 && longCount > 0) {
+                        (weights[c] / totalLongWeight * remaining).toFloat().coerceAtLeast(minColW)
+                    } else if (longCount > 0) {
+                        (remaining / longCount).coerceAtLeast(minColW)
+                    } else {
+                        minColW
+                    }
+                    colW[c] = share
+                }
+            }
+
+            // 修正总和 = totalW（最后一列吃余数）
+            val sum = colW.sum()
+            if (kotlin.math.abs(sum - totalW) > 0.01f) {
+                colW[colCount - 1] += (totalW - sum)
+            }
+            return colW.toList()
+        }
+
+        /** 计算单元格内容的视觉宽度权重：中文≈1.0，西文≈0.55，标点≈0.3。 */
+        private fun cellContentWeight(runs: List<TextRun>): Double {
+            val text = runs.joinToString("") { it.text }
+            if (text.isEmpty()) return 0.5
+            var weight = 0.0
+            for (c in text) {
+                weight += when {
+                    c in '0'..'9' -> 0.5
+                    c in PUNCTUATION_CHARS -> 0.3
+                    c.code in 0x4E00..0x9FFF -> 1.0   // CJK 汉字
+                    c.code in 0x3000..0x303F -> 0.6   // CJK 兼容
+                    c.isLetterOrDigit() -> 0.55
+                    else -> 0.5
+                }
+            }
+            return weight
+        }
+
+        /**
          * 绘制表格：
-         *  - 列宽均分，行高按单元格内容自适应
+         *  - 智能列宽分配，行高按单元格内容自适应
          *  - 单元格文字水平 + 垂直居中（公文表格惯例）
          *  - 首行视为表头：加粗，且跨页时在新页重复
          */
         fun drawTable(rows: List<List<List<TextRun>>>) {
             if (rows.isEmpty()) return
 
-            val colCount = max(rows.maxOfOrNull { it.size } ?: 1, 1)
-            val colW = usableW / colCount
+            val colWList = smartTableColWidths(rows, usableW)
+            val colCount = colWList.size
             val cellSize = doc.bodySizePt.toFloat()
             val cellLineH = cellSize * 1.35f
             val padX = 4f
@@ -366,7 +448,7 @@ object PdfExporter {
                 paint.typeface = resolveTypeface(doc.bodyFont, bold)
                 return (0 until colCount).map { c ->
                     val txt = row.getOrNull(c)?.joinToString("") { it.text } ?: ""
-                    wrap(txt, colW - padX * 2, colW - padX * 2)
+                    wrap(txt, colWList[c] - padX * 2, colWList[c] - padX * 2)
                 }
             }
 
@@ -380,6 +462,7 @@ object PdfExporter {
                 paint.typeface = resolveTypeface(doc.bodyFont, bold)
                 var x = mLeft
                 for (c in 0 until colCount) {
+                    val colW = colWList[c]
                     // 边框
                     paint.style = Paint.Style.STROKE
                     paint.strokeWidth = 0.6f

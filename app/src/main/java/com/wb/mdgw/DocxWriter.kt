@@ -194,6 +194,12 @@ class DocxWriter(
 ) {
     private val _blocks = mutableListOf<Block>()
 
+    /** 中文/英文标点字符集合，用于表格智能列宽权重判断。 */
+    private val PUNCTUATION_CHARS: Set<Char> = setOf(
+        '，', '。', '、', '；', '：', '！', '？',
+        '.', ',', ';', ':', '!', '?'
+    )
+
     /** 已收集的块级元素（供预览 / PDF 等其它消费者复用同一份模型） */
     val blocks: List<Block> get() = _blocks
 
@@ -326,11 +332,86 @@ class DocxWriter(
         return sb.toString()
     }
 
+    /**
+     * 根据单元格文本内容智能分配列宽（twip 单位）：
+     * - 统计每列的内容权重（中文字≈1.0，西文≈0.55）
+     * - 短列（如序号、状态）拿最小宽度，长列拿剩余空间
+     */
+    private fun smartTableColWidths(
+        rows: List<List<List<TextRun>>>,
+        totalW: Int,
+        minColW: Int = 800  // ~40pt ≈ 200 twips, 足够放序号
+    ): List<Int> {
+        val colCount = rows.maxOf { it.size }.coerceAtLeast(1)
+        if (colCount <= 1) return listOf(totalW)
+
+        // 计算每列的内容权重
+        val weights = DoubleArray(colCount)
+        for (c in 0 until colCount) {
+            var weight = 0.0
+            for (row in rows) {
+                val cell = row.getOrNull(c) ?: continue
+                weight += cellContentWeight(cell)
+            }
+            weights[c] = weight.coerceAtLeast(1.0)
+        }
+
+        // 短列判定：权重低于平均值 30%
+        val avgWeight = weights.average()
+        val isShortCol = weights.map { it < avgWeight * 0.3 }
+
+        val remaining = (totalW - minColW * colCount).coerceAtLeast(0)
+        val totalLongWeight = weights.mapIndexed { idx, w ->
+            if (isShortCol[idx]) 0.0 else w
+        }.sum()
+        val longCount = colCount - isShortCol.count { it }
+
+        val colW = IntArray(colCount)
+        for (c in 0 until colCount) {
+            if (isShortCol[c]) {
+                colW[c] = minColW
+            } else {
+                val share = if (totalLongWeight > 0 && longCount > 0) {
+                    (weights[c] / totalLongWeight * remaining).toInt().coerceAtLeast(minColW)
+                } else if (longCount > 0) {
+                    (remaining / longCount).toInt().coerceAtLeast(minColW)
+                } else {
+                    minColW
+                }
+                colW[c] = share
+            }
+        }
+
+        // 修正总和 = totalW（最后一列吃余数）
+        val sum = colW.sum()
+        if (sum != totalW) {
+            colW[colCount - 1] += (totalW - sum)
+        }
+        return colW.toList()
+    }
+
+    /** 计算单元格内容的视觉宽度权重：中文≈1.0，西文≈0.55，标点≈0.3。 */
+    private fun cellContentWeight(runs: List<TextRun>): Double {
+        val text = runs.joinToString("") { it.text }
+        if (text.isEmpty()) return 0.5
+        var weight = 0.0
+        for (c in text) {
+            weight += when {
+                c in '0'..'9' -> 0.5
+                c in PUNCTUATION_CHARS -> 0.3
+                c.code in 0x4E00..0x9FFF -> 1.0   // CJK 汉字
+                c.code in 0x3000..0x303F -> 0.6   // CJK 兼容
+                c.isLetterOrDigit() -> 0.55
+                else -> 0.5
+            }
+        }
+        return weight
+    }
+
     private fun tableXml(b: Block.Table): String {
-        val colCount = b.rows.maxOf { it.size }.coerceAtLeast(1)
         // 可用正文宽度（缇）
         val usable = cmToTwips(page.widthCm - page.leftCm - page.rightCm)
-        val colW = usable / colCount
+        val colW = smartTableColWidths(b.rows, usable)
 
         val sb = StringBuilder()
         sb.append("<w:tbl><w:tblPr>")
@@ -347,15 +428,17 @@ class DocxWriter(
         sb.append("</w:tblPr>")
 
         sb.append("<w:tblGrid>")
-        repeat(colCount) { sb.append("<w:gridCol w:w=\"").append(colW).append("\"/>") }
+        for (w in colW) {
+            sb.append("<w:gridCol w:w=\"").append(w).append("\"/>")
+        }
         sb.append("</w:tblGrid>")
 
         for (row in b.rows) {
             sb.append("<w:tr>")
-            for (c in 0 until colCount) {
+            for (c in colW.indices) {
                 val cell = row.getOrNull(c) ?: emptyList()
                 sb.append("<w:tc><w:tcPr>")
-                sb.append("<w:tcW w:w=\"").append(colW).append("\" w:type=\"dxa\"/>")
+                sb.append("<w:tcW w:w=\"").append(colW[c]).append("\" w:type=\"dxa\"/>")
                 sb.append("<w:vAlign w:val=\"center\"/>")
                 sb.append("</w:tcPr>")
                 // 表格单元格内不缩进

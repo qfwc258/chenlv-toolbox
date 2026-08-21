@@ -57,6 +57,88 @@ private val cssPropertyRegexes: Map<String, Regex> = mapOf(
 private fun cssHasProp(style: String, prop: String): Boolean =
     cssPropertyRegexes[prop]?.containsMatchIn(style) ?: false
 
+/** 中文/英文标点字符集合，用于表格智能列宽权重判断。 */
+private val PUNCTUATION_CHARS: Set<Char> = setOf(
+    '，', '。', '、', '；', '：', '！', '？',
+    '.', ',', ';', ':', '!', '?'
+)
+
+/** 计算字符串内容的视觉宽度权重：中文≈1.0，西文≈0.55，标点≈0.3。 */
+private fun stringContentWeight(text: String): Double {
+    if (text.isEmpty()) return 0.5
+    var weight = 0.0
+    for (c in text) {
+        weight += when {
+            c in '0'..'9' -> 0.5
+            c in PUNCTUATION_CHARS -> 0.3
+            c.code in 0x4E00..0x9FFF -> 1.0   // CJK 汉字
+            c.code in 0x3000..0x303F -> 0.6   // CJK 兼容
+            c.isLetterOrDigit() -> 0.55
+            else -> 0.5
+        }
+    }
+    return weight
+}
+
+/**
+ * 根据单元格文本内容智能分配列宽百分比：
+ * - 统计每列的内容权重（中文字≈1.0，西文≈0.55）
+ * - 短列（如序号、状态）拿最小宽度%，长列拿剩余空间
+ * @param colTexts 每列所有单元格文本的集合
+ * @param minPercent 短列最小百分比
+ * @return 每列的百分比（总和=100）
+ */
+private fun smartTableColWidthPercentages(
+    colTexts: List<List<String>>,
+    minPercent: Double = 5.0
+): List<Double> {
+    val colCount = colTexts.size
+    if (colCount <= 1) return listOf(100.0)
+
+    // 计算每列的内容权重
+    val weights = DoubleArray(colCount)
+    for (c in 0 until colCount) {
+        var weight = 0.0
+        for (text in colTexts[c]) {
+            weight += stringContentWeight(text)
+        }
+        weights[c] = weight.coerceAtLeast(1.0)
+    }
+
+    // 短列判定：权重低于平均值 30%
+    val avgWeight = weights.average()
+    val isShortCol = weights.map { it < avgWeight * 0.3 }
+
+    val remainingPercent = (100.0 - minPercent * colCount).coerceAtLeast(0.0)
+    val totalLongWeight = weights.mapIndexed { idx, w ->
+        if (isShortCol[idx]) 0.0 else w
+    }.sum()
+    val longCount = colCount - isShortCol.count { it }
+
+    val percents = DoubleArray(colCount)
+    for (c in 0 until colCount) {
+        if (isShortCol[c]) {
+            percents[c] = minPercent
+        } else {
+            val share = if (totalLongWeight > 0 && longCount > 0) {
+                (weights[c] / totalLongWeight * remainingPercent).coerceAtLeast(minPercent)
+            } else if (longCount > 0) {
+                (remainingPercent / longCount).coerceAtLeast(minPercent)
+            } else {
+                minPercent
+            }
+            percents[c] = share
+        }
+    }
+
+    // 修正总和 = 100（最后一列吃余数）
+    val sum = percents.sum()
+    if (kotlin.math.abs(sum - 100.0) > 0.01) {
+        percents[colCount - 1] += (100.0 - sum)
+    }
+    return percents.toList()
+}
+
 class MdWechatConverter(context: Context) {
 
     private val extensions = listOf(
@@ -165,18 +247,32 @@ class MdWechatConverter(context: Context) {
         }
 
         // 5) 表格硬兜底：微信粘贴表格最易「断裂 / 散架 / 错位」，根因是缺 table-layout:fixed
-        //    与逐列宽度，导致编辑器按内容重排、整表崩溃。md2wx 等工具同样没做这步故表格也断。
-        //    修复：固定布局 + 100% 宽 + 首行逐列均分 width + 单元格边框 / 换行 + 合并边框。
+        //    与逐列宽度，导致编辑器按内容重排、整表崩溃。
+        //    修复：固定布局 + 100% 宽 + 智能列宽（基于内容权重）+ 单元格边框 / 换行。
         body.select("table").forEach { t ->
-            val firstRow = t.selectFirst("tr")
-            val colCount = firstRow?.children()?.size ?: 0
-            val colWidth = if (colCount > 0) "${100 / colCount}%" else "100%"
+            val rows = t.select("tr")
+            if (rows.isEmpty()) return@forEach
 
-            // 给首行每个单元格设置等宽，强制 fixed 布局真正生效（微信按首行定列宽）
-            firstRow?.children()?.forEach { cell ->
+            val firstRow = rows.first()
+            val colCount = firstRow.children().size
+            if (colCount == 0) return@forEach
+
+            // 收集每列所有单元格文本，用于智能列宽计算
+            val colTexts = List(colCount) { c ->
+                rows.map { row ->
+                    row.children().getOrNull(c)?.text() ?: ""
+                }
+            }
+
+            // 计算智能列宽百分比
+            val colWidthPercents = smartTableColWidthPercentages(colTexts)
+
+            // 给首行每个单元格设置智能宽度，强制 fixed 布局真正生效（微信按首行定列宽）
+            firstRow.children().forEachIndexed { idx, cell ->
+                val percent = colWidthPercents.getOrElse(idx) { 100.0 / colCount }
                 val s = cell.attr("style").trim().removeSuffix(";")
                 var merged = s
-                if (!cssHasProp(merged, "width")) merged += ";width: $colWidth"
+                if (!cssHasProp(merged, "width")) merged += ";width: ${"%.1f".format(percent)}%"
                 if (!cssHasProp(merged, "word-break")) merged += ";word-break: break-word"
                 cell.attr("style", merged.trimStart(';'))
             }
