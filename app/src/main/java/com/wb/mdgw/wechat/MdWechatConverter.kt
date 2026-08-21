@@ -115,7 +115,7 @@ private fun columnPlan(table: Element, explicitHint: String? = null): TableColum
                 when {
                     p == "auto" -> "auto"
                     isCssWidth(p) -> p
-                    num != null && num > 0 -> "${num.coerceAtMost(100)}%"
+                    num != null && num > 0 -> "${num.coerceAtMost(100.0)}%"
                     else -> null
                 }
             }
