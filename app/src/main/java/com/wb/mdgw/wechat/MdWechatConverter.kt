@@ -1,6 +1,7 @@
 package com.wb.mdgw.wechat
 
 import android.content.Context
+import kotlin.math.roundToInt
 import org.commonmark.ext.gfm.strikethrough.StrikethroughExtension
 import org.commonmark.ext.gfm.tables.TablesExtension
 import org.commonmark.ext.task.list.items.TaskListItemsExtension
@@ -9,6 +10,7 @@ import org.commonmark.parser.Parser
 import org.commonmark.renderer.html.HtmlRenderer
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
+import org.jsoup.nodes.Element
 
 /**
  * 公众号排版核心引擎。提供**两路**输出，彻底区分「屏幕预览」与「剪贴板粘贴」：
@@ -57,6 +59,152 @@ private val cssPropertyRegexes: Map<String, Regex> = mapOf(
 private fun cssHasProp(style: String, prop: String): Boolean =
     cssPropertyRegexes[prop]?.containsMatchIn(style) ?: false
 
+/**
+ * 单张表格的列宽方案（所有路径共享，保证「预览」与「粘贴」两端列宽完全一致）。
+ * @param explicit 是否来自 Markdown 内的显式列宽指令
+ * @param widths   每列宽度（CSS 长度字符串，如 "30%" / "150px" / "auto"）；恒有 [cellCount] 个
+ */
+private data class TableColumnPlan(
+    val widths: List<String>,
+    val explicit: Boolean
+) {
+    val cellCount: Int get() = widths.size
+    val isExplicit: Boolean get() = explicit
+}
+
+/** 是否形如 `%` / px / em 结尾——CSS 长度，视为可透传的显式宽度 */
+private fun isCssWidth(s: String): Boolean =
+    s.endsWith("%") || s.endsWith("px") || s.endsWith("em") || s.endsWith("rem")
+
+/** 去掉宽度数值后的非中文首尾/中间空白并折叠多余空白；用于估算单元格文字占宽 */
+private fun compactText(t: String): String =
+    t.replace(Regex("""\s+"""), " ").trim()
+
+/**
+ * 估算一个单元格的「显示权重」：数字/英文按半角折算，中文按全角折算。
+ * 用于按内容智能分配列宽（比例 = 该列所有行权重的平均 / 全表总平均）。
+ */
+private fun cellWeight(cell: Element): Double {
+    val text = compactText(cell.text())
+    if (text.isEmpty()) return 0.0
+    val half = text.count { it in '0'..'9' || it in 'a'..'z' || it in 'A'..'Z' || it == '.' || it == ',' }
+    val full = text.length - half
+    return half * 0.55 + full
+}
+
+/**
+ * 计算列宽方案：
+ * 1) 指令优先——从表格前一行的引用块 / 注释中解析列宽；
+ * 2) 否则按各列内容权重智能分配百分比（等权时退化为均分）。
+ */
+private fun columnPlan(table: Element, explicitHint: String? = null): TableColumnPlan {
+    val firstRow = table.selectFirst("tr") ?: return TableColumnPlan(emptyList(), false)
+    val headerCells = firstRow.children()
+    val colCount = headerCells.size
+    if (colCount == 0) return TableColumnPlan(emptyList(), false)
+
+    // 1) 显式指令：`列宽：30% 40% 30%`（解析自表格前一行引用块 / 注释）
+    val directive = explicitHint?.trim()
+    if (!directive.isNullOrBlank()) {
+        val parts = directive.split(Regex("""[\s,，|]+"""))
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+        if (parts.size == colCount) {
+            val normalized = parts.map { p ->
+                val num = p.removeSuffix("%").toDoubleOrNull()
+                when {
+                    p == "auto" -> "auto"
+                    isCssWidth(p) -> p
+                    num != null && num > 0 -> "${num.coerceAtMost(100)}%"
+                    else -> null
+                }
+            }
+            if (normalized.none { it == null }) {
+                // 总和超过 100% 时等比压缩到 100%，避免表格溢出
+                val valid = normalized.filterIsInstance<String>()
+                val sumPct = valid.sumOf { s ->
+                    if (s.endsWith("%")) s.removeSuffix("%").toDoubleOrNull() ?: 0.0 else 0.0
+                }
+                val scale = if (sumPct > 100) 100.0 / sumPct else 1.0
+                val widths = valid.map { s ->
+                    if (s.endsWith("%")) "${(s.removeSuffix("%").toDouble() * scale).let { it.roundToInt() }}%" else s
+                }
+                return TableColumnPlan(widths, true)
+            }
+        }
+    }
+
+    // 2) 智能按内容权重
+    var totalWeight = 0.0
+    val colWeights = DoubleArray(colCount)
+    table.select("tr").forEach { tr ->
+        tr.children().forEachIndexed { ci, cell ->
+            val w = cellWeight(cell)
+            colWeights[ci.coerceAtMost(colCount - 1)] += w
+            totalWeight += w
+        }
+    }
+    val widths = ArrayList<String>(colCount)
+    if (totalWeight > 0) {
+        for (ci in 0 until colCount) {
+            val pct = (colWeights[ci] / totalWeight * 100.0).roundToInt()
+            widths += "${pct.coerceAtLeast(1)}%"
+        }
+    } else {
+        repeat(colCount) { widths += "${100 / colCount}%" }
+    }
+    return TableColumnPlan(widths, false)
+}
+
+/** 列宽指令行（Markdown 源码层）：`> 列宽：30% 40% 30%` 或 `<!-- 列宽：30% 40% 30% -->` */
+private val colDirectiveLine = Regex(
+    """^\s*(?:>\s*)?(?:<!--\s*)?列宽\s*[:：]\s*(.+?)\s*(?:-->)?\s*$"""
+)
+
+/** 从 Markdown 源码逐个提取「每个表格」的显式列宽指令（按下标对应 DOM 中的表格）。 */
+private fun extractColHints(md: String): List<String?> {
+    val out = ArrayList<String?>()
+    var pending: String? = null
+    for (line in md.lineSequence()) {
+        val t = line.trim()
+        val d = colDirectiveLine.find(t)
+        if (d != null) { pending = d.groupValues[1].trim(); continue }
+        // 表格分隔行定位：仅由 | / - / : / 空格 组成且含管道与连字符（区别于普通 - 水平线）
+        if (t.contains('|') && t.contains('-') &&
+            t.all { it == '|' || it == '-' || it == ':' || it == ' ' }
+        ) {
+            out.add(pending); pending = null
+        }
+    }
+    return out
+}
+
+/**
+ * 把列宽方案落到 DOM：表格 fixed 定位 + 100% 宽 + 逐列宽度（写首行，微信按首行定宽）。
+ * 预览与复制共用，保证两端观感一致。
+ */
+private fun applyTableColumns(body: Element, hints: List<String?>?) {
+    body.select("table").forEachIndexed { ti, tb ->
+        val firstRow = tb.selectFirst("tr")
+        val plan = columnPlan(tb, hints?.getOrNull(ti))
+        if (plan.widths.isEmpty() || firstRow == null) return@forEachIndexed
+        // 固定布局 + 100% 宽，逐列宽才真正生效（与粘贴端 table-layout:fixed 对齐）
+        var tstyle = tb.attr("style").trim().removeSuffix(";")
+        if (!cssHasProp(tstyle, "table-layout")) tstyle += ";table-layout: fixed"
+        if (!cssHasProp(tstyle, "width")) tstyle += ";width: 100%"
+        tb.attr("style", tstyle.trimStart(';'))
+        firstRow.children().forEachIndexed { ci, cell ->
+            if (ci >= plan.cellCount) return@forEachIndexed
+            val w = plan.widths[ci]
+            if (w.isBlank()) return@forEachIndexed
+            var s = cell.attr("style").trim().removeSuffix(";")
+            if (!cssHasProp(s, "width")) s += ";width: $w"
+            if (!cssHasProp(s, "word-break")) s += ";word-break: break-word"
+            cell.attr("style", s.trimStart(';'))
+        }
+    }
+}
+
 class MdWechatConverter(context: Context) {
 
     private val extensions = listOf(
@@ -74,6 +222,7 @@ class MdWechatConverter(context: Context) {
      */
     fun convertForPreview(markdown: String, css: String): String {
         if (markdown.isBlank()) return ""
+        val colHints = extractColHints(markdown)
         val rawHtml = htmlRenderer.render(parser.parse(markdown))
         val doc: Document = Jsoup.parse(rawHtml)
 
@@ -96,6 +245,8 @@ class MdWechatConverter(context: Context) {
             append(css)
         }
         doc.head().appendElement("style").text(styleText)
+        // 表格列宽：智能按内容或 Markdown 列宽指令（预览与复制走同一套算法，观感一致）
+        applyTableColumns(doc.body(), colHints)
         return doc.outerHtml()
     }
 
@@ -105,6 +256,7 @@ class MdWechatConverter(context: Context) {
      */
     fun convertForCopy(markdown: String, css: String): String {
         if (markdown.isBlank()) return ""
+        val colHints = extractColHints(markdown)
 
         // 1) Markdown -> 原始 HTML
         val rawHtml = htmlRenderer.render(parser.parse(markdown))
@@ -166,21 +318,10 @@ class MdWechatConverter(context: Context) {
 
         // 5) 表格硬兜底：微信粘贴表格最易「断裂 / 散架 / 错位」，根因是缺 table-layout:fixed
         //    与逐列宽度，导致编辑器按内容重排、整表崩溃。md2wx 等工具同样没做这步故表格也断。
-        //    修复：固定布局 + 100% 宽 + 首行逐列均分 width + 单元格边框 / 换行 + 合并边框。
+        //    修复：固定布局 + 100% 宽 + 逐列 width（智能按内容或 Markdown 列宽指令）+
+        //    单元格边框 / 换行 + 合并边框。
+        applyTableColumns(body, colHints)
         body.select("table").forEach { t ->
-            val firstRow = t.selectFirst("tr")
-            val colCount = firstRow?.children()?.size ?: 0
-            val colWidth = if (colCount > 0) "${100 / colCount}%" else "100%"
-
-            // 给首行每个单元格设置等宽，强制 fixed 布局真正生效（微信按首行定列宽）
-            firstRow?.children()?.forEach { cell ->
-                val s = cell.attr("style").trim().removeSuffix(";")
-                var merged = s
-                if (!cssHasProp(merged, "width")) merged += ";width: $colWidth"
-                if (!cssHasProp(merged, "word-break")) merged += ";word-break: break-word"
-                cell.attr("style", merged.trimStart(';'))
-            }
-
             t.attr("border", "1")
             t.attr("cellspacing", "0")
             t.attr("cellpadding", "6")
