@@ -21,29 +21,24 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.AutoStories
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
@@ -56,6 +51,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -69,6 +65,7 @@ import com.wb.mdgw.UI_ACTION_HEIGHT
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.nio.charset.StandardCharsets
+import kotlinx.coroutines.delay
 
 /**
  * 陈律工具箱「公众号」Tab：Markdown → 微信公众号排版。
@@ -87,19 +84,24 @@ fun WeChatScreen(snackbar: SnackbarHostState) {
     val context = LocalContext.current
     val converter = remember { MdWechatConverter(context.applicationContext) }
 
-    // 编辑框起始为空：示例作为占位符展示，用户一旦输入即自动消失（与 Word 占位符行为一致）
-    var mdTfv by remember { mutableStateOf(TextFieldValue("")) }
+    // 草稿：进入时静默恢复上次的正文 / 主题 / 自定义 CSS（同 PPTX 模式，无则用默认）
+    val draft = remember { WeChatDraftStore.load(context) }
+    val initThemeKey = draft?.themeKey?.takeIf { it.isNotBlank() } ?: ThemePreset.THEMES.first().key
+
+    var mdTfv by remember { mutableStateOf(TextFieldValue(draft?.markdown ?: "")) }
     // 字号（各 Tab 独立记忆）与撤销/重做栈
     var fontSize by remember { mutableStateOf(15) }
     val undoStack = remember { ArrayDeque<TextFieldValue>() }
     val redoStack = remember { ArrayDeque<TextFieldValue>() }
-    var themeKey by remember { mutableStateOf(ThemePreset.THEMES.first().key) }
+    var themeKey by remember { mutableStateOf(initThemeKey) }
     var effectiveCss by remember {
-        mutableStateOf(ThemeStorage.getCss(context, ThemePreset.THEMES.first().key))
+        mutableStateOf(
+            draft?.customCss?.takeIf { it.isNotBlank() }
+                ?: ThemeStorage.getCss(context, initThemeKey)
+        )
     }
     var subView by remember { mutableStateOf(SubView.EDIT) }
     var showCss by remember { mutableStateOf(false) }
-    var reconvert by remember { mutableStateOf(0) }
     // 预览 WebView 引用：复制按钮依赖它执行「原生全选+复制」，与输入法复制同源
     var previewWebView by remember { mutableStateOf<WebView?>(null) }
     // WebView 是否已加载完成（onPageFinished 后才可执行原生复制，否则 DOM 不完整）
@@ -108,11 +110,24 @@ fun WeChatScreen(snackbar: SnackbarHostState) {
     var pendingCopy by remember { mutableStateOf(false) }
 
     // 预览用完整文档（<head><style>）；复制用纯内联片段（零 <head>/<style>/class）
-    val previewHtml = remember(mdTfv.text, effectiveCss, reconvert) {
+    val previewHtml = remember(mdTfv.text, effectiveCss) {
         converter.convertForPreview(mdTfv.text, effectiveCss)
     }
-    val copyHtml = remember(mdTfv.text, effectiveCss, reconvert) {
+    val copyHtml = remember(mdTfv.text, effectiveCss) {
         converter.convertForCopy(mdTfv.text, effectiveCss)
+    }
+
+    // 公众号草稿防抖自动保存：正文 / 主题 / 自定义 CSS 任一变化即落盘，下次进入静默恢复
+    LaunchedEffect(mdTfv.text, themeKey, effectiveCss) {
+        delay(500)
+        WeChatDraftStore.save(
+            context,
+            WeChatDraftStore.WeChatDraft(
+                markdown = mdTfv.text,
+                themeKey = themeKey,
+                customCss = effectiveCss
+            )
+        )
     }
 
     val pickLauncher = rememberLauncherForActivityResult(
@@ -157,12 +172,6 @@ fun WeChatScreen(snackbar: SnackbarHostState) {
         },
         bottomBar = {
             ActionBar(
-                onConvert = {
-                    // 强制按当前 Markdown/CSS 重新转换，并切到「预览」子 Tab，
-                    // 让用户立刻看到排版结果（预览本就实时，这里提供明确的可视反馈）。
-                    reconvert++
-                    subView = SubView.PREVIEW
-                },
                 onCopy = {
                     // 预览态且已加载完成：直接走 WebView 原生「全选+复制」，与输入法复制同源；
                     // 编辑态（WebView 未挂载）：先切到预览，等加载完成后再复制。
@@ -233,7 +242,9 @@ fun WeChatScreen(snackbar: SnackbarHostState) {
                     SubView.PREVIEW -> PreviewPane(
                         previewHtml,
                         onWebViewReady = { previewWebView = it },
-                        onLoaded = { webViewLoaded = it }
+                        onLoaded = { webViewLoaded = it },
+                        // 与编辑区（MdEditorPane 内部 4dp 内边距）对齐，保持同宽最大化
+                        modifier = Modifier.fillMaxSize().padding(4.dp)
                     )
                 }
             }
@@ -271,21 +282,35 @@ private fun ThemeToolbar(
         Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        ExposedDropdownMenuBox(
-            expanded = expanded,
-            onExpandedChange = { expanded = it },
-            modifier = Modifier.weight(1f)
-        ) {
-            TextField(
-                value = currentName,
-                onValueChange = {},
-                readOnly = true,
-                label = { Text("主题") },
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                textStyle = LocalTextStyle.current.copy(fontSize = 13.sp),
-                modifier = Modifier.menuAnchor().fillMaxWidth()
-            )
-            ExposedDropdownMenu(
+        // 主题紧凑下拉：替代原带 label 的高 TextField，省出编辑区高度
+        Box(Modifier.weight(1f)) {
+            Surface(
+                onClick = { expanded = true },
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                shape = UI_BTN_RADIUS,
+                modifier = Modifier.height(36.dp).fillMaxWidth()
+            ) {
+                Row(
+                    Modifier.fillMaxSize().padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        currentName,
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Icon(
+                        Icons.Default.ArrowDropDown,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            DropdownMenu(
                 expanded = expanded,
                 onDismissRequest = { expanded = false }
             ) {
@@ -327,7 +352,6 @@ private fun ThemeToolbar(
 
 @Composable
 private fun ActionBar(
-    onConvert: () -> Unit,
     onCopy: () -> Unit,
     onClear: () -> Unit,
     onExample: () -> Unit,
@@ -340,11 +364,6 @@ private fun ActionBar(
         Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             val btnMod = Modifier.weight(1f).height(UI_ACTION_HEIGHT)
             val btnPad = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
-            Button(onClick = onConvert, shape = UI_BTN_RADIUS, modifier = btnMod, contentPadding = btnPad) {
-                Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(17.dp))
-                Spacer(Modifier.width(5.dp))
-                Text("转换", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
-            }
             Button(onClick = onCopy, shape = UI_BTN_RADIUS, modifier = btnMod, contentPadding = btnPad) {
                 Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(17.dp))
                 Spacer(Modifier.width(5.dp))
@@ -359,23 +378,31 @@ private fun ActionBar(
                 Spacer(Modifier.width(5.dp))
                 Text("清空", fontSize = 13.sp, maxLines = 1, softWrap = false)
             }
-            OutlinedButton(
-                onClick = onExample, shape = UI_BTN_RADIUS, modifier = btnMod,
-                border = BorderStroke(1.2.dp, MaterialTheme.colorScheme.outline),
-                contentPadding = btnPad
-            ) {
-                Icon(Icons.Default.AutoStories, contentDescription = null, modifier = Modifier.size(17.dp))
-                Spacer(Modifier.width(5.dp))
-                Text("示例", fontSize = 13.sp, maxLines = 1, softWrap = false)
-            }
-            OutlinedButton(
-                onClick = onImport, shape = UI_BTN_RADIUS, modifier = btnMod,
-                border = BorderStroke(1.2.dp, MaterialTheme.colorScheme.outline),
-                contentPadding = btnPad
-            ) {
-                Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(17.dp))
-                Spacer(Modifier.width(5.dp))
-                Text("导入", fontSize = 13.sp, maxLines = 1, softWrap = false)
+            // 低频操作（载入示例 / 导入 MD）收进「更多」菜单，主操作更聚焦
+            Box(modifier = btnMod) {
+                var expanded by remember { mutableStateOf(false) }
+                OutlinedButton(
+                    onClick = { expanded = true }, shape = UI_BTN_RADIUS,
+                    border = BorderStroke(1.2.dp, MaterialTheme.colorScheme.outline),
+                    modifier = Modifier.fillMaxSize(), contentPadding = btnPad
+                ) {
+                    Icon(Icons.Default.MoreHoriz, contentDescription = null, modifier = Modifier.size(17.dp))
+                    Spacer(Modifier.width(5.dp))
+                    Text("更多", fontSize = 13.sp, maxLines = 1, softWrap = false)
+                }
+                DropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("载入示例") },
+                        onClick = { expanded = false; onExample() }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("导入 MD 文件") },
+                        onClick = { expanded = false; onImport() }
+                    )
+                }
             }
         }
     }
