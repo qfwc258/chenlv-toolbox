@@ -20,7 +20,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
@@ -31,10 +30,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.*
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.*
@@ -813,10 +810,11 @@ fun WordScreen(
 
             Box(Modifier.fillMaxSize().weight(1f).padding(horizontal = 12.dp)) {
                 when (subView) {
-                    SubView.EDIT -> EditorPane(
+                    SubView.EDIT -> MdEditorPane(
                         tfv = tfv,
                         fontSize = fontSize,
-                        onValueChange = { newTfv ->
+                        onFontSizeChange = { fontSize = it },
+                        onChange = { newTfv ->
                             if (newTfv.text != tfv.text) {
                                 undoStack.addLast(tfv)
                                 if (undoStack.size > 60) undoStack.removeFirst()
@@ -824,7 +822,17 @@ fun WordScreen(
                             }
                             tfv = newTfv; dirty = true; autoSaved = false
                         },
-                        onInsert = { insertSnippet(it) }
+                        onInsert = { insertSnippet(it) },
+                        onUndo = { undo() },
+                        canUndo = undoStack.isNotEmpty(),
+                        onRedo = { redo() },
+                        canRedo = redoStack.isNotEmpty(),
+                        onClear = {
+                            tfv = TextFieldValue(""); undoStack.clear(); redoStack.clear()
+                            dirty = true; autoSaved = false
+                        },
+                        title = "Markdown 源",
+                        hint = "切到「预览」即自动生成公文"
                     )
                     SubView.PREVIEW -> PaperPreview(
                         doc = govDoc,
@@ -1338,82 +1346,6 @@ private fun WordActionBar(
                 Spacer(Modifier.width(5.dp))
                 Text("转PDF", fontSize = 13.sp, maxLines = 1, softWrap = false)
             }
-        }
-    }
-}
-
-// ============================================================
-// 编辑子页：Markdown 源 + 片段工具栏 + 字号
-// ============================================================
-@Composable
-private fun EditorPane(
-    tfv: TextFieldValue,
-    fontSize: Int,
-    onValueChange: (TextFieldValue) -> Unit,
-    onInsert: (MarkdownSnippets.Snippet) -> Unit
-) {
-    Column(Modifier.fillMaxSize().padding(horizontal = 4.dp, vertical = 6.dp)) {
-        // 顶部轻量信息条
-        val charCount = tfv.text.length
-        val lineCount = if (tfv.text.isEmpty()) 0 else tfv.text.lineSequence().count()
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("Markdown 源", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.weight(1f))
-            Surface(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f), shape = RoundedCornerShape(20.dp)) {
-                Text("$charCount 字 · $lineCount 行", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp))
-            }
-        }
-        Spacer(Modifier.height(4.dp))
-        // 编辑卡片
-        Surface(
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.18f),
-            shape = UI_CARD_RADIUS,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)),
-            modifier = Modifier.fillMaxSize()
-        ) {
-            BasicTextField(
-                value = tfv,
-                onValueChange = onValueChange,
-                modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 10.dp),
-                textStyle = TextStyle(
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = fontSize.sp,
-                    lineHeight = (fontSize + 6).sp,
-                    color = MaterialTheme.colorScheme.onSurface
-                ),
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                singleLine = false,
-                maxLines = Int.MAX_VALUE,
-                decorationBox = { inner ->
-                    if (tfv.text.isEmpty()) {
-                        Column(
-                            Modifier.fillMaxSize(),
-                            verticalArrangement = Arrangement.Center,
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Surface(color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f), shape = CircleShape, modifier = Modifier.size(64.dp)) {
-                                Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.EditNote, null, modifier = Modifier.size(34.dp), tint = MaterialTheme.colorScheme.primary) }
-                            }
-                            Spacer(Modifier.height(12.dp))
-                            Text("在此输入 Markdown 内容", fontWeight = FontWeight.Medium, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Spacer(Modifier.height(4.dp))
-                            Text("或点上方「打开」载入文件 · 切到「预览」即自动生成公文", fontSize = 12.sp, lineHeight = 18.sp, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f))
-                            Spacer(Modifier.height(14.dp))
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                MarkdownSnippets.HINT_SNIPPETS.forEach { s ->
-                                    Surface(onClick = { onInsert(s) }, color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f), shape = RoundedCornerShape(16.dp), modifier = Modifier.padding(vertical = 2.dp)) {
-                                        Text(s.label, fontSize = 11.sp, maxLines = 1, softWrap = false, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp))
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    inner()
-                }
-            )
         }
     }
 }

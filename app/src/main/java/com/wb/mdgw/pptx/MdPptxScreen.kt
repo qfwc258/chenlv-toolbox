@@ -18,7 +18,6 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -68,7 +67,10 @@ import kotlinx.coroutines.withContext
 import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.TextRange
 import androidx.core.content.ContextCompat
+import com.wb.mdgw.MdEditorPane
+import com.wb.mdgw.MarkdownSnippets
 import com.wb.mdgw.FileUtils
 import com.wb.mdgw.ExportResultDialog
 import com.wb.mdgw.SegmentedTabs
@@ -139,7 +141,11 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
     val context = LocalContext.current
     val draft = remember { PptDraftStore.load(context) }
 
-    var markdown by remember { mutableStateOf(draft?.markdown?.takeIf { it.isNotBlank() } ?: DEFAULT_MD) }
+    var mdTfv by remember { mutableStateOf(TextFieldValue(draft?.markdown?.takeIf { it.isNotBlank() } ?: DEFAULT_MD)) }
+    // 字号（各 Tab 独立记忆）与撤销/重做栈
+    var fontSize by remember { mutableStateOf(15) }
+    val undoStack = remember { ArrayDeque<TextFieldValue>() }
+    val redoStack = remember { ArrayDeque<TextFieldValue>() }
     var themeId by remember { mutableStateOf(draft?.themeId ?: PptThemes.ALL[0].id) }
     var customColor by remember { mutableStateOf(draft?.customColor ?: "2E5FA3") }
     var autoPaginate by remember { mutableStateOf(draft?.autoPaginate ?: true) }
@@ -192,7 +198,7 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
     }
 
     // 实时：解析 → 分页 → 布局（布局随逐页选择/默认布局/自定义主色/波浪参数/直线色块高度/全局间距联动）
-    val slides by remember(markdown, autoPaginate, themeId, customColor, defaultLayout, barHeightDenom, bandGap, cssText, waveParams, logoScale) {
+    val slides by remember(mdTfv.text, autoPaginate, themeId, customColor, defaultLayout, barHeightDenom, bandGap, cssText, waveParams, logoScale) {
         derivedStateOf {
             // 若任一页面组合开启了波浪装饰，则内容区底边上移以预留波浪空间。
             val anyWave = comps.values.any { it.decoration == BottomDecoration.WAVE }
@@ -202,7 +208,7 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
             PptLayoutEngine.logoScale = logoScale
             PptLayoutEngine.logoHAlign = logoHAlign
             PptLayoutEngine.logoVAlign = logoVAlign
-            val r = MdAstParser.parse(markdown)
+            val r = MdAstParser.parse(mdTfv.text)
             val paginated = MdAutoPaginator.paginate(r.blocks, autoPaginate, r.coverTitle)
             PptLayoutEngine.layout(
                 paginated, theme, { _ -> defaultLayout },
@@ -216,12 +222,12 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
     val scope = rememberCoroutineScope()
 
     // 自动保存草稿（编辑内容/布局变化后防抖落盘，下次进入自动恢复）
-    LaunchedEffect(markdown, themeId, customColor, autoPaginate, barHeightDenom, bandGap, defaultLayout, logoScale, logoHAlign, logoVAlign, applyToAll, layoutsVersion) {
+    LaunchedEffect(mdTfv.text, themeId, customColor, autoPaginate, barHeightDenom, bandGap, defaultLayout, logoScale, logoHAlign, logoVAlign, applyToAll, layoutsVersion) {
         delay(500)
         PptDraftStore.save(
             context,
             PptDraftStore.PptDraft(
-                markdown = markdown,
+                markdown = mdTfv.text,
                 themeId = themeId,
                 customColor = customColor,
                 autoPaginate = autoPaginate,
@@ -320,7 +326,9 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
         uri ?: return@rememberLauncherForActivityResult
         scope.launch(Dispatchers.IO) {
             val txt = context.contentResolver.openInputStream(uri)?.bufferedReader()?.readText() ?: ""
-            withContext(Dispatchers.Main) { markdown = txt }
+            withContext(Dispatchers.Main) {
+                mdTfv = TextFieldValue(txt); undoStack.clear(); redoStack.clear()
+            }
         }
     }
 
@@ -345,7 +353,9 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
                     }
                 },
                 onImport = { importLauncher.launch(arrayOf("text/markdown", "text/plain", "*/*")) },
-                onClear = { markdown = "" }
+                onClear = {
+                    mdTfv = TextFieldValue(""); undoStack.clear(); redoStack.clear()
+                }
             )
         }
     ) { pad ->
@@ -366,7 +376,42 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
                         visible = subView == SubView.EDIT,
                         enter = fadeIn(), exit = fadeOut()
                     ) {
-                        EditorPane(markdown, { markdown = it }, "将生成 ${slides.size} 页 · 版式：${defaultLayout.label}")
+                        MdEditorPane(
+                            tfv = mdTfv,
+                            fontSize = fontSize,
+                            onFontSizeChange = { fontSize = it },
+                            onChange = { newTfv ->
+                                if (newTfv.text != mdTfv.text) {
+                                    undoStack.addLast(mdTfv)
+                                    if (undoStack.size > 60) undoStack.removeFirst()
+                                    redoStack.clear()
+                                }
+                                mdTfv = newTfv
+                            },
+                            onInsert = { s ->
+                                val r = MarkdownSnippets.apply(mdTfv.text, mdTfv.selection.start, mdTfv.selection.end, s)
+                                mdTfv = TextFieldValue(r.text, TextRange(r.caret))
+                            },
+                            onUndo = {
+                                if (undoStack.isNotEmpty()) {
+                                    redoStack.addLast(mdTfv)
+                                    mdTfv = undoStack.removeLast()
+                                }
+                            },
+                            canUndo = undoStack.isNotEmpty(),
+                            onRedo = {
+                                if (redoStack.isNotEmpty()) {
+                                    undoStack.addLast(mdTfv)
+                                    mdTfv = redoStack.removeLast()
+                                }
+                            },
+                            canRedo = redoStack.isNotEmpty(),
+                            onClear = {
+                                mdTfv = TextFieldValue(""); undoStack.clear(); redoStack.clear()
+                            },
+                            title = "幻灯片",
+                            hint = "将生成 ${slides.size} 页 · 版式：${defaultLayout.label}"
+                        )
                     }
                     androidx.compose.animation.AnimatedVisibility(
                         visible = subView == SubView.PREVIEW,
@@ -1030,48 +1075,6 @@ private fun PptxActionBar(onExport: () -> Unit, onImport: () -> Unit, onClear: (
                 Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(17.dp))
                 Spacer(Modifier.width(5.dp))
                 Text("清空", fontSize = 13.sp, maxLines = 1, softWrap = false)
-            }
-        }
-    }
-}
-
-// ────────────────────────────────────────────────
-// 编辑器
-// ────────────────────────────────────────────────
-
-@Composable
-private fun EditorPane(value: String, onValueChange: (String) -> Unit, pageHint: String = "") {
-    Column(Modifier.fillMaxSize().padding(12.dp)) {
-        OutlinedTextField(
-            value = value,
-            onValueChange = onValueChange,
-            modifier = Modifier.fillMaxSize().weight(1f),
-            placeholder = { Text("在此粘贴 / 输入 Markdown……\n\n支持 #/##/### 标题、列表、引用、代码块、粗体/斜体/链接，\n用 --- 手动强制分页。") },
-            textStyle = LocalTextStyle.current.copy(fontSize = 14.sp, lineHeight = 20.sp),
-            singleLine = false
-        )
-        if (pageHint.isNotEmpty()) {
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                shape = UI_BTN_RADIUS,
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-            ) {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Info, null,
-                        Modifier.size(15.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        pageHint,
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
             }
         }
     }

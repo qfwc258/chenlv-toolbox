@@ -31,7 +31,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -54,12 +53,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.material3.SnackbarHostState
+import com.wb.mdgw.MarkdownSnippets
 import com.wb.mdgw.SegmentedTabs
 import com.wb.mdgw.UI_CARD_RADIUS
 import com.wb.mdgw.UI_BTN_RADIUS
@@ -86,7 +87,11 @@ fun WeChatScreen(snackbar: SnackbarHostState) {
     val converter = remember { MdWechatConverter(context.applicationContext) }
 
     // 编辑框起始为空：示例作为占位符展示，用户一旦输入即自动消失（与 Word 占位符行为一致）
-    var markdown by remember { mutableStateOf("") }
+    var mdTfv by remember { mutableStateOf(TextFieldValue("")) }
+    // 字号（各 Tab 独立记忆）与撤销/重做栈
+    var fontSize by remember { mutableStateOf(15) }
+    val undoStack = remember { ArrayDeque<TextFieldValue>() }
+    val redoStack = remember { ArrayDeque<TextFieldValue>() }
     var themeKey by remember { mutableStateOf(ThemePreset.THEMES.first().key) }
     var effectiveCss by remember {
         mutableStateOf(ThemeStorage.getCss(context, ThemePreset.THEMES.first().key))
@@ -102,11 +107,11 @@ fun WeChatScreen(snackbar: SnackbarHostState) {
     var pendingCopy by remember { mutableStateOf(false) }
 
     // 预览用完整文档（<head><style>）；复制用纯内联片段（零 <head>/<style>/class）
-    val previewHtml = remember(markdown, effectiveCss, reconvert) {
-        converter.convertForPreview(markdown, effectiveCss)
+    val previewHtml = remember(mdTfv.text, effectiveCss, reconvert) {
+        converter.convertForPreview(mdTfv.text, effectiveCss)
     }
-    val copyHtml = remember(markdown, effectiveCss, reconvert) {
-        converter.convertForCopy(markdown, effectiveCss)
+    val copyHtml = remember(mdTfv.text, effectiveCss, reconvert) {
+        converter.convertForCopy(mdTfv.text, effectiveCss)
     }
 
     val pickLauncher = rememberLauncherForActivityResult(
@@ -115,7 +120,7 @@ fun WeChatScreen(snackbar: SnackbarHostState) {
         uri ?: return@rememberLauncherForActivityResult
         val text = readTextFromUri(context, uri)
         if (text != null) {
-            markdown = text
+            mdTfv = TextFieldValue(text)
             Toast.makeText(context, "已导入文件", Toast.LENGTH_SHORT).show()
         } else {
             Toast.makeText(context, "导入失败：无法读取文件", Toast.LENGTH_SHORT).show()
@@ -167,8 +172,12 @@ fun WeChatScreen(snackbar: SnackbarHostState) {
                         subView = SubView.PREVIEW
                     }
                 },
-                onClear = { markdown = "" },
-                onExample = { markdown = DEFAULT_MD },
+                onClear = {
+                    mdTfv = TextFieldValue(""); undoStack.clear(); redoStack.clear()
+                },
+                onExample = {
+                    mdTfv = TextFieldValue(DEFAULT_MD); undoStack.clear(); redoStack.clear()
+                },
                 onImport = { pickLauncher.launch("text/*") }
             )
         }
@@ -184,7 +193,42 @@ fun WeChatScreen(snackbar: SnackbarHostState) {
                 // 编辑与预览互斥显示：编辑态不挂载 WebView，避免 WebView surface 浮到上层
                 // 导致编辑框与预览叠在一起。复制时（见 LaunchedEffect）会先切到预览态。
                 when (subView) {
-                    SubView.EDIT -> EditorPane(markdown, onTextChange = { markdown = it })
+                    SubView.EDIT -> MdEditorPane(
+                        tfv = mdTfv,
+                        fontSize = fontSize,
+                        onFontSizeChange = { fontSize = it },
+                        onChange = { newTfv ->
+                            if (newTfv.text != mdTfv.text) {
+                                undoStack.addLast(mdTfv)
+                                if (undoStack.size > 60) undoStack.removeFirst()
+                                redoStack.clear()
+                            }
+                            mdTfv = newTfv
+                        },
+                        onInsert = { s ->
+                            val r = MarkdownSnippets.apply(mdTfv.text, mdTfv.selection.start, mdTfv.selection.end, s)
+                            mdTfv = TextFieldValue(r.text, TextRange(r.caret))
+                        },
+                        onUndo = {
+                            if (undoStack.isNotEmpty()) {
+                                redoStack.addLast(mdTfv)
+                                mdTfv = undoStack.removeLast()
+                            }
+                        },
+                        canUndo = undoStack.isNotEmpty(),
+                        onRedo = {
+                            if (redoStack.isNotEmpty()) {
+                                undoStack.addLast(mdTfv)
+                                mdTfv = redoStack.removeLast()
+                            }
+                        },
+                        canRedo = redoStack.isNotEmpty(),
+                        onClear = {
+                            mdTfv = TextFieldValue(""); undoStack.clear(); redoStack.clear()
+                        },
+                        title = "公众号排版",
+                        hint = "预览 / 复制将实时排版"
+                    )
                     SubView.PREVIEW -> PreviewPane(
                         previewHtml,
                         onWebViewReady = { previewWebView = it },
@@ -334,35 +378,6 @@ private fun ActionBar(
             }
         }
     }
-}
-
-@Composable
-private fun EditorPane(
-    text: String,
-    onTextChange: (String) -> Unit,
-    modifier: Modifier = Modifier.fillMaxSize()
-) {
-    OutlinedTextField(
-        value = text,
-        onValueChange = onTextChange,
-        modifier = modifier.fillMaxSize().padding(8.dp),
-        textStyle = LocalTextStyle.current.copy(
-            fontFamily = FontFamily.Monospace,
-            fontSize = 14.sp,
-            lineHeight = 22.sp
-        ),
-        label = { Text("Markdown 输入") },
-        placeholder = {
-            // 示例：编辑框为空时显示，有输入即自动消失（与 Word 占位符行为一致）
-            Text(
-                DEFAULT_MD.trim(),
-                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.6f),
-                fontFamily = FontFamily.Monospace,
-                fontSize = 13.sp,
-                lineHeight = 20.sp
-            )
-        }
-    )
 }
 
 @Composable
