@@ -6,11 +6,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.core.content.IntentCompat
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -24,7 +21,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
@@ -99,8 +95,6 @@ fun AppScreen(initialUri: Uri? = null) {
         val snackbar = remember { SnackbarHostState() }
         var showAbout by remember { mutableStateOf(false) }
         var darkMode by remember { mutableStateOf(SettingsStore.isDarkMode(context)) }
-        // 顶部应用功能条折叠状态：默认收起，为编辑/预览区腾出高度
-        var appBarExpanded by remember { mutableStateOf(false) }
 
         MdGwTheme(darkTheme = darkMode) {
         Scaffold(
@@ -134,56 +128,69 @@ fun AppScreen(initialUri: Uri? = null) {
                     icon = { Icon(Icons.Default.Slideshow, contentDescription = null) },
                     label = { Text("PPTX", fontSize = 11.sp, maxLines = 1, softWrap = false) }
                 )
+                // 全局功能：深色模式 + 关于，并入导航栏右侧（不增加导航栏高度，顶部零占用）
+                IconButton(
+                    onClick = {
+                        darkMode = !darkMode
+                        SettingsStore.saveDarkMode(context, darkMode)
+                    },
+                    modifier = Modifier.size(44.dp)
+                ) {
+                    Icon(
+                        if (darkMode) Icons.Default.LightMode else Icons.Default.DarkMode,
+                        contentDescription = if (darkMode) "浅色模式" else "深色模式",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+                IconButton(
+                    onClick = { showAbout = true },
+                    modifier = Modifier.size(44.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Info,
+                        contentDescription = "关于",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
             }
         }
     ) { pad ->
-        Column(Modifier.padding(pad).fillMaxSize()) {
-            // 顶部应用功能条：可折叠，默认收起（仅留一条细触发条），展开显示应用名/深色/关于
-            AppGlobalBar(
-                expanded = appBarExpanded,
-                onToggle = { appBarExpanded = !appBarExpanded },
-                darkMode = darkMode,
-                onToggleDark = {
-                    darkMode = !darkMode
-                    SettingsStore.saveDarkMode(context, darkMode)
-                },
-                onAbout = { showAbout = true }
-            )
-            // 四屏同时存活，仅切换可见性，避免切 Tab 丢失编辑状态。
-            // initialUri 仅首次传递给对应模式，之后不再触发。
-            // 注：外层为 Column 作用域，ColumnScope.AnimatedVisibility 扩展与顶层同名函数冲突，
-            //     故此处全部使用全限定名（与 MdPptxScreen 的既有处理一致）。
-            Box(Modifier.fillMaxSize().weight(1f)) {
-                androidx.compose.animation.AnimatedVisibility(
-                    visible = mode == DocMode.WORD,
-                    enter = fadeIn(), exit = fadeOut()
-                ) {
-                    WordScreen(
-                        snackbar = snackbar,
-                        initialUri = initialUri.takeIf { detected == DocMode.WORD }
-                    )
-                }
-                androidx.compose.animation.AnimatedVisibility(
-                    visible = mode == DocMode.PDF,
-                    enter = fadeIn(), exit = fadeOut()
-                ) {
-                    PdfScreen(
-                        initialUri = initialUri.takeIf { detected == DocMode.PDF },
-                        snackbar = snackbar
-                    )
-                }
-                androidx.compose.animation.AnimatedVisibility(
-                    visible = mode == DocMode.WECHAT,
-                    enter = fadeIn(), exit = fadeOut()
-                ) {
-                    WeChatScreen(snackbar = snackbar)
-                }
-                androidx.compose.animation.AnimatedVisibility(
-                    visible = mode == DocMode.PPTX,
-                    enter = fadeIn(), exit = fadeOut()
-                ) {
-                    MdPptxScreen(snackbar = snackbar)
-                }
+        // 顶部不再放置任何常驻控件：编辑/预览区直接顶到状态栏下方，最大化可用高度。
+        // 四屏同时存活，仅切换可见性，避免切 Tab 丢失编辑状态。
+        // initialUri 仅首次传递给对应模式，之后不再触发。
+        // 注：全限定名 AnimatedVisibility 规避与 ColumnScope 扩展的同名歧义（编译安全）。
+        Box(Modifier.padding(pad).fillMaxSize()) {
+            androidx.compose.animation.AnimatedVisibility(
+                visible = mode == DocMode.WORD,
+                enter = fadeIn(), exit = fadeOut()
+            ) {
+                WordScreen(
+                    snackbar = snackbar,
+                    initialUri = initialUri.takeIf { detected == DocMode.WORD }
+                )
+            }
+            androidx.compose.animation.AnimatedVisibility(
+                visible = mode == DocMode.PDF,
+                enter = fadeIn(), exit = fadeOut()
+            ) {
+                PdfScreen(
+                    initialUri = initialUri.takeIf { detected == DocMode.PDF },
+                    snackbar = snackbar
+                )
+            }
+            androidx.compose.animation.AnimatedVisibility(
+                visible = mode == DocMode.WECHAT,
+                enter = fadeIn(), exit = fadeOut()
+            ) {
+                WeChatScreen(snackbar = snackbar)
+            }
+            androidx.compose.animation.AnimatedVisibility(
+                visible = mode == DocMode.PPTX,
+                enter = fadeIn(), exit = fadeOut()
+            ) {
+                MdPptxScreen(snackbar = snackbar)
             }
         }
     }
@@ -191,101 +198,6 @@ fun AppScreen(initialUri: Uri? = null) {
 
     if (showAbout) {
         AboutDialog(onDismiss = { showAbout = false })
-    }
-}
-
-/**
- * 顶部应用功能条：可折叠，默认收起 —— 收起时仅右侧留一条细触发条（为编辑/预览区腾出高度），
- * 展开后显示应用名、深色模式与「关于」。替代原先常驻的红色标题栏。
- */
-@Composable
-private fun AppGlobalBar(
-    expanded: Boolean,
-    onToggle: () -> Unit,
-    darkMode: Boolean,
-    onToggleDark: () -> Unit,
-    onAbout: () -> Unit
-) {
-    Column(Modifier.fillMaxWidth()) {
-        AnimatedVisibility(
-            visible = expanded,
-            enter = expandVertically(),
-            exit = shrinkVertically()
-        ) {
-            Surface(
-                color = MaterialTheme.colorScheme.primary,
-                shape = RoundedCornerShape(bottomStart = 14.dp, bottomEnd = 14.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.Gavel,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        "陈律工具箱",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
-                        color = MaterialTheme.colorScheme.onPrimary
-                    )
-                    Spacer(Modifier.weight(1f))
-                    IconButton(onClick = onToggleDark, modifier = Modifier.size(34.dp)) {
-                        Icon(
-                            if (darkMode) Icons.Default.LightMode else Icons.Default.DarkMode,
-                            contentDescription = if (darkMode) "浅色模式" else "深色模式",
-                            tint = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                    IconButton(onClick = onAbout, modifier = Modifier.size(34.dp)) {
-                        Icon(
-                            Icons.Default.Info,
-                            contentDescription = "关于",
-                            tint = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
-            }
-        }
-        // 常驻触发条：收起时仅一条细窄胶囊，点它展开/收起应用功能
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Surface(
-                onClick = onToggle,
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                shape = RoundedCornerShape(14.dp),
-                modifier = Modifier.padding(end = 8.dp, top = 2.dp, bottom = 2.dp)
-            ) {
-                Row(
-                    Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        "功能",
-                        fontSize = 10.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1
-                    )
-                    Spacer(Modifier.width(2.dp))
-                    Icon(
-                        if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                        contentDescription = if (expanded) "收起应用功能" else "展开应用功能",
-                        modifier = Modifier.size(14.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        }
     }
 }
 
