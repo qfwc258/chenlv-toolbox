@@ -41,7 +41,7 @@ data class PptStyleSheet(
     val paraGap: Int = 8,
     val headGap: Int = 12,
     /** 引用块（md >）整体段前距：与上方文本保持适度间距（布局层统一施加，预览/导出一致）。 */
-    val quoteGapBefore: Int = 12,
+    val quoteGapBefore: Int = 18,
 
     // ── 颜色（hex RRGGBB，不带 #）──
     val bg: String = "FFFFFF",

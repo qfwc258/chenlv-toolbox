@@ -116,7 +116,7 @@ h3 { font-size: 20pt; margin-bottom: 12pt; }
 p { font-size: 16pt; margin-bottom: 8pt; }
 
 /* 引用字号与段前距（margin-top：引用块与上方文本的间距） */
-.quote { font-size: 15pt; margin-top: 12pt; }
+.quote { font-size: 15pt; margin-top: 18pt; }
 
 /* 代码块字号与字体 */
 .code { font-size: 13pt; font-family: "Consolas"; }

@@ -679,7 +679,7 @@ object PptLayoutEngine {
             val tFs = fontSizeOf(blockTypeOf(title))
             val ch = contentHeight(title, tFs)
             val isH3OrLower = title is MdBlock.TextBlock && title.type.ordinal >= BlockType.H3.ordinal
-            // H3 及以下：应用缩进 + 竖线（与 layoutColumn 中 barCandidate/titleBarRect 逻辑一致）
+            // H3 及以下：应用缩进 + 竖线（与 layoutColumn 中 titleBarRect 逻辑一致）
             val tx = if (isH3OrLower) frame.x + LEVEL_INDENT else frame.x
             units.add(makeUnit(title, tx, topY, frame.w - (if (isH3OrLower) LEVEL_INDENT else 0), ch,
                 cover = false, overflow = false, fontSizeOverride = tFs, alignOverride = align))
@@ -1222,12 +1222,9 @@ object PptLayoutEngine {
             val avail = availBottom - topStart
             y = topStart + maxOf(0, (avail - totalH) / 2)
         }
-        // ── 竖线归属：仅内容级 H3 标题带竖线 ──
+        // ── 竖线归属：内容级 H3 及以下标题带竖线 ──
         // 章节大标题（H1）与二级标题（H2）都不加竖线，避免抢占竖线样式；
-        // 竖线唯一归属每页第一个 H3（如"4.1 举证"），无 H3 则该页不画竖线。
-        val barCandidate = blocks
-            .mapNotNull { it as? MdBlock.TextBlock }
-            .firstOrNull { it.type == BlockType.H3 }
+        // 每个 H3 及以下标题（如"4.1 举证"、"4.2 质证"）都带竖线，无 H3 则该页不画竖线。
 
         // ── 层级缩进：H1/H2 靠左（原始列起始 x），H3 及后续内容右缩进 ──
         // 以竖线为左对齐基准：H3 文字与下方文本/列表同 x，体现 H1→H2→H3 层级结构。
@@ -1268,7 +1265,7 @@ object PptLayoutEngine {
             }
 
             // 居中对齐时：H3 竖线不放入全局 bars，改由 UnitBox 内联绘制（随文本框一起居中）
-            if (!isCenterAlign && block === barCandidate) {
+            if (!isCenterAlign && block is MdBlock.TextBlock && block.type.ordinal >= BlockType.H3.ordinal) {
                 bars.add(titleBarRect(block, useX, y, ch))
             }
             // 引用块（Markdown `>`）：不缩进，与上级文本左对齐；仅用浅色圆角背景底色区分（无左侧竖线）
