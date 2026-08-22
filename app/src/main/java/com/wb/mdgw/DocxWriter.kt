@@ -292,7 +292,10 @@ class DocxWriter(
             .append("\" w:after=\"").append(ptToTwips(p.spaceAfterPt))
             .append("\" w:line=\"").append(ptToTwips(p.lineSpacingPt))
             .append("\" w:lineRule=\"exact\"/>")
-        sb.append("<w:ind w:firstLine=\"").append(ptToTwips(p.firstLineIndentPt)).append("\"/>")
+        sb.append("<w:ind w:firstLine=\"").append(ptToTwips(p.firstLineIndentPt)).append("\"")
+        // firstLineChars="200" = 精确 2 汉字字符（Word/WPS 优先按字符计，与字号联动）
+        if (p.firstLineIndentPt > 0) sb.append(" w:firstLineChars=\"200\"")
+        sb.append("/>")
         sb.append("<w:jc w:val=\"").append(p.align.v).append("\"/>")
         // 制表位（含前导符 leader）：公务填空线/目录点线由它驱动。顺序在 jc 之后、其它 pPr 子项之前
         if (p.tabs.isNotEmpty()) {

@@ -1333,14 +1333,12 @@ private fun PreviewPager(
 /**
  * 阶段二组合选择器：结构 × 色块 × 对齐 × 装饰，作为每页版式的唯一控制。
  *
- * 为腾出纵向空间让预览页宽拉满屏幕，改为「分段选项卡」式紧凑布局：
- *  - 顶部一行 Segmented 轴标签（结构/色块/对齐/装饰）+ 右侧「全部应用」小开关，总高仅一行；
- *  - 下方仅展示当前轴的一条选项（横向滚动），而非四行常驻，宽度不足时也能收进屏幕；
+ * 预览区有空间时各轴选项直接展开（免去来回切换），顶部保留「全部应用」开关：
+ *  - 自上而下依次为 结构 / 色块 / 对齐 / 栏宽(仅多栏) / 装饰，每条横向滚动；
  *  - 色块项带主题色迷你图示；装饰项支持长按 Pill 弹 Tooltip 说明效果。
  *
  * 「全部应用=是」时跳过特殊页（封面/目录/章节/结尾），由父级 PreviewPager 处理。
  */
-private enum class CompAxis { STRUCTURE, COLOR, ALIGN, DECOR, WIDTH }
 
 /** 是否为多栏结构（左右/三栏/四栏）：`栏宽` 轴只在此时启用。 */
 private val SlideComposition.isMultiCol: Boolean
@@ -1354,59 +1352,47 @@ private fun CompositionSelector(
     theme: PptTheme,
     onCompositionChange: (SlideComposition) -> Unit
 ) {
-    var axis by remember { mutableStateOf(CompAxis.STRUCTURE) }
     val isMultiCol = comp.isMultiCol
-    // 轴不在多栏结构上时，不让「栏宽」轴悬空显示
-    val shownAxis = if (axis == CompAxis.WIDTH && !isMultiCol) CompAxis.STRUCTURE else axis
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
         shape = UI_CARD_RADIUS,
         modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp)
     ) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)) {
-            // 顶部行：轴 Segmented 标签（横向可滚）+ 右侧「全部应用」
+            // 顶部行：版式标题 + 右侧「全部应用」（预览区有空间，各轴选项直接展开）
             Row(
                 Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    Modifier.weight(1f, fill = false).horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    AxisTab("结构", shownAxis == CompAxis.STRUCTURE) { axis = CompAxis.STRUCTURE }
-                    AxisTab("色块", shownAxis == CompAxis.COLOR) { axis = CompAxis.COLOR }
-                    AxisTab("对齐", shownAxis == CompAxis.ALIGN) { axis = CompAxis.ALIGN }
-                    if (isMultiCol) {
-                        AxisTab("栏宽", shownAxis == CompAxis.WIDTH) { axis = CompAxis.WIDTH }
-                    }
-                    AxisTab("装饰", shownAxis == CompAxis.DECOR) { axis = CompAxis.DECOR }
-                }
-                Spacer(Modifier.width(8.dp))
-                // 「全部应用」小开关
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        "全部应用",
-                        fontSize = 10.sp,
-                        color = MaterialTheme.colorScheme.outline,
-                        maxLines = 1,
-                        modifier = Modifier.padding(end = 4.dp)
-                    )
-                    Pill(if (applyToAll) "是" else "否", applyToAll, compact = true) {
-                        onApplyToAllChange(!applyToAll)
-                    }
+                Text(
+                    "版式布局",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    "全部应用",
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.outline,
+                    maxLines = 1,
+                    modifier = Modifier.padding(end = 4.dp)
+                )
+                Pill(if (applyToAll) "是" else "否", applyToAll, compact = true) {
+                    onApplyToAllChange(!applyToAll)
                 }
             }
 
-            // 下方：仅当前轴的一条选项（横向滚动）
-            Spacer(Modifier.height(6.dp))
-            when (shownAxis) {
-                CompAxis.STRUCTURE -> ToolRow {
+            // 下方：全部轴选项直接展开，免去来回切换
+            AxisSection("结构") {
+                ToolRow {
                     Structure.values().forEach { s ->
                         Pill(s.label, comp.structure == s) { onCompositionChange(comp.copy(structure = s)) }
                     }
                 }
-                CompAxis.COLOR -> ToolRow {
+            }
+            AxisSection("色块") {
+                ToolRow {
                     ColorBlock.values().forEach { c ->
                         val (iconColor, _) = colorBlockVisual(c)   // 形状信息已通过 iconShape 单独传入
                         PillWithIcon(
@@ -1419,7 +1405,9 @@ private fun CompositionSelector(
                         ) { onCompositionChange(comp.copy(colorBlock = c)) }
                     }
                 }
-                CompAxis.ALIGN -> ToolRow {
+            }
+            AxisSection("对齐") {
+                ToolRow {
                     AlignmentCell("上左", comp.valign == VAlign.TOP && comp.halign == HAlign.LEFT) {
                         onCompositionChange(comp.copy(valign = VAlign.TOP, halign = HAlign.LEFT))
                     }
@@ -1433,25 +1421,24 @@ private fun CompositionSelector(
                         onCompositionChange(comp.copy(valign = VAlign.CENTER, halign = HAlign.CENTER))
                     }
                 }
-                CompAxis.WIDTH -> if (isMultiCol) ColumnWidthBar(comp.colRatio) {
-                    onCompositionChange(comp.copy(colRatio = it))
-                } else Row {
+            }
+            if (isMultiCol) {
+                AxisSection("栏宽") {
+                    ColumnWidthBar(comp.colRatio) {
+                        onCompositionChange(comp.copy(colRatio = it))
+                    }
+                }
+            }
+            AxisSection("装饰") {
+                if (comp.hasBigBlock) {
                     Text(
-                        "上下 / 上窄下宽 无需分栏",
+                        "有色块时不可用",
                         fontSize = 10.sp,
                         color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
                         modifier = Modifier.padding(horizontal = 4.dp)
                     )
-                }
-                CompAxis.DECOR -> ToolRow {
-                    if (comp.hasBigBlock) {
-                        Text(
-                            "有色块时不可用",
-                            fontSize = 10.sp,
-                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
-                            modifier = Modifier.padding(horizontal = 4.dp)
-                        )
-                    } else {
+                } else {
+                    ToolRow {
                         BottomDecoration.values().forEach { d ->
                             PillWithTooltip(
                                 text = d.label,
@@ -1466,23 +1453,18 @@ private fun CompositionSelector(
     }
 }
 
-/** 轴 Segmented 标签：选中态用主色容器高亮，圆角胶囊。 */
+/** 版式轴小标题 + 其下一条选项行（直接展开时用）。 */
 @Composable
-private fun AxisTab(text: String, selected: Boolean, onClick: () -> Unit) {
-    val bg = if (selected) MaterialTheme.colorScheme.primaryContainer
-    else MaterialTheme.colorScheme.surfaceVariant
-    val fg = if (selected) MaterialTheme.colorScheme.primary
-    else MaterialTheme.colorScheme.onSurfaceVariant
-    Surface(
-        color = bg, shape = UI_BTN_RADIUS, onClick = onClick,
-        modifier = Modifier.height(28.dp)
-    ) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier.padding(horizontal = 14.dp)
-        ) {
-            Text(text, fontSize = 11.sp, fontWeight = FontWeight.Medium, color = fg, maxLines = 1)
-        }
+private fun AxisSection(title: String, content: @Composable ColumnScope.() -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(top = 4.dp)) {
+        Text(
+            title,
+            fontSize = 10.sp,
+            color = MaterialTheme.colorScheme.outline,
+            maxLines = 1,
+            modifier = Modifier.padding(bottom = 3.dp)
+        )
+        content()
     }
 }
 

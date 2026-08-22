@@ -65,7 +65,7 @@ data class GovDocSpec(
         /**
          * 法院诉讼文书专用规范（严格参照 Python 参考实现 md_to_official_word）：
          *  - 主标题 `#` : 小标宋体 二号(22pt) 居中
-         *  - 正文 / 二三四级标题 / 列表 : 仿宋_GB2312 四号(14pt)，首行缩进 2 字符(32pt)
+         *  - 正文 / 二三四级标题 / 列表 : 仿宋_GB2312 四号(14pt)，首行缩进 2 字符(28pt)
          *  - 固定行距(精确值) 25pt，段前段后 0
          *  - 页面 A4，页边距 上3 / 下2.8 / 左2.5 / 右2.5 cm
          * 注：参考实现正文为左对齐，本工具箱按公文规范与历史要求保持两端对齐。
@@ -81,7 +81,7 @@ data class GovDocSpec(
             bodyFont = "仿宋_GB2312",
             bodySizePt = 14.0,
             lineSpacingPt = 25.0,
-            indentPt = 32.0,
+            indentPt = 28.0,
             page = PageSetup()
         )
 

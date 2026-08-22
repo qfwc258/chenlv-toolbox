@@ -3,6 +3,7 @@ package com.wb.mdgw
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.net.Uri
+import android.view.ViewGroup
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -455,155 +456,6 @@ fun WordScreen(
         showExportDialog = true
     }
 
-    /** 表格改单元格：替换 (row,col) 的 runs，其余原样 */
-    fun copyCell(tbl: Block.Table, row: Int, col: Int, newRuns: List<TextRun>): Block.Table =
-        Block.Table(tbl.rows.mapIndexed { ri, r ->
-            if (ri != row) r else r.mapIndexed { ci, c -> if (ci != col) c else newRuns }
-        })
-
-    /**
-     * 就地编辑「改格式」：把 [FormatEdits] 应用到当前编辑目标的所有 run。
-     * 只改用户请求的字段，其余属性保持原样（null = 不动）。段落级属性（对齐/行距）
-     * 仅对 Block.Para 生效。应用后立即刷新预览，并置 formatTouched 使导出切到重建路径。
-     * 应用后保持弹窗打开，便于连续调整；文字保存在保存按钮走 applyEditSingle。
-     */
-    fun applyFormat(f: FormatEdits) {
-        val d = govDoc ?: return
-        val t = editing ?: return
-        val blocks = d.blocks.toMutableList()
-        val b = blocks.getOrNull(t.blockIndex) ?: return
-        val patchRun: (TextRun) -> TextRun = { r ->
-            if (f.clearFormat) TextRun(r.text, d.bodyFont, d.bodySizePt)
-            else r.copy(
-                bold = f.bold ?: r.bold,
-                italic = f.italic ?: r.italic,
-                underline = f.underline ?: r.underline,
-                strike = f.strike ?: r.strike,
-                color = when {
-                    f.color == null -> r.color
-                    f.color == "black" -> null          // 恢复默认黑
-                    else -> f.color
-                },
-                sizePt = f.sizePt ?: r.sizePt,
-                vertAlign = when {
-                    f.vertAlign == null -> r.vertAlign
-                    f.vertAlign == "normal" -> null     // 恢复正常（清除上下标）
-                    else -> f.vertAlign
-                },
-                font = when {
-                    f.font == null -> r.font
-                    f.font == "_default" -> d.bodyFont  // 恢复为正文默认字体
-                    else -> f.font
-                }
-            )
-        }
-        if (f.clearFormat) {
-            // 清除段落级格式：对齐/行距/首行缩进/段前后间距 回到默认
-            if (b is Block.Para) {
-                blocks[t.blockIndex] = Block.Para(
-                    b.runs.map(patchRun),
-                    ParaProps(align = Align.BOTH, lineSpacingPt = d.lineSpacingPt, firstLineIndentPt = d.indentPt)
-                )
-            } else {
-                blocks[t.blockIndex] = if (t.row < 0) b else {
-                    val cell = (b as? Block.Table)?.rows?.getOrNull(t.row)?.getOrNull(t.col) ?: return
-                    copyCell(b as Block.Table, t.row, t.col, cell.map(patchRun))
-                }
-            }
-        } else when (b) {
-            is Block.Para -> {
-                val newRuns = b.runs.map(patchRun)
-                val np = b.props.copy(
-                    align = f.align ?: b.props.align,
-                    lineSpacingPt = f.lineSpacingPt ?: b.props.lineSpacingPt,
-                    firstLineIndentPt = f.firstLineIndentPt ?: b.props.firstLineIndentPt,
-                    spaceBeforePt = f.spaceBeforePt ?: b.props.spaceBeforePt,
-                    spaceAfterPt = f.spaceAfterPt ?: b.props.spaceAfterPt
-                )
-                blocks[t.blockIndex] = Block.Para(newRuns, np)
-            }
-            is Block.Table -> {
-                if (t.row < 0) return
-                val cell = b.rows.getOrNull(t.row)?.getOrNull(t.col) ?: return
-                blocks[t.blockIndex] = copyCell(b, t.row, t.col, cell.map(patchRun))
-            }
-        }
-        commitGov(d.copy(blocks = blocks, formatTouched = true))
-        govDirty = true; govAutoSaved = false; govEditVersion++
-    }
-
-    /** 把 drop 索引的段落并入 keep（保留 keep 的 props + run 顺序），随后删除 drop */
-    fun mergeP(blocks: MutableList<Block>, keep: Int, drop: Int) {
-        if (drop !in blocks.indices) return
-        val a = blocks[keep] as? Block.Para ?: return
-        val bb = blocks[drop] as? Block.Para ?: return
-        val lo = minOf(keep, drop); val hi = maxOf(keep, drop)
-        blocks[lo] = Block.Para(a.runs + bb.runs, a.props)
-        blocks.removeAt(hi)
-    }
-
-    /**
-     * 段落级就地操作：删除 / 上方插入 / 下方插入 / 与上段合并 / 与下段合并。
-     * 仅对 Block.Para 生效；结构变动后关闭编辑弹窗。
-     */
-    fun applyParaOp(op: String) {
-        val d = govDoc ?: return
-        val t = editing ?: return
-        val idx = t.blockIndex
-        if (d.blocks.getOrNull(idx) !is Block.Para) return
-        val blocks = d.blocks.toMutableList()
-        val defaultProps = ParaProps(align = Align.BOTH, lineSpacingPt = d.lineSpacingPt, firstLineIndentPt = d.indentPt)
-        when (op) {
-            "delete" -> blocks.removeAt(idx)
-            "insertAbove" -> blocks.add(idx, Block.Para(listOf(TextRun("", d.bodyFont, d.bodySizePt)), defaultProps))
-            "insertBelow" -> blocks.add(idx + 1, Block.Para(listOf(TextRun("", d.bodyFont, d.bodySizePt)), defaultProps))
-            "mergeUp" -> mergeP(blocks, idx, idx - 1)
-            "mergeDown" -> mergeP(blocks, idx, idx + 1)
-        }
-        commitGov(d.copy(blocks = blocks, formatTouched = true))
-        govDirty = true; govAutoSaved = false; govEditVersion++
-        editing = null
-    }
-
-    /**
-     * 表格结构就地操作：上/下加行、删行、左/右加列、删列。
-     * 仅对 Block.Table（且定位到单元格）生效；结构变动后关闭编辑弹窗。
-     */
-    fun applyTableOp(op: String) {
-        val d = govDoc ?: return
-        val t = editing ?: return
-        val tbl = d.blocks.getOrNull(t.blockIndex) as? Block.Table ?: return
-        if (t.row < 0 || t.row >= tbl.rows.size) return
-        val ncols = tbl.rows.maxOfOrNull { it.size } ?: 0
-        var rows: List<List<List<TextRun>>> = tbl.rows
-        when (op) {
-            "rowAbove", "rowBelow" -> {
-                val empty = (0 until ncols).map { emptyList<TextRun>() }
-                val at = if (op == "rowAbove") t.row else t.row + 1
-                rows = rows.toMutableList().also { it.add(at, empty) }
-            }
-            "rowDel" -> {
-                if (rows.size <= 1) return
-                rows = rows.toMutableList().also { it.removeAt(t.row) }
-            }
-            "colLeft", "colRight" -> {
-                if (ncols == 0) return
-                val ci = if (op == "colLeft") t.col else t.col + 1
-                rows = rows.map { r -> r.toMutableList().also { it.add(ci, emptyList()) } }
-            }
-            "colDel" -> {
-                val ci = t.col
-                if (ncols <= 1) return
-                rows = rows.map { r -> r.toMutableList().also { if (ci < it.size) it.removeAt(ci) } }
-            }
-        }
-        val blocks = d.blocks.toMutableList()
-        blocks[t.blockIndex] = Block.Table(rows)
-        commitGov(d.copy(blocks = blocks, formatTouched = true))
-        govDirty = true; govAutoSaved = false; govEditVersion++
-        editing = null
-    }
-
     /** 全局查找替换：在每个 run 内做文本替换（不跨 run），返回替换次数。 */
     fun findReplace(find: String, replace: String): Int {
         val d = govDoc ?: return 0
@@ -843,7 +695,7 @@ fun WordScreen(
                         },
                         onCloseDoc = {
                             // 关闭文档时立即销毁旧 WebView，释放 HTML/CSS 解析占用的内存
-                            webView?.destroy(); webView = null
+                            safeDestroyWebView(webView); webView = null
                             commitGov(null); resultUri = null; fidelityNotes = emptyList(); lastGenSource = ""
                         },
                         fidelityNotes = fidelityNotes,
@@ -858,7 +710,7 @@ fun WordScreen(
 
     // ---------- WebView 生命周期：Composable 销毁时释放，避免 Activity 泄漏 ----------
     DisposableEffect(Unit) {
-        onDispose { webView?.destroy(); webView = null }
+        onDispose { safeDestroyWebView(webView); webView = null }
     }
 
     // ---------- 公文设置 ----------
@@ -1079,24 +931,6 @@ fun WordScreen(
         var splitMode by remember(t) { mutableStateOf(false) }
         var fullText by remember(t) { mutableStateOf(runs.joinToString("") { it.text }) }
         var groupTexts by remember(t) { mutableStateOf(groups.map { it.text }) }
-        // 当前段落 / 单元格格式（用于格式条高亮当前态；更新后随 govDoc 重算）
-        val editProps = (govDoc?.blocks?.getOrNull(t.blockIndex) as? Block.Para)?.props
-        val curBold = runs.isNotEmpty() && runs.all { it.bold }
-        val curItalic = runs.isNotEmpty() && runs.all { it.italic }
-        val curUnderline = runs.isNotEmpty() && runs.all { it.underline }
-        val curStrike = runs.isNotEmpty() && runs.all { it.strike }
-        val curIsRed = runs.isNotEmpty() && runs.all { it.color == "#FF0000" }
-        val curIsBlack = runs.isNotEmpty() && runs.all { it.color == null }
-        val curAlign = editProps?.align ?: Align.LEFT
-        val curLineSpacing = editProps?.lineSpacingPt ?: 0.0
-        val curFirst = editProps?.firstLineIndentPt ?: 0.0
-        val curBefore = editProps?.spaceBeforePt ?: 0.0
-        val curAfter = editProps?.spaceAfterPt ?: 0.0
-        val curSup = runs.isNotEmpty() && runs.all { it.vertAlign == "superscript" }
-        val curSub = runs.isNotEmpty() && runs.all { it.vertAlign == "subscript" }
-        val curNormalVert = runs.isNotEmpty() && runs.all { it.vertAlign == null }
-        val curFont = runs.firstOrNull()?.font.orEmpty()
-
         AlertDialog(
             onDismissRequest = { editing = null },
             title = {
@@ -1114,97 +948,11 @@ fun WordScreen(
                     Surface(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
                         Text("整段内容：${runs.joinToString("") { it.text }}", fontSize = 11.sp, lineHeight = 16.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(10.dp))
                     }
-                    Text("格式（点击即应用到整段）", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 6.dp))
                     Column(Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
-                        Row(Modifier.fillMaxWidth().padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            FmtChip("粗", curBold) { applyFormat(FormatEdits(bold = true)) }
-                            FmtChip("斜", curItalic) { applyFormat(FormatEdits(italic = true)) }
-                            FmtChip("下划线", curUnderline) { applyFormat(FormatEdits(underline = true)) }
-                            FmtChip("删除线", curStrike) { applyFormat(FormatEdits(strike = true)) }
-                            FmtChip("红", curIsRed) { applyFormat(FormatEdits(color = "#FF0000")) }
-                            FmtChip("黑", curIsBlack) { applyFormat(FormatEdits(color = "black")) }
-                        }
-                        Row(Modifier.fillMaxWidth().padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            FmtChip("左", curAlign == Align.LEFT) { applyFormat(FormatEdits(align = Align.LEFT)) }
-                            FmtChip("居中", curAlign == Align.CENTER) { applyFormat(FormatEdits(align = Align.CENTER)) }
-                            FmtChip("右", curAlign == Align.RIGHT) { applyFormat(FormatEdits(align = Align.RIGHT)) }
-                            FmtChip("两端", curAlign == Align.BOTH) { applyFormat(FormatEdits(align = Align.BOTH)) }
-                            if (editProps != null) {
-                                when {
-                                    curLineSpacing <= 24.0 -> FmtChip("行距:紧", true) { applyFormat(FormatEdits(lineSpacingPt = 24.0)) }
-                                    curLineSpacing <= 28.0 -> FmtChip("行距:标", true) { applyFormat(FormatEdits(lineSpacingPt = 28.0)) }
-                                    else -> FmtChip("行距:宽", true) { applyFormat(FormatEdits(lineSpacingPt = 34.0)) }
-                                }
-                            }
-                        }
-                        Row(
-                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            FORMAT_SIZES.forEach { s ->
-                                val active = runs.isNotEmpty() && runs.all { it.sizePt >= s - 0.01 && it.sizePt <= s + 0.01 }
-                                FmtChip(FORMAT_SIZE_LABELS[s] ?: s.toInt().toString(), active) { applyFormat(FormatEdits(sizePt = s)) }
-                            }
-                        }
-                        if (editProps != null) {
-                            Row(Modifier.fillMaxWidth().padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                FmtChip("首行缩进0", curFirst <= 0.01) { applyFormat(FormatEdits(firstLineIndentPt = 0.0)) }
-                                FmtChip("缩进2字", curFirst >= 47.0 && curFirst <= 49.0) { applyFormat(FormatEdits(firstLineIndentPt = 48.0)) }
-                                FmtChip("缩进4字", curFirst >= 95.0) { applyFormat(FormatEdits(firstLineIndentPt = 96.0)) }
-                            }
-                            Row(
-                                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                FmtChip("段前0", curBefore <= 0.01) { applyFormat(FormatEdits(spaceBeforePt = 0.0)) }
-                                FmtChip("段前12", curBefore >= 11.0 && curBefore <= 13.0) { applyFormat(FormatEdits(spaceBeforePt = 12.0)) }
-                                FmtChip("段前24", curBefore >= 23.0) { applyFormat(FormatEdits(spaceBeforePt = 24.0)) }
-                                FmtChip("段后0", curAfter <= 0.01) { applyFormat(FormatEdits(spaceAfterPt = 0.0)) }
-                                FmtChip("段后6", curAfter >= 5.0 && curAfter <= 7.0) { applyFormat(FormatEdits(spaceAfterPt = 6.0)) }
-                                FmtChip("段后12", curAfter >= 11.0 && curAfter <= 13.0) { applyFormat(FormatEdits(spaceAfterPt = 12.0)) }
-                            }
-                        }
-                        Row(Modifier.fillMaxWidth().padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            FmtChip("上标", curSup) { applyFormat(FormatEdits(vertAlign = "superscript")) }
-                            FmtChip("下标", curSub) { applyFormat(FormatEdits(vertAlign = "subscript")) }
-                            FmtChip("普通", curNormalVert) { applyFormat(FormatEdits(vertAlign = "normal")) }
-                            FmtChip("清除格式", false) { applyFormat(FormatEdits(clearFormat = true)) }
-                        }
-                        Row(
-                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            FONT_OPTIONS.forEach { (name, label) ->
-                                val active = if (name == "_default") curFont.isBlank()
-                                else curFont == name
-                                FmtChip(label, active) { applyFormat(FormatEdits(font = name)) }
-                            }
-                        }
-                        HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                        Text(if (t.row < 0) "段落操作" else "表格操作", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 6.dp))
-                        Row(
-                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            if (t.row < 0) {
-                                FmtChip("上方插入", false) { applyParaOp("insertAbove") }
-                                FmtChip("下方插入", false) { applyParaOp("insertBelow") }
-                                FmtChip("与上合并", false) { applyParaOp("mergeUp") }
-                                FmtChip("与下合并", false) { applyParaOp("mergeDown") }
-                                FmtChip("删除本段", false) { applyParaOp("delete") }
-                            } else {
-                                FmtChip("上加行", false) { applyTableOp("rowAbove") }
-                                FmtChip("下加行", false) { applyTableOp("rowBelow") }
-                                FmtChip("删行", false) { applyTableOp("rowDel") }
-                                FmtChip("左加列", false) { applyTableOp("colLeft") }
-                                FmtChip("右加列", false) { applyTableOp("colRight") }
-                                FmtChip("删列", false) { applyTableOp("colDel") }
-                            }
-                        }
                         Row(Modifier.fillMaxWidth().padding(top = 6.dp)) {
                             FmtChip("全局查找替换", false) { editing = null; findReplaceOpen = true }
                         }
-                        Text("提示：先改文字再选格式，保存后一并写入并刷新预览；段落/表格操作会关闭本弹窗。", fontSize = 10.sp, lineHeight = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+                        Text("提示：修改文字后点「保存」即可写入并刷新预览。", fontSize = 10.sp, lineHeight = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
                     }
                     if (splitMode) {
                         groups.forEachIndexed { gi, g ->
@@ -1580,53 +1328,15 @@ private fun GovDocPaper(
 }
 
 /**
- * 就地编辑「改格式」的一组变更声明。所有字段均可空：null 表示保持该 run 现状不变；
- * 因此调用方只传想改的字段，其余 run 属性原样保留。
+ * 安全释放 WebView：先将其从父视图摘除再 destroy，避免仍附着在视图层级时调用
+ * destroy() 抛出的 IllegalStateException（"Cannot destroy WebView while still attached"）导致闪退。
  */
-private class FormatEdits(
-    val bold: Boolean? = null,
-    val italic: Boolean? = null,
-    val underline: Boolean? = null,
-    val strike: Boolean? = null,
-    /** 文字颜色；"black" 表示恢复默认黑（color=null），其余为 CSS 色（如 #FF0000） */
-    val color: String? = null,
-    val sizePt: Double? = null,
-    /** 对齐（段落级） */
-    val align: Align? = null,
-    /** 行距磅值（段落级） */
-    val lineSpacingPt: Double? = null,
-    /** 首行缩进（磅，段落级）；0 表示无缩进 */
-    val firstLineIndentPt: Double? = null,
-    /** 段前间距（磅，段落级） */
-    val spaceBeforePt: Double? = null,
-    /** 段后间距（磅，段落级） */
-    val spaceAfterPt: Double? = null,
-    /** 上下标（run 级）；"subscript"/"superscript"/"normal"（恢复正常） */
-    val vertAlign: String? = null,
-    /** 字体（run 级）；"_default" 表示恢复为正文默认字体 */
-    val font: String? = null,
-    /** 清除本段/单元格所有格式（run 级与段落级），忽略其它字段 */
-    val clearFormat: Boolean = false
-)
-
-/** 常用公文字号（磅）：五号/小四/四号/小三/三号/小二/二号 */
-private val FORMAT_SIZES = listOf(10.5, 12.0, 14.0, 15.0, 16.0, 18.0, 22.0)
-
-/** 字号磅值 → 中文字号名（字号条展示用） */
-private val FORMAT_SIZE_LABELS = mapOf(
-    10.5 to "五号", 12.0 to "小四", 14.0 to "四号", 15.0 to "小三",
-    16.0 to "三号", 18.0 to "小二", 22.0 to "二号"
-)
-
-/** 字体快选：(名字 → 标签)；"_default" 表示恢复为正文默认字体 */
-private val FONT_OPTIONS = listOf(
-    "_default" to "默认",
-    "仿宋_GB2312" to "仿宋GB",
-    "仿宋" to "仿宋",
-    "黑体" to "黑体",
-    "宋体" to "宋体",
-    "楷体_GB2312" to "楷体GB"
-)
+private fun safeDestroyWebView(wv: WebView?) {
+    if (wv == null) return
+    try { (wv.parent as? ViewGroup)?.removeView(wv) } catch (_: Throwable) {}
+    try { wv.stopLoading() } catch (_: Throwable) {}
+    try { wv.destroy() } catch (_: Throwable) {}
+}
 
 @Composable
 private fun StyleTag(label: String) {
@@ -1635,7 +1345,7 @@ private fun StyleTag(label: String) {
     }
 }
 
-/** 就地编辑格式条上的可点选小标签：选中高亮，点击回调 [onClick] */
+/** 可点选小标签（如「全局查找替换」入口）：点击回调 [onClick] */
 @Composable
 private fun FmtChip(text: String, active: Boolean, onClick: () -> Unit) {
     val bg = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
