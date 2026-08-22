@@ -5,7 +5,6 @@ import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -341,7 +340,7 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
     Scaffold(
         topBar = {
             // 顶部工具栏（主题/调色板/设置）：可折叠，默认收起（点切换条 ⌄ 展开）
-            AnimatedVisibility(
+            androidx.compose.animation.AnimatedVisibility(
                 visible = topExpanded,
                 enter = expandVertically(),
                 exit = shrinkVertically()
@@ -357,7 +356,7 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
         },
         bottomBar = {
             // 底部操作栏（导出/导入/清空）：可折叠，默认收起（点切换条 ⌃ 展开）
-            AnimatedVisibility(
+            androidx.compose.animation.AnimatedVisibility(
                 visible = bottomExpanded,
                 enter = expandVertically(),
                 exit = shrinkVertically()
@@ -395,7 +394,7 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
                 )
 
                 Box(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 8.dp)) {
-                    AnimatedVisibility(
+                    androidx.compose.animation.AnimatedVisibility(
                         visible = subView == SubView.EDIT,
                         enter = fadeIn(), exit = fadeOut()
                     ) {
@@ -437,7 +436,7 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
                             toolbarExpanded = topExpanded
                         )
                     }
-                    AnimatedVisibility(
+                    androidx.compose.animation.AnimatedVisibility(
                         visible = subView == SubView.PREVIEW,
                         enter = fadeIn(), exit = fadeOut()
                     ) {
