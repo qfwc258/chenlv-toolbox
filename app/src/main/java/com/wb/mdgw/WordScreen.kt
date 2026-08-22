@@ -147,12 +147,23 @@ fun WordScreen(
     var resultName by remember { mutableStateOf("") }
     var resultPath by remember { mutableStateOf("") }
     var resultIsPdf by remember { mutableStateOf(false) }
+    var resultExt by remember { mutableStateOf("docx") }
     var showResult by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
     var exportName by remember { mutableStateOf("") }
     var pendingKind by remember { mutableStateOf("docx") }
     var showSaveDialog by remember { mutableStateOf(false) }
     var saveName by remember { mutableStateOf("") }
+    var exportSuffix by remember { mutableStateOf("txt") }
+
+    // ---------- 模板管理 ----------
+    var showTemplates by remember { mutableStateOf(false) }
+    var templates by remember { mutableStateOf<List<WordTemplate>>(emptyList()) }
+    var showTemplateEdit by remember { mutableStateOf(false) }
+    var templateEdit by remember { mutableStateOf<WordTemplate?>(null) }
+    var templateName by remember { mutableStateOf("") }
+    var templateExt by remember { mutableStateOf("md") }
+    var templateContent by remember { mutableStateOf("") }
 
     val charCount = tfv.text.length
     val lineCount = if (tfv.text.isEmpty()) 0 else tfv.text.lineSequence().count()
@@ -432,6 +443,14 @@ fun WordScreen(
     }
 
     fun startExport(kind: String) {
+        // 文本类导出（md / txt / 自定义后缀）：内容来自源 Markdown，无需先生成公文
+        if (kind == "md" || kind == "txt" || kind == "custom") {
+            if (tfv.text.isBlank()) { scope.launch { snackbar.showSnackbar("没有可导出的内容，请先输入 Markdown") }; return }
+            pendingKind = kind
+            exportName = FileUtils.baseName(fileName).ifBlank { "文档" }
+            showExportDialog = true
+            return
+        }
         val d = govDoc ?: return
         if (d.blocks.isEmpty()) { scope.launch { snackbar.showSnackbar("没有可导出的内容") }; return }
         pendingKind = kind
@@ -560,8 +579,32 @@ fun WordScreen(
         }
     }
 
-    fun doExport(kind: String, name: String? = null) {
+    fun doExport(kind: String, name: String? = null, customExt: String? = null) {
         scope.launch {
+            // 文本类导出（md / txt / 自定义后缀）：源 Markdown 原样写入，mime 由 saveTextAsFile 自动判断
+            if (kind == "md" || kind == "txt" || kind == "custom") {
+                if (tfv.text.isBlank()) { snackbar.showSnackbar("没有可导出的内容"); return@launch }
+                govBusy = true
+                runCatching {
+                    withContext(Dispatchers.IO) {
+                        val ext = when (kind) {
+                            "md" -> "md"
+                            "txt" -> "txt"
+                            else -> customExt?.trim()?.trimStart('.')?.ifBlank { "txt" } ?: "txt"
+                        }
+                        val clean = (name?.trim()?.ifBlank { null } ?: FileUtils.baseName(fileName).ifBlank { "文档" })
+                        val outName = if (clean.endsWith(".$ext", ignoreCase = true)) clean else "$clean.$ext"
+                        val sf = FileUtils.saveTextAsFile(context, outName, tfv.text)
+                        Triple(sf, outName, ext)
+                    }
+                }.onSuccess { (sf, outName, ext) ->
+                    resultUri = sf.uri; resultName = outName; resultPath = sf.displayPath
+                    resultIsPdf = false; resultExt = ext; showResult = true
+                    snackbar.showSnackbar("已导出：$outName")
+                }.onFailure { snackbar.showSnackbar("导出失败：${it.message ?: "未知错误"}") }
+                govBusy = false
+                return@launch
+            }
             val d = govDoc
             if (d == null) { snackbar.showSnackbar("没有可导出的内容"); return@launch }
             if (d.blocks.isEmpty()) { snackbar.showSnackbar("没有可导出的内容"); return@launch }
@@ -577,7 +620,7 @@ fun WordScreen(
             }.onSuccess { (bytes, outName, mime) ->
                 val sf = FileUtils.saveToDownloads(context, outName, bytes, mime)
                 resultUri = sf.uri; resultName = outName; resultPath = sf.displayPath
-                resultIsPdf = kind == "pdf"; showResult = true
+                resultIsPdf = kind == "pdf"; resultExt = if (kind == "pdf") "pdf" else "docx"; showResult = true
                 GovDocDraftStore.clear(context)
                 govDirty = false; govAutoSaved = false
                 snackbar.showSnackbar("已导出：$outName")
@@ -587,9 +630,76 @@ fun WordScreen(
     }
     fun openOrShare(open: Boolean) {
         val uri = resultUri ?: return
-        val mime = if (resultIsPdf) FileUtils.PDF_MIME else DOCX_MIME
+        val mime = when {
+            resultIsPdf -> FileUtils.PDF_MIME
+            resultExt == "docx" || resultExt == "doc" -> DOCX_MIME
+            resultExt == "md" -> "text/markdown"
+            else -> "text/plain"
+        }
         runCatching { context.startActivity(if (open) FileUtils.openIntent(uri, mime) else FileUtils.shareIntent(uri, resultName, mime)) }
             .onFailure { scope.launch { snackbar.showSnackbar("操作失败：${it.message ?: "未知错误"}") } }
+    }
+
+    // ---------- 模板管理 ----------
+    fun openTemplates() {
+        templates = WordTemplateStore.load(context)
+        showTemplates = true
+    }
+
+    /** 把模板内容插入到当前光标处（复用格式片段插入算法） */
+    fun applyTemplate(t: WordTemplate) {
+        if (busy || govBusy) return
+        insertSnippet(MarkdownSnippets.Snippet(t.id, t.name, t.content, t.content.length))
+    }
+
+    fun newBlankTemplate() {
+        templateEdit = null
+        templateName = "新模板"
+        templateExt = "md"
+        templateContent = ""
+        showTemplates = false
+        showTemplateEdit = true
+    }
+
+    /** 把当前编辑区内容存为模板 */
+    fun saveCurrentAsTemplate() {
+        if (tfv.text.isBlank()) { scope.launch { snackbar.showSnackbar("当前没有内容可存为模板") }; return }
+        templateEdit = null
+        templateName = FileUtils.baseName(fileName).ifBlank { "模板" }
+        templateExt = if (fileName.lowercase().endsWith(".txt")) "txt" else "md"
+        templateContent = tfv.text
+        showTemplates = false
+        showTemplateEdit = true
+    }
+
+    fun editTemplate(t: WordTemplate) {
+        templateEdit = t
+        templateName = t.name
+        templateExt = t.ext
+        templateContent = t.content
+        showTemplates = false
+        showTemplateEdit = true
+    }
+
+    fun deleteTemplate(t: WordTemplate) {
+        templates = templates.filterNot { it.id == t.id }
+        WordTemplateStore.save(context, templates)
+    }
+
+    fun saveTemplate() {
+        val name = templateName.trim().ifBlank { "未命名模板" }
+        val list = templates.toMutableList()
+        val edit = templateEdit
+        if (edit != null) {
+            val idx = list.indexOfFirst { it.id == edit.id }
+            if (idx >= 0) list[idx] = WordTemplate(edit.id, name, templateExt, templateContent, System.currentTimeMillis())
+        } else {
+            list.add(WordTemplate(java.util.UUID.randomUUID().toString(), name, templateExt, templateContent, System.currentTimeMillis()))
+        }
+        templates = list
+        WordTemplateStore.save(context, list)
+        showTemplateEdit = false
+        showTemplates = true
     }
 
     // ============================================================
@@ -620,7 +730,8 @@ fun WordScreen(
                 WordActionBar(
                     onOpen = { openPicker.launch(arrayOf("text/markdown", "text/x-markdown", "text/plain", DOCX_MIME, "application/octet-stream", "*/*")) },
                     onExportDocx = { exportDocx() },
-                    onExportPdf = { exportPdf() }
+                    onExportPdf = { exportPdf() },
+                    onExportText = { startExport(it) }
                 )
             }
         }
@@ -662,6 +773,7 @@ fun WordScreen(
                             tfv = TextFieldValue(""); undoStack.clear(); redoStack.clear()
                             dirty = true; autoSaved = false
                         },
+                        onTemplates = { openTemplates() },
                         title = "Markdown 源",
                         hint = "切到「预览」即自动生成公文",
                         toolbarExpanded = topExpanded
@@ -697,20 +809,45 @@ fun WordScreen(
 
     // ---------- 导出命名 ----------
     if (showExportDialog) {
-        val ext = if (pendingKind == "pdf") "pdf" else "docx"
+        val isCustom = pendingKind == "custom"
+        val ext = when (pendingKind) {
+            "pdf" -> "pdf"
+            "docx" -> "docx"
+            "md" -> "md"
+            "txt" -> "txt"
+            else -> exportSuffix.trim().trimStart('.').ifBlank { "txt" }
+        }
+        val dialogTitle = when (pendingKind) {
+            "pdf" -> "导出为 PDF"
+            "docx" -> "导出为 Word"
+            "md" -> "导出为 Markdown"
+            "txt" -> "导出为 纯文本"
+            else -> "自定义导出"
+        }
+        val dialogIcon = if (pendingKind == "pdf") Icons.Default.PictureAsPdf
+        else if (pendingKind == "docx") Icons.Default.Description
+        else Icons.Default.Article
         AlertDialog(
             onDismissRequest = { showExportDialog = false },
-            icon = { Icon(if (ext == "pdf") Icons.Default.PictureAsPdf else Icons.Default.Description, null, tint = MaterialTheme.colorScheme.primary) },
-            title = { Text(if (ext == "pdf") "导出为 PDF" else "导出为 Word", fontWeight = FontWeight.Bold, fontSize = 17.sp) },
+            icon = { Icon(dialogIcon, null, tint = MaterialTheme.colorScheme.primary) },
+            title = { Text(dialogTitle, fontWeight = FontWeight.Bold, fontSize = 17.sp) },
             text = {
                 Column(Modifier.fillMaxWidth()) {
                     OutlinedTextField(value = exportName, onValueChange = { exportName = it }, label = { Text("文件名") }, singleLine = true,
                         suffix = { Text(".$ext", fontSize = 13.sp) }, modifier = Modifier.fillMaxWidth(), textStyle = TextStyle(fontSize = 15.sp))
+                    if (isCustom) {
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(value = exportSuffix, onValueChange = { exportSuffix = it }, label = { Text("自定义后缀（不含点）") }, singleLine = true,
+                            suffix = { Text(".xxx", fontSize = 13.sp) }, modifier = Modifier.fillMaxWidth(), textStyle = TextStyle(fontSize = 15.sp))
+                    }
                     Spacer(Modifier.height(6.dp))
-                    Text("将保存到系统「下载」文件夹，可随时在结果弹窗中打开或分享", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        if (pendingKind == "md" || pendingKind == "txt" || isCustom) "导出源 Markdown 文本到系统「下载」文件夹，可随时在结果弹窗中打开或分享"
+                        else "将保存到系统「下载」文件夹，可随时在结果弹窗中打开或分享",
+                        fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             },
-            confirmButton = { Button(onClick = { val k = pendingKind; showExportDialog = false; doExport(k, exportName) }) { Text("导出") } },
+            confirmButton = { Button(onClick = { val k = pendingKind; val c = exportSuffix; showExportDialog = false; doExport(k, exportName, c) }) { Text("导出") } },
             dismissButton = { TextButton(onClick = { showExportDialog = false }) { Text("取消") } }
         )
     }
@@ -719,13 +856,117 @@ fun WordScreen(
     ExportResultDialog(
         visible = showResult && resultUri != null,
         onDismiss = { showResult = false },
-        title = if (resultIsPdf) "PDF 已生成" else "Word 已生成",
+        title = when {
+            resultIsPdf -> "PDF 已生成"
+            resultExt == "docx" || resultExt == "doc" -> "Word 已生成"
+            resultExt == "md" -> "Markdown 已导出"
+            resultExt == "txt" -> "纯文本已导出"
+            else -> "文件已导出"
+        },
         fileName = resultName,
         savePath = resultPath,
-        fileIcon = if (resultIsPdf) Icons.Default.PictureAsPdf else Icons.Default.Description,
+        fileIcon = when {
+            resultIsPdf -> Icons.Default.PictureAsPdf
+            resultExt == "docx" || resultExt == "doc" -> Icons.Default.Description
+            else -> Icons.Default.Article
+        },
         onOpen = { openOrShare(open = true) },
         onShare = { openOrShare(open = false) }
     )
+
+    // ---------- 模板管理（列表） ----------
+    if (showTemplates) {
+        AlertDialog(
+            onDismissRequest = { showTemplates = false },
+            icon = { Icon(Icons.Default.Description, null, tint = MaterialTheme.colorScheme.primary) },
+            title = { Text("我的模板", fontWeight = FontWeight.Bold, fontSize = 17.sp) },
+            text = {
+                Column(Modifier.fillMaxWidth()) {
+                    if (templates.isEmpty()) {
+                        Text("暂无模板。可从当前文档「存为模板」，或「新建空白」模板。", fontSize = 12.sp, lineHeight = 18.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 10.dp))
+                    } else {
+                        LazyColumn(Modifier.height(260.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            items(templates, key = { it.id }) { t ->
+                                Surface(
+                                    onClick = { applyTemplate(t) },
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                                        Column(Modifier.weight(1f)) {
+                                            Text(t.name, fontWeight = FontWeight.Medium, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            val previewLine = t.content.lineSequence().firstOrNull { it.isNotBlank() }
+                                            Text(previewLine ?: "（空模板）", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        }
+                                        Spacer(Modifier.width(6.dp))
+                                        Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(8.dp)) {
+                                            Text("." + t.ext, fontSize = 10.sp, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                        }
+                                        IconButton(onClick = { editTemplate(t) }, modifier = Modifier.size(30.dp)) {
+                                            Icon(Icons.Default.Edit, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                        IconButton(onClick = { deleteTemplate(t) }, modifier = Modifier.size(30.dp)) {
+                                            Icon(Icons.Default.Delete, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Text("点击模板即插入到当前光标处", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            },
+            confirmButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(onClick = { saveCurrentAsTemplate() }) { Text("存为模板") }
+                    TextButton(onClick = { newBlankTemplate() }) { Text("新建空白") }
+                }
+            },
+            dismissButton = { TextButton(onClick = { showTemplates = false }) { Text("关闭") } }
+        )
+    }
+
+    // ---------- 模板管理（新建 / 编辑） ----------
+    if (showTemplateEdit) {
+        AlertDialog(
+            onDismissRequest = { showTemplateEdit = false; showTemplates = true },
+            icon = { Icon(Icons.Default.EditNote, null, tint = MaterialTheme.colorScheme.primary) },
+            title = { Text(if (templateEdit == null) "新建模板" else "编辑模板", fontWeight = FontWeight.Bold, fontSize = 17.sp) },
+            text = {
+                Column(Modifier.fillMaxWidth()) {
+                    OutlinedTextField(value = templateName, onValueChange = { templateName = it }, label = { Text("模板名称") }, singleLine = true,
+                        modifier = Modifier.fillMaxWidth(), textStyle = TextStyle(fontSize = 15.sp))
+                    Spacer(Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        listOf("md", "txt").forEach { e ->
+                            Surface(
+                                onClick = { templateExt = e },
+                                color = if (templateExt == e) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.height(30.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 14.dp)) {
+                                    Text(".$e", fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                                        color = if (templateExt == e) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        Text("模板类型", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(value = templateContent, onValueChange = { templateContent = it }, label = { Text("模板内容") },
+                        modifier = Modifier.fillMaxWidth().height(200.dp), textStyle = TextStyle(fontSize = 13.sp, fontFamily = FontFamily.Monospace))
+                }
+            },
+            confirmButton = { Button(onClick = { saveTemplate() }) { Text("保存") } },
+            dismissButton = { TextButton(onClick = { showTemplateEdit = false; showTemplates = true }) { Text("取消") } }
+        )
+    }
 
     // ---------- 保存 命名 ----------
     if (showSaveDialog) {
@@ -933,44 +1174,62 @@ private fun WordToolbar(
 }
 
 // ============================================================
-// 底部操作栏（悬浮卡片：打开 / 导出 DOCX / 转 PDF 三按钮，等宽）
+// 底部操作栏（悬浮卡片：打开 / 导出 DOCX / 转 PDF / 导出文本 四按钮，等宽）
 // ============================================================
 @Composable
 private fun WordActionBar(
     onOpen: () -> Unit,
     onExportDocx: () -> Unit,
-    onExportPdf: () -> Unit
+    onExportPdf: () -> Unit,
+    onExportText: (String) -> Unit
 ) {
+    var menuOpen by remember { mutableStateOf(false) }
     Surface(
         tonalElevation = 3.dp, shadowElevation = 6.dp, color = MaterialTheme.colorScheme.surface,
         shape = UI_CARD_RADIUS, modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp)
     ) {
         Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             val btnMod = Modifier.weight(1f).height(UI_ACTION_HEIGHT)
-            val btnPad = PaddingValues(horizontal = 5.dp, vertical = 0.dp)
+            val btnPad = PaddingValues(horizontal = 3.dp, vertical = 0.dp)
             OutlinedButton(
                 onClick = onOpen, shape = UI_BTN_RADIUS, modifier = btnMod,
                 border = BorderStroke(1.2.dp, MaterialTheme.colorScheme.primary),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary),
                 contentPadding = btnPad
             ) {
-                Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(5.dp))
-                Text("打开", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
+                Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(15.dp))
+                Spacer(Modifier.width(3.dp))
+                Text("打开", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
             }
             Button(onClick = onExportDocx, shape = UI_BTN_RADIUS, modifier = btnMod, contentPadding = btnPad) {
-                Icon(Icons.Default.Description, contentDescription = null, modifier = Modifier.size(17.dp))
-                Spacer(Modifier.width(5.dp))
-                Text("导出DOCX", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
+                Icon(Icons.Default.Description, contentDescription = null, modifier = Modifier.size(15.dp))
+                Spacer(Modifier.width(3.dp))
+                Text("导出DOCX", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
             }
             OutlinedButton(
                 onClick = onExportPdf, shape = UI_BTN_RADIUS, modifier = btnMod,
                 border = BorderStroke(1.2.dp, MaterialTheme.colorScheme.outline),
                 contentPadding = btnPad
             ) {
-                Icon(Icons.Default.PictureAsPdf, contentDescription = null, modifier = Modifier.size(17.dp))
-                Spacer(Modifier.width(5.dp))
-                Text("转PDF", fontSize = 13.sp, maxLines = 1, softWrap = false)
+                Icon(Icons.Default.PictureAsPdf, contentDescription = null, modifier = Modifier.size(15.dp))
+                Spacer(Modifier.width(3.dp))
+                Text("转PDF", fontSize = 12.sp, maxLines = 1, softWrap = false)
+            }
+            Box {
+                OutlinedButton(
+                    onClick = { menuOpen = true }, shape = UI_BTN_RADIUS, modifier = btnMod,
+                    border = BorderStroke(1.2.dp, MaterialTheme.colorScheme.outline),
+                    contentPadding = btnPad
+                ) {
+                    Icon(Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(15.dp))
+                    Spacer(Modifier.width(3.dp))
+                    Text("导出", fontSize = 12.sp, maxLines = 1, softWrap = false)
+                }
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    DropdownMenuItem(text = { Text("导出 Markdown (.md)") }, onClick = { menuOpen = false; onExportText("md") })
+                    DropdownMenuItem(text = { Text("导出 纯文本 (.txt)") }, onClick = { menuOpen = false; onExportText("txt") })
+                    DropdownMenuItem(text = { Text("自定义后缀导出…") }, onClick = { menuOpen = false; onExportText("custom") })
+                }
             }
         }
     }

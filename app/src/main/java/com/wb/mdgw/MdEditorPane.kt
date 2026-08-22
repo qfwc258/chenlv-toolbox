@@ -64,6 +64,7 @@ import androidx.compose.ui.unit.sp
  * @param onInsert      格式片段插入回调
  * @param onUndo/canUndo/onRedo/canRedo 撤销 / 重做
  * @param onClear       清空（null 表示不显示清空按钮）
+ * @param onTemplates   模板按钮回调（null 表示不显示模板按钮，如公众号 / PPTX 页）
  * @param title         顶部信息条左侧标题
  * @param hint          信息条右侧的轻提示（页面数 / 转换提示等），空态时也作为副文案
  * @param toolbarExpanded 顶部面板（信息条 + 格式工具栏）是否展开；收起后编辑区最大化
@@ -80,6 +81,7 @@ fun MdEditorPane(
     onRedo: () -> Unit,
     canRedo: Boolean,
     onClear: (() -> Unit)? = null,
+    onTemplates: (() -> Unit)? = null,
     title: String = "Markdown 源",
     hint: String? = null,
     toolbarExpanded: Boolean = true
@@ -158,6 +160,22 @@ fun MdEditorPane(
                     MdIconBtn(Icons.Default.Redo, "重做", enabled = canRedo, onClick = onRedo)
                     if (onClear != null) {
                         MdIconBtn(Icons.Default.Delete, "清空", enabled = tfv.text.isNotEmpty(), onClick = onClear)
+                    }
+                    if (onTemplates != null) {
+                        Spacer(Modifier.width(6.dp))
+                        Surface(
+                            onClick = { onTemplates() },
+                            color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f),
+                            shape = RoundedCornerShape(15.dp),
+                            modifier = Modifier.height(26.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 9.dp)) {
+                                Text(
+                                    "模板", fontSize = 11.sp, maxLines = 1, softWrap = false,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            }
+                        }
                     }
                 }
             }
