@@ -63,16 +63,6 @@ data class EditEntry(val blockIndex: Int, val row: Int, val col: Int, val text: 
 // 设计 token 复用 com.wb.mdgw.UiTokens 的公共令牌（UI_SECTION_RADIUS / UI_CARD_RADIUS /
 // UI_BTN_RADIUS / UI_ACTION_HEIGHT），避免在各 tab 屏幕内重复定义（参见第8项 de-god）。
 
-/** 设置/弹窗中的分区小标题（紧凑、主色、字距收窄），与 PPTX 弹窗风格统一。 */
-@Composable
-private fun WSectionLabel(text: String) {
-    Text(
-        text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
-        color = MaterialTheme.colorScheme.primary, letterSpacing = 0.6.sp,
-        modifier = Modifier.padding(top = 10.dp, bottom = 2.dp)
-    )
-}
-
 private const val DOCX_MIME =
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
@@ -146,12 +136,11 @@ fun WordScreen(
     // WebView 引用，用于导出前收集编辑内容
     var webView by remember { mutableStateOf<WebView?>(null) }
 
-    // ---------- 公文设置 ----------
-    var selectedSpec by remember { mutableStateOf(SettingsStore.spec(context)) }
-    var smartQuotes by remember { mutableStateOf(SettingsStore.smartQuotes(context)) }
-    var pageNumber by remember { mutableStateOf(SettingsStore.pageNumber(context)) }
-    var titleFont by remember { mutableStateOf(SettingsStore.titleFont(context)) }
-    var showSettings by remember { mutableStateOf(false) }
+    // ---------- 公文设置（来自全局「设置」Tab，单一数据源，改动即时同步） ----------
+    val selectedSpec by AppSettings.wordSpec.collectAsState()
+    val smartQuotes by AppSettings.smartQuotes.collectAsState()
+    val pageNumber by AppSettings.pageNumber.collectAsState()
+    val titleFont by AppSettings.titleFont.collectAsState()
 
     // ---------- 结果 / 导出弹窗 ----------
     var resultUri by remember { mutableStateOf<Uri?>(null) }
@@ -171,12 +160,6 @@ fun WordScreen(
     // ============================================================
     // 业务逻辑
     // ============================================================
-    fun chooseSpec(spec: GovDocSpec) {
-        selectedSpec = spec
-        titleFont = spec.mainTitleFont
-        SettingsStore.applySpec(context, spec)
-    }
-
     fun commitGov(next: GovDoc?) {
         if (next == govDoc) return
         govUndoStack = (govUndoStack + govDoc).takeLast(GOV_MAX_HISTORY)
@@ -624,8 +607,7 @@ fun WordScreen(
                     onUndo = { undo() },
                     canUndo = undoStack.isNotEmpty(),
                     onRedo = { redo() },
-                    canRedo = redoStack.isNotEmpty(),
-                    onSettings = { showSettings = true }
+                    canRedo = redoStack.isNotEmpty()
                 )
             }
         },
@@ -711,104 +693,6 @@ fun WordScreen(
     // ---------- WebView 生命周期：Composable 销毁时释放，避免 Activity 泄漏 ----------
     DisposableEffect(Unit) {
         onDispose { safeDestroyWebView(webView); webView = null }
-    }
-
-    // ---------- 公文设置 ----------
-    if (showSettings) {
-        AlertDialog(
-            onDismissRequest = { showSettings = false },
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Tune, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("公文设置", fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                }
-            },
-            text = {
-                Column(
-                    Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    WSectionLabel("排版规范")
-                    GovDocSpec.ALL_PRESETS.forEach { spec ->
-                        val sel = selectedSpec == spec
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(UI_SECTION_RADIUS)
-                                .background(if (sel) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
-                                .clickable { chooseSpec(spec) }
-                                .padding(horizontal = 10.dp, vertical = 8.dp)
-                        ) {
-                            RadioButton(selected = sel, onClick = { chooseSpec(spec) }, colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.primary), modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(10.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text(spec.specName, fontWeight = FontWeight.SemiBold, fontSize = 13.5.sp)
-                                Text(
-                                    when (spec.specName) {
-                                        "国标通用" -> "默认标准格式"
-                                        "诉讼文书" -> "适配诉讼卷宗页边距"
-                                        "行政机关" -> "严格符合 GB/T 9704"
-                                        else -> ""
-                                    },
-                                    fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp))
-                    WSectionLabel("选项")
-                    // 智能引号
-                    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("智能引号", fontWeight = FontWeight.Medium, fontSize = 14.sp)
-                            Text("英文直引号自动转中文弯引号", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        Switch(checked = smartQuotes, onCheckedChange = { smartQuotes = it; SettingsStore.saveSmartQuotes(context, it) })
-                    }
-                    // 添加页码
-                    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("添加页码", fontWeight = FontWeight.Medium, fontSize = 14.sp)
-                            Text("Word 写入页脚、PDF 底部居中阿拉伯数字", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        Switch(checked = pageNumber, onCheckedChange = { pageNumber = it; SettingsStore.savePageNumber(context, it) })
-                    }
-
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp))
-                    WSectionLabel("主标题字体")
-                    Text("部分手机无小标宋，可切换黑体避免异常", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 2.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        listOf(MdToGongwen.FONT_XIAOBIAO to "小标宋", MdToGongwen.FONT_HEI to "黑体").forEach { (v, label) ->
-                            FilterChip(selected = titleFont == v, onClick = { titleFont = v; SettingsStore.saveTitleFont(context, v) },
-                                label = { Text(label, fontSize = 13.sp, maxLines = 1, softWrap = false) }, modifier = Modifier.weight(1f))
-                        }
-                    }
-
-                    Spacer(Modifier.height(4.dp))
-                    Surface(color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f), shape = UI_SECTION_RADIUS, modifier = Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(10.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Info, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp))
-                                Spacer(Modifier.width(5.dp))
-                                Text("当前生效规范", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                            }
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                "A4 纸 · 页边距 上${selectedSpec.page.topCm} 下${selectedSpec.page.bottomCm} 左${selectedSpec.page.leftCm} 右${selectedSpec.page.rightCm} 厘米\n" +
-                                    "正文${selectedSpec.bodyFont} ${ptToGongwenSizeName(selectedSpec.bodySizePt)} · 固定行距 ${selectedSpec.lineSpacingPt.toInt()} 磅 · 首行缩进 2 字符",
-                                fontSize = 10.5.sp, lineHeight = 16.sp, color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                        }
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { showSettings = false }) { Text("完成", fontWeight = FontWeight.SemiBold) } }
-        )
     }
 
     // ---------- 导出命名 ----------
@@ -1019,8 +903,7 @@ private fun WordToolbar(
     onUndo: () -> Unit,
     canUndo: Boolean,
     onRedo: () -> Unit,
-    canRedo: Boolean,
-    onSettings: () -> Unit
+    canRedo: Boolean
 ) {
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
@@ -1045,9 +928,6 @@ private fun WordToolbar(
         }
         FilledTonalIconButton(onClick = onRedo, enabled = canRedo, modifier = Modifier.size(38.dp)) {
             Icon(Icons.Default.Redo, contentDescription = "重做", modifier = Modifier.size(19.dp))
-        }
-        FilledTonalIconButton(onClick = onSettings, modifier = Modifier.size(38.dp)) {
-            Icon(Icons.Default.Tune, contentDescription = "设置", modifier = Modifier.size(19.dp))
         }
     }
 }

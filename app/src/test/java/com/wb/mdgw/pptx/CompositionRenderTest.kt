@@ -33,7 +33,7 @@ class CompositionRenderTest {
         val r = MdAstParser.parse(markdown)
         val paginated = MdAutoPaginator.paginate(r.blocks, autoPaginate = true, r.coverTitle)
         return PptLayoutEngine.layout(
-            paginated, PptThemes.byId("default"),
+            paginated, PptThemes.fromTone(PptThemes.DEFAULT_TONE),
             { _ -> SlideLayout.STANDARD },
             compOf = if (comp == null) ({ _ -> null }) else ({ _ -> comp }),
             enableWave = false
@@ -185,8 +185,8 @@ class CompositionRenderTest {
         val r = MdAstParser.parse(MD)
         val paginated = MdAutoPaginator.paginate(r.blocks, autoPaginate = true, r.coverTitle)
         for (layout in SlideLayout.values()) {
-            val direct = PptLayoutEngine.layout(paginated, PptThemes.byId("default"), { _ -> layout }, enableWave = false)
-            val viaComp = PptLayoutEngine.layout(paginated, PptThemes.byId("default"), { _ -> SlideLayout.STANDARD }, compOf = { _ -> CompositionResolver.compositionOf(layout) }, enableWave = false)
+            val direct = PptLayoutEngine.layout(paginated, PptThemes.fromTone(PptThemes.DEFAULT_TONE), { _ -> layout }, enableWave = false)
+            val viaComp = PptLayoutEngine.layout(paginated, PptThemes.fromTone(PptThemes.DEFAULT_TONE), { _ -> SlideLayout.STANDARD }, compOf = { _ -> CompositionResolver.compositionOf(layout) }, enableWave = false)
             assertEquals("版式 $layout 页数应一致", direct.size, viaComp.size)
             for (i in direct.indices) {
                 val a = direct[i].units; val b = viaComp[i].units

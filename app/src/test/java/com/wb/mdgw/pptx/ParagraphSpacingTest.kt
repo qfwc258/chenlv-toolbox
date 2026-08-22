@@ -16,7 +16,7 @@ class ParagraphSpacingTest {
     private fun exportSlideXml(units: List<PptLayoutEngine.LaidOutUnit>): String {
         val slide = PptLayoutEngine.LaidOutSlide(units = units, cover = false, layout = SlideLayout.STANDARD)
         val baos = ByteArrayOutputStream()
-        PptExportEngine.exportPptx(listOf(slide), PptThemes.ALL[0], baos)
+        PptExportEngine.exportPptx(listOf(slide), PptThemes.fromTone(PptThemes.DEFAULT_TONE), baos)
         val zip = ZipInputStream(baos.toByteArray().inputStream())
         var entry = zip.nextEntry
         while (entry != null) {

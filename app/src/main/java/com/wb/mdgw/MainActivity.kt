@@ -75,12 +75,14 @@ fun MdGwTheme(darkTheme: Boolean = false, content: @Composable () -> Unit) {
     MaterialTheme(colorScheme = colors, content = content)
 }
 
-private enum class DocMode { WORD, PDF, WECHAT, PPTX }
+private enum class DocMode { WORD, PDF, WECHAT, PPTX, SETTINGS }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppScreen(initialUri: Uri? = null) {
     val context = LocalContext.current
+        // 冷启动恢复一次全局共享设置（幂等）
+        remember { AppSettings.init(context) }
         val detected = remember(initialUri) {
             if (initialUri != null) {
                 val name = FileUtils.displayName(context, initialUri).lowercase()
@@ -93,8 +95,7 @@ fun AppScreen(initialUri: Uri? = null) {
         }
         var mode by remember { mutableStateOf(detected) }
         val snackbar = remember { SnackbarHostState() }
-        var showAbout by remember { mutableStateOf(false) }
-        var darkMode by remember { mutableStateOf(SettingsStore.isDarkMode(context)) }
+        val darkMode by AppSettings.darkMode.collectAsState()
 
         MdGwTheme(darkTheme = darkMode) {
         Scaffold(
@@ -128,32 +129,12 @@ fun AppScreen(initialUri: Uri? = null) {
                     icon = { Icon(Icons.Default.Slideshow, contentDescription = null) },
                     label = { Text("PPTX", fontSize = 11.sp, maxLines = 1, softWrap = false) }
                 )
-                // 全局功能：深色模式 + 关于，并入导航栏右侧（不增加导航栏高度，顶部零占用）
-                IconButton(
-                    onClick = {
-                        darkMode = !darkMode
-                        SettingsStore.saveDarkMode(context, darkMode)
-                    },
-                    modifier = Modifier.size(44.dp)
-                ) {
-                    Icon(
-                        if (darkMode) Icons.Default.LightMode else Icons.Default.DarkMode,
-                        contentDescription = if (darkMode) "浅色模式" else "深色模式",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-                IconButton(
-                    onClick = { showAbout = true },
-                    modifier = Modifier.size(44.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Info,
-                        contentDescription = "关于",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
+                NavigationBarItem(
+                    selected = mode == DocMode.SETTINGS,
+                    onClick = { mode = DocMode.SETTINGS },
+                    icon = { Icon(Icons.Default.Settings, contentDescription = null) },
+                    label = { Text("设置", fontSize = 11.sp, maxLines = 1, softWrap = false) }
+                )
             }
         }
     ) { pad ->
@@ -192,17 +173,19 @@ fun AppScreen(initialUri: Uri? = null) {
             ) {
                 MdPptxScreen(snackbar = snackbar)
             }
+            androidx.compose.animation.AnimatedVisibility(
+                visible = mode == DocMode.SETTINGS,
+                enter = fadeIn(), exit = fadeOut()
+            ) {
+                SettingsScreen()
+            }
         }
     }
-    }
-
-    if (showAbout) {
-        AboutDialog(onDismiss = { showAbout = false })
     }
 }
 
 @Composable
-private fun AboutDialog(onDismiss: () -> Unit) {
+fun AboutDialog(onDismiss: () -> Unit) {
     val context = LocalContext.current
     AlertDialog(
         onDismissRequest = onDismiss,

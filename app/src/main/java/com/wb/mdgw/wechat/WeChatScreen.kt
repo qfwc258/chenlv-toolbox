@@ -45,6 +45,7 @@ import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
@@ -61,6 +62,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.material3.SnackbarHostState
+import com.wb.mdgw.AppSettings
 import com.wb.mdgw.EditPreviewBar
 import com.wb.mdgw.MarkdownSnippets
 import com.wb.mdgw.MdEditorPane
@@ -89,22 +91,17 @@ fun WeChatScreen(snackbar: SnackbarHostState) {
     val context = LocalContext.current
     val converter = remember { MdWechatConverter(context.applicationContext) }
 
-    // 草稿：进入时静默恢复上次的正文 / 主题 / 自定义 CSS（同 PPTX 模式，无则用默认）
+    // 草稿：进入时静默恢复上次的正文（主题/自定义 CSS 由全局共享设置承载）
     val draft = remember { WeChatDraftStore.load(context) }
-    val initThemeKey = draft?.themeKey?.takeIf { it.isNotBlank() } ?: ThemePreset.THEMES.first().key
 
     var mdTfv by remember { mutableStateOf(TextFieldValue(draft?.markdown ?: "")) }
     // 字号（各 Tab 独立记忆）与撤销/重做栈
     var fontSize by remember { mutableStateOf(15) }
     val undoStack = remember { ArrayDeque<TextFieldValue>() }
     val redoStack = remember { ArrayDeque<TextFieldValue>() }
-    var themeKey by remember { mutableStateOf(initThemeKey) }
-    var effectiveCss by remember {
-        mutableStateOf(
-            draft?.customCss?.takeIf { it.isNotBlank() }
-                ?: ThemeStorage.getCss(context, initThemeKey)
-        )
-    }
+    // 主题与自定义 CSS：全局共享状态，「设置」Tab 与本页实时同步
+    val themeKey by AppSettings.wechatTheme.collectAsState()
+    val effectiveCss by AppSettings.wechatCss.collectAsState()
     var subView by remember { mutableStateOf(SubView.EDIT) }
     // 沉浸式布局：顶 / 底工具栏默认收起，仅常驻「编辑|预览」切换条
     var topExpanded by remember { mutableStateOf(false) }
@@ -171,14 +168,10 @@ fun WeChatScreen(snackbar: SnackbarHostState) {
                     ThemeToolbar(
                         themeKey = themeKey,
                         customized = ThemeStorage.hasCustom(context, themeKey),
-                        onSelectTheme = {
-                            themeKey = it
-                            effectiveCss = ThemeStorage.getCss(context, it)
-                        },
+                        onSelectTheme = { AppSettings.setWechatTheme(context, it) },
                         onEditCss = { showCss = true },
                         onReset = {
-                            ThemeStorage.resetCss(context, themeKey)
-                            effectiveCss = ThemePreset.getTheme(themeKey).css
+                            AppSettings.resetWechatCss(context)
                             Toast.makeText(context, "已恢复当前主题默认样式", Toast.LENGTH_SHORT).show()
                         }
                     )
@@ -283,8 +276,7 @@ fun WeChatScreen(snackbar: SnackbarHostState) {
             initialCss = effectiveCss,
             onDismiss = { showCss = false },
             onSave = {
-                ThemeStorage.saveCss(context, themeKey, it)
-                effectiveCss = it
+                AppSettings.setWechatCss(context, it)
                 showCss = false
             }
         )

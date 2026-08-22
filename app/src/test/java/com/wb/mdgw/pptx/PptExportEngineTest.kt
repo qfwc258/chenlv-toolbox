@@ -40,7 +40,7 @@ code line 2
 """
         val parsed = MdAstParser.parse(md)
         val pag = MdAutoPaginator.paginate(parsed.blocks, true, parsed.coverTitle)
-        val theme = PptThemes.ALL[0]
+        val theme = PptThemes.fromTone(PptThemes.DEFAULT_TONE)
         val slides = PptLayoutEngine.layout(pag, theme, { SlideLayout.STANDARD })
         val out = FileOutputStream("/tmp/kotlin_test.pptx")
         PptExportEngine.exportPptx(slides, theme, out)

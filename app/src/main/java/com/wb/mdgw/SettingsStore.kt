@@ -23,6 +23,8 @@ object SettingsStore {
     private const val K_PAGE_NUMBER = "page_number"
     private const val K_TITLE_FONT = "title_font"
     private const val K_DARK_MODE = "dark_mode"
+    private const val K_PPTX_TONE = "pptx_tone"
+    private const val K_PPTX_AUTO_PAGINATE = "pptx_auto_paginate"
 
     /** 默认规范：诉讼文书 */
     val DEFAULT_SPEC: GovDocSpec get() = GovDocSpec.COURT_DOC
@@ -84,6 +86,22 @@ object SettingsStore {
 
     fun saveDarkMode(ctx: Context, v: Boolean) {
         prefs(ctx).edit().putBoolean(K_DARK_MODE, v).apply()
+    }
+
+    /** PPTX 主色调（hex，无 #）。无记录返回 null，由调用方迁移旧草稿。 */
+    fun pptxTone(ctx: Context): String? =
+        prefs(ctx).getString(K_PPTX_TONE, null)
+
+    fun savePptxTone(ctx: Context, hex: String) {
+        prefs(ctx).edit().putString(K_PPTX_TONE, hex).apply()
+    }
+
+    /** PPTX 自动分页开关。 */
+    fun pptxAutoPaginate(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(K_PPTX_AUTO_PAGINATE, true)
+
+    fun savePptxAutoPaginate(ctx: Context, v: Boolean) {
+        prefs(ctx).edit().putBoolean(K_PPTX_AUTO_PAGINATE, v).apply()
     }
 
     /** 一次性读出完整的转换选项，供各页面直接使用 */

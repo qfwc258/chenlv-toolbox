@@ -71,6 +71,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.TextRange
 import androidx.core.content.ContextCompat
+import com.wb.mdgw.AppSettings
 import com.wb.mdgw.EditPreviewBar
 import com.wb.mdgw.MdEditorPane
 import com.wb.mdgw.MarkdownSnippets
@@ -148,9 +149,9 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
     var fontSize by remember { mutableStateOf(15) }
     val undoStack = remember { ArrayDeque<TextFieldValue>() }
     val redoStack = remember { ArrayDeque<TextFieldValue>() }
-    var themeId by remember { mutableStateOf(draft?.themeId ?: PptThemes.ALL[0].id) }
-    var customColor by remember { mutableStateOf(draft?.customColor ?: "2E5FA3") }
-    var autoPaginate by remember { mutableStateOf(draft?.autoPaginate ?: true) }
+    // 色调（单一主色驱动整套配色）与自动分页：全局共享状态，「设置」Tab 与本页实时同步
+    val tone by AppSettings.pptxTone.collectAsState()
+    val autoPaginate by AppSettings.pptxAutoPaginate.collectAsState()
     var barHeightDenom by remember { mutableStateOf(draft?.barHeightDenom ?: 60) }   // 直线色块高度分母（1/N 页高）
     var bandGap by remember { mutableStateOf(draft?.bandGap ?: 24) }   // 版式间距：色块与正文间距（pt，全局统一）
     // 所有页面默认版式固定为「上下」（组合 = 上下/无/上左对齐）。预设选择器已移除，
@@ -186,7 +187,7 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
     // 统一设置弹窗（自动分页 / 波浪 / 波浪参数 / 样式 全部收进弹窗，规避原横条芯片点击失效）
     var showSettings by remember { mutableStateOf(false) }
 
-    val baseTheme = if (themeId == "custom") PptThemes.custom(customColor) else PptThemes.byId(themeId)
+    val baseTheme = PptThemes.fromTone(tone)
 
     // 解析自定义 CSS 样式（空文本 = 默认样式，保底）。仅显式声明的颜色字段才覆盖主题配色。
     val style = PptCssParser.parse(cssText)
@@ -203,7 +204,7 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
     }
 
     // 实时：解析 → 分页 → 布局（布局随逐页选择/默认布局/自定义主色/波浪参数/直线色块高度/全局间距联动）
-    val slides by remember(mdTfv.text, autoPaginate, themeId, customColor, defaultLayout, barHeightDenom, bandGap, cssText, waveParams, logoScale) {
+    val slides by remember(mdTfv.text, autoPaginate, tone, defaultLayout, barHeightDenom, bandGap, cssText, waveParams, logoScale) {
         derivedStateOf {
             // 若任一页面组合开启了波浪装饰，则内容区底边上移以预留波浪空间。
             val anyWave = comps.values.any { it.decoration == BottomDecoration.WAVE }
@@ -227,15 +228,12 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
     val scope = rememberCoroutineScope()
 
     // 自动保存草稿（编辑内容/布局变化后防抖落盘，下次进入自动恢复）
-    LaunchedEffect(mdTfv.text, themeId, customColor, autoPaginate, barHeightDenom, bandGap, defaultLayout, logoScale, logoHAlign, logoVAlign, applyToAll, layoutsVersion) {
+    LaunchedEffect(mdTfv.text, barHeightDenom, bandGap, defaultLayout, logoScale, logoHAlign, logoVAlign, applyToAll, layoutsVersion) {
         delay(500)
         PptDraftStore.save(
             context,
             PptDraftStore.PptDraft(
                 markdown = mdTfv.text,
-                themeId = themeId,
-                customColor = customColor,
-                autoPaginate = autoPaginate,
                 barHeightDenom = barHeightDenom,
                 bandGap = bandGap,
                 logoScale = logoScale,
@@ -346,10 +344,8 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
                 exit = shrinkVertically()
             ) {
                 PptxTopBar(
-                    themeId = themeId,
-                    onTheme = { themeId = it },
-                    customColor = customColor,
-                    onCustomColor = { customColor = it },
+                    tone = tone,
+                    onTone = { AppSettings.setPptxTone(context, it) },
                     onSettings = { showSettings = true }
                 )
             }
@@ -479,7 +475,7 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
             if (showSettings) {
                 PptxSettingsDialog(
                     autoPaginate = autoPaginate,
-                    onAuto = { autoPaginate = it },
+                    onAuto = { AppSettings.setPptxAutoPaginate(context, it) },
                     params = waveParams,
                     onParamsChange = { waveParams = it },
                     barHeightDenom = barHeightDenom,
@@ -1021,13 +1017,11 @@ private fun WaveParamSlider(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PptxTopBar(
-    themeId: String,
-    onTheme: (String) -> Unit,
-    customColor: String,
-    onCustomColor: (String) -> Unit,
+    tone: String,
+    onTone: (String) -> Unit,
     onSettings: () -> Unit
 ) {
-    // 直接返回 Row 作为 topBar：左侧主题+调色板限定 80% 宽度（可横滑，绝不用 weight 撑满），
+    // 直接返回 Row 作为 topBar：左侧色调选择器限定 80% 宽度（可横滑，绝不用 weight 撑满），
     // 设置按钮紧贴其右、远离最右边缘 —— 规避「weight(1f)+horizontalScroll 左侧 Row 把右侧按钮推出屏幕、
     // 绘制可见但触摸被裁」的根因（与 WordToolbar 的 Spacer(weight) 模式等价且更稳）。
     Row(
@@ -1036,7 +1030,7 @@ private fun PptxTopBar(
             .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // 左侧：主题选择 + 调色板（最多占 80% 宽，超出横滑；不占满，保证右侧按钮有足够且完整的点击区）
+        // 左侧：色调选择器（最多占 80% 宽，超出横滑；不占满，保证右侧按钮有足够且完整的点击区）
         Row(
             Modifier
                 .fillMaxWidth(0.8f)
@@ -1044,10 +1038,7 @@ private fun PptxTopBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            ThemeChip(themeId) { onTheme(it) }
-            if (themeId == "custom") {
-                ColorPalette(customColor) { onCustomColor(it) }
-            }
+            ColorPalette(tone) { onTone(it) }
         }
 
         Spacer(Modifier.width(10.dp))
@@ -1104,40 +1095,10 @@ private fun PptxActionBar(onExport: () -> Unit, onImport: () -> Unit, onClear: (
 }
 
 // ────────────────────────────────────────────────
-// 主题选择（紧凑药丸按钮 + 下拉菜单）
+// 色调选择（色板）
 // ────────────────────────────────────────────────
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ThemeChip(selectedId: String, onSelect: (String) -> Unit) {
-    var expanded by remember { mutableStateOf(false) }
-    val selectedName = if (selectedId == "custom") "自定义" else PptThemes.byId(selectedId).name
-    Box {
-        FilterChip(
-            selected = false,
-            onClick = { expanded = true },
-            label = { Text(selectedName, fontSize = 11.sp, maxLines = 1) },
-            trailingIcon = { Icon(Icons.Default.ArrowDropDown, null, Modifier.size(16.dp)) },
-            modifier = Modifier.height(30.dp)
-        )
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            PptThemes.ALL.forEach { t ->
-                DropdownMenuItem(
-                    text = { Text(t.name, fontSize = 13.sp) },
-                    onClick = { onSelect(t.id); expanded = false },
-                    leadingIcon = if (t.id == selectedId) {{ Icon(Icons.Default.Check, null, Modifier.size(16.dp)) }} else null
-                )
-            }
-            HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
-            DropdownMenuItem(
-                text = { Text("自定义主色", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary) },
-                onClick = { onSelect("custom"); expanded = false }
-            )
-        }
-    }
-}
-
-/** 自定义主色调色板：点选即设定整套 PPTX 的主色调（章节色块/封面/竖线/表头统一生效）。 */
+/** 主色调色板：点选即设定整套 PPTX 的主色调（章节色块/封面/竖线/表头统一生效）。 */
 @Composable
 private fun ColorPalette(selected: String, onPick: (String) -> Unit) {
     Surface(

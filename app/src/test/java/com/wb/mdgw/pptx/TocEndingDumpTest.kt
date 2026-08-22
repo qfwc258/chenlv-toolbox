@@ -85,7 +85,7 @@ code line 2
             SlidePage(endingBlocks, "结尾", isCover = false),
         )
         val pag = PaginationResult(pages)
-        val theme = PptThemes.ALL[0]
+        val theme = PptThemes.fromTone(PptThemes.DEFAULT_TONE)
 
         val layoutOf: (Int) -> SlideLayout = { idx ->
             when (idx) {

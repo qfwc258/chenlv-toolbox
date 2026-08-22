@@ -3,70 +3,70 @@ package com.wb.mdgw.pptx
 import androidx.compose.ui.graphics.Color
 
 /**
- * 三套商用级主题（全局字号/行距/边距由 PptSpec 锁定，主题只管配色）。
+ * PPTX 配色统一由「单一主色调」驱动（tone 化改造，替代原先的三套预设主题）。
  *
- * 1. 商务深蓝 — 正式汇报首选
- * 2. 简约灰白 — 通用办公
- * 3. 政务红   — 公文/汇报
+ * 三套预设主题（商务深蓝/简约灰白/政务红）本质只是三种主色调，与自定义色板重复，
+ * 现已去掉「主题」概念：全部配色由用户所选主色调派生，全局贯穿一致。
  */
 object PptThemes {
-    val ALL: List<PptTheme> = listOf(
-        PptTheme(
-            id = "navy",
-            name = "商务深蓝",
-            bg = "FFFFFF",
-            titleColor = "1A3C6E",
-            bodyColor = "333333",
-            accent = "2E5FA3",
-            codeBg = "EEF2F8",
-            quoteBg = "EAF1F8",
-            coverBg = "1A3C6E"
-        ),
-        PptTheme(
-            id = "gray",
-            name = "简约灰白",
-            bg = "FFFFFF",
-            titleColor = "222222",
-            bodyColor = "444444",
-            accent = "777777",
-            codeBg = "F2F2F2",
-            quoteBg = "F2F2F2",
-            coverBg = "7B7B7B"
-        ),
-        PptTheme(
-            id = "gov",
-            name = "政务红",
-            bg = "FFFFFF",
-            titleColor = "9E2A2B",
-            bodyColor = "333333",
-            accent = "C0392B",
-            codeBg = "F7ECEC",
-            quoteBg = "F7ECEC",
-            coverBg = "9E2A2B"
-        )
-    )
+    /** 默认主色调（商务蓝） */
+    const val DEFAULT_TONE: String = "2E5FA3"
 
-    fun byId(id: String): PptTheme = ALL.firstOrNull { it.id == id } ?: ALL[0]
-
-    /** 自定义主色调主题：accent/封面色块/引用条均用用户所选主色，标题与正文保持深灰确保白底可读。 */
-    fun custom(hex: String): PptTheme = PptTheme(
-        id = "custom",
-        name = "自定义主色",
-        bg = "FFFFFF",
-        titleColor = "222222",
-        bodyColor = "333333",
-        accent = hex,
-        codeBg = "F2F2F2",
-        quoteBg = "F2F2F2",
-        coverBg = hex
-    )
-
-    /** 自定义主色的预设调色板（点击即可设为专属主色调）。 */
+    /** 预设主色调色板（点选即设定整套 PPTX 的主色调）。 */
     val CUSTOM_PALETTE: List<String> = listOf(
         "C0392B", "E67E22", "F1C40F", "27AE60",
         "16A085", "2980B9", "2E5FA3", "8E44AD",
         "D81B60", "795548", "607D8B", "2C3E50"
     )
+
+    /**
+     * 由主色调生成整套 PPTX 配色：
+     *  - accent / 封面 / 章节色块 = 主色
+     *  - 标题色 = 主色深色化（白底上保持可读与层次）
+     *  - 代码块 / 引用底 = 主色浅色底
+     *  - 正文保持深灰，白底可读
+     */
+    fun fromTone(hex: String): PptTheme {
+        val t = normalize(hex) ?: DEFAULT_TONE
+        return PptTheme(
+            id = "custom",
+            name = "自定义主色",
+            bg = "FFFFFF",
+            titleColor = darken(t, 0.70f),
+            bodyColor = "333333",
+            accent = t,
+            codeBg = mixWhite(t, 0.90f),
+            quoteBg = mixWhite(t, 0.90f),
+            coverBg = t
+        )
+    }
+
+    /** 归一化 hex：去掉 # 与非法字符；非法输入返回 null */
+    private fun normalize(hex: String): String? {
+        val h = hex.trim().removePrefix("#")
+        return if (h.length == 6 && h.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }) h.uppercase() else null
+    }
+
+    /** 主色深色化（各通道按 factor 缩放），返回 RRGGBB */
+    fun darken(hex: String, factor: Float): String = channel(hex) { (it * factor).toInt().coerceIn(0, 255) }
+
+    /** 主色与白色按 ratio 混合（ratio 越大越浅），返回 RRGGBB */
+    fun mixWhite(hex: String, whiteRatio: Float): String {
+        val t = normalize(hex) ?: return "F2F2F2"
+        return (0 until 3).joinToString("") { i ->
+            val c = t.substring(i * 2, i * 2 + 2).toInt(16)
+            val w = (255 * whiteRatio).toInt()
+            ((c * (1 - whiteRatio) + w).toInt().coerceIn(0, 255)).toString(16).padStart(2, '0').uppercase()
+        }
+    }
+
+    private fun channel(hex: String, f: (Int) -> Int): String {
+        val t = normalize(hex) ?: return "222222"
+        return (0 until 3).joinToString("") { i ->
+            val c = t.substring(i * 2, i * 2 + 2).toInt(16)
+            f(c).toString(16).padStart(2, '0').uppercase()
+        }
+    }
 }
 
 /** hex RRGGBB → Compose Color */

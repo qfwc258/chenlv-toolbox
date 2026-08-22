@@ -22,11 +22,11 @@ class FontExportVerifyTest {
         val r = MdAstParser.parse(markdown)
         val paginated = MdAutoPaginator.paginate(r.blocks, autoPaginate = true, r.coverTitle)
         val slides = PptLayoutEngine.layout(
-            paginated, PptThemes.byId("default"),
+            paginated, PptThemes.fromTone(PptThemes.DEFAULT_TONE),
             { _ -> SlideLayout.STANDARD }, enableWave = false
         )
         val baos = java.io.ByteArrayOutputStream()
-        PptExportEngine.exportPptx(slides, PptThemes.byId("default"), baos)
+        PptExportEngine.exportPptx(slides, PptThemes.fromTone(PptThemes.DEFAULT_TONE), baos)
         var slidesXml = ""
         var themeXml = ""
         ZipInputStream(ByteArrayInputStream(baos.toByteArray())).use { zis ->
@@ -71,11 +71,11 @@ class FontExportVerifyTest {
         val r = MdAstParser.parse("# 标题\n正文内容，验证底部直线色块装饰是否正确导出到页底。")
         val paginated = MdAutoPaginator.paginate(r.blocks, autoPaginate = true, r.coverTitle)
         val slides = PptLayoutEngine.layout(
-            paginated, PptThemes.byId("default"),
+            paginated, PptThemes.fromTone(PptThemes.DEFAULT_TONE),
             { _ -> SlideLayout.STANDARD }, enableWave = false, enableBar = true, barHeightDenom = 60
         )
         val baos = java.io.ByteArrayOutputStream()
-        PptExportEngine.exportPptx(slides, PptThemes.byId("default"), baos)
+        PptExportEngine.exportPptx(slides, PptThemes.fromTone(PptThemes.DEFAULT_TONE), baos)
         var xml = ""
         ZipInputStream(ByteArrayInputStream(baos.toByteArray())).use { zis ->
             var e = zis.nextEntry
@@ -98,11 +98,11 @@ class FontExportVerifyTest {
         val r = MdAstParser.parse("# 标题\n正文内容。")
         val paginated = MdAutoPaginator.paginate(r.blocks, autoPaginate = true, r.coverTitle)
         val slides = PptLayoutEngine.layout(
-            paginated, PptThemes.byId("default"),
+            paginated, PptThemes.fromTone(PptThemes.DEFAULT_TONE),
             { _ -> SlideLayout.STANDARD }, enableWave = false, enableBar = false
         )
         val baos = java.io.ByteArrayOutputStream()
-        PptExportEngine.exportPptx(slides, PptThemes.byId("default"), baos)
+        PptExportEngine.exportPptx(slides, PptThemes.fromTone(PptThemes.DEFAULT_TONE), baos)
         var xml = ""
         ZipInputStream(ByteArrayInputStream(baos.toByteArray())).use { zis ->
             var e = zis.nextEntry
@@ -123,11 +123,11 @@ class FontExportVerifyTest {
         val r = MdAstParser.parse("# 标题\n正文内容。")
         val paginated = MdAutoPaginator.paginate(r.blocks, autoPaginate = true, r.coverTitle)
         val slides = PptLayoutEngine.layout(
-            paginated, PptThemes.byId("default"),
+            paginated, PptThemes.fromTone(PptThemes.DEFAULT_TONE),
             { _ -> SlideLayout.STANDARD }, enableWave = false, enableBar = true, barHeightDenom = 30
         )
         val baos = java.io.ByteArrayOutputStream()
-        PptExportEngine.exportPptx(slides, PptThemes.byId("default"), baos)
+        PptExportEngine.exportPptx(slides, PptThemes.fromTone(PptThemes.DEFAULT_TONE), baos)
         var xml = ""
         ZipInputStream(ByteArrayInputStream(baos.toByteArray())).use { zis ->
             var e = zis.nextEntry
@@ -215,7 +215,7 @@ class FontExportVerifyTest {
         val style = PptCssParser.parse("")
         val r = MdAstParser.parse("# 一\n## 二\n### 三\n#### 四\n##### 五\n###### 六")
         val paginated = MdAutoPaginator.paginate(r.blocks, autoPaginate = true, r.coverTitle)
-        val slides = PptLayoutEngine.layout(paginated, PptThemes.byId("default"),
+        val slides = PptLayoutEngine.layout(paginated, PptThemes.fromTone(PptThemes.DEFAULT_TONE),
             { _ -> SlideLayout.STANDARD }, enableWave = false)
         val sizes = slides.flatMap { s -> s.units.filter { it.type in setOf(BlockType.H1, BlockType.H2, BlockType.H3, BlockType.H4, BlockType.H5, BlockType.H6) }.map { it.fontSize } }
         // 顺序应为规范字号（解析后各块按 H1..H6 出现）
@@ -272,7 +272,7 @@ class FontExportVerifyTest {
         PptExportEngine.style = style
         val r = MdAstParser.parse("# 主标题\n## 二级标题")
         val paginated = MdAutoPaginator.paginate(r.blocks, autoPaginate = true, r.coverTitle)
-        val slides = PptLayoutEngine.layout(paginated, PptThemes.byId("default"),
+        val slides = PptLayoutEngine.layout(paginated, PptThemes.fromTone(PptThemes.DEFAULT_TONE),
             { _ -> SlideLayout.COVER }, enableWave = false)
         // 封面页第二项为 H2 kicker，字号应为 fsH2
         val h2 = slides.first().units.firstOrNull { it.type == BlockType.H2 }
@@ -289,7 +289,7 @@ class FontExportVerifyTest {
         PptExportEngine.style = style
         val r = MdAstParser.parse("# 主标题\n## 二级标题")
         val paginated = MdAutoPaginator.paginate(r.blocks, autoPaginate = true, r.coverTitle)
-        val slides = PptLayoutEngine.layout(paginated, PptThemes.byId("default"),
+        val slides = PptLayoutEngine.layout(paginated, PptThemes.fromTone(PptThemes.DEFAULT_TONE),
             { _ -> SlideLayout.COVER }, enableWave = false)
         val h1 = slides.first().units.firstOrNull { it.type == BlockType.H1 }
         assertNotNull("封面应含 H1", h1)
@@ -329,7 +329,7 @@ class FontExportVerifyTest {
         PptLayoutEngine.waveParams = PptWaveParams()
         val r = MdAstParser.parse(markdown)
         val paginated = MdAutoPaginator.paginate(r.blocks, autoPaginate = true, r.coverTitle)
-        return PptLayoutEngine.layout(paginated, PptThemes.byId("default"),
+        return PptLayoutEngine.layout(paginated, PptThemes.fromTone(PptThemes.DEFAULT_TONE),
             { _ -> SlideLayout.STANDARD }, enableWave = wave)
     }
 
@@ -340,10 +340,10 @@ class FontExportVerifyTest {
         PptExportEngine.style = style
         val r = MdAstParser.parse(markdown)
         val paginated = MdAutoPaginator.paginate(r.blocks, autoPaginate = true, r.coverTitle)
-        val slides = PptLayoutEngine.layout(paginated, PptThemes.byId("default"),
+        val slides = PptLayoutEngine.layout(paginated, PptThemes.fromTone(PptThemes.DEFAULT_TONE),
             { _ -> layout }, enableWave = false)
         val baos = java.io.ByteArrayOutputStream()
-        PptExportEngine.exportPptx(slides, PptThemes.byId("default"), baos)
+        PptExportEngine.exportPptx(slides, PptThemes.fromTone(PptThemes.DEFAULT_TONE), baos)
         var slidesXml = ""
         var themeXml = ""
         ZipInputStream(ByteArrayInputStream(baos.toByteArray())).use { zis ->
@@ -368,7 +368,7 @@ class FontExportVerifyTest {
         PptExportEngine.style = style
         val r = MdAstParser.parse(markdown)
         val paginated = MdAutoPaginator.paginate(r.blocks, autoPaginate = true, r.coverTitle)
-        val slides = PptLayoutEngine.layout(paginated, PptThemes.byId("default"),
+        val slides = PptLayoutEngine.layout(paginated, PptThemes.fromTone(PptThemes.DEFAULT_TONE),
             { _ -> layout }, enableWave = false)
         return slides.flatMap { it.units }
     }
@@ -472,7 +472,7 @@ class FontExportVerifyTest {
      */
     @Test
     fun quoteExportsRoundedBackground() {
-        val color = PptThemes.byId("default").quoteBg
+        val color = PptThemes.fromTone(PptThemes.DEFAULT_TONE).quoteBg
         val withQuote = buildAndExport("# 标题\n> 引用内容用于验证导出背景", "")
         val withoutQuote = buildAndExport("# 标题\n普通段落内容示例", "")
         assertFalse("无引用时不应出现 roundRect 引用背景", withoutQuote.first.contains("""prst="roundRect""""))
@@ -496,7 +496,7 @@ class FontExportVerifyTest {
         val md = "# 标题\n正文段落用于验证引用块段前距\n> 引用内容用于验证段前距"
         val r = MdAstParser.parse(md)
         val paginated = MdAutoPaginator.paginate(r.blocks, autoPaginate = true, r.coverTitle)
-        val slides = PptLayoutEngine.layout(paginated, PptThemes.byId("default"),
+        val slides = PptLayoutEngine.layout(paginated, PptThemes.fromTone(PptThemes.DEFAULT_TONE),
             { _ -> SlideLayout.STANDARD }, enableWave = false)
         val slide = slides.first { s -> s.units.any { it.type == BlockType.QUOTE } }
         val paraUnit = slide.units.first { it.type == BlockType.PARAGRAPH }
@@ -515,7 +515,7 @@ class FontExportVerifyTest {
         val mdFirst = "> 引用内容放在首位\n正文段落"
         val r2 = MdAstParser.parse(mdFirst)
         val paginated2 = MdAutoPaginator.paginate(r2.blocks, autoPaginate = true, r2.coverTitle)
-        val slides2 = PptLayoutEngine.layout(paginated2, PptThemes.byId("default"),
+        val slides2 = PptLayoutEngine.layout(paginated2, PptThemes.fromTone(PptThemes.DEFAULT_TONE),
             { _ -> SlideLayout.STANDARD }, enableWave = false)
         val slide2 = slides2.first { s -> s.units.any { it.type == BlockType.QUOTE } }
         val quoteFirst = slide2.units.first { it.type == BlockType.QUOTE }
@@ -680,11 +680,11 @@ class FontExportVerifyTest {
             val r = MdAstParser.parse("# 标题\n正文内容。")
             val paginated = MdAutoPaginator.paginate(r.blocks, autoPaginate = true, r.coverTitle)
             val slides = PptLayoutEngine.layout(
-                paginated, PptThemes.byId("default"),
+                paginated, PptThemes.fromTone(PptThemes.DEFAULT_TONE),
                 { _ -> SlideLayout.STANDARD }, enableWave = false, enableBar = true, barHeightDenom = 60
             )
             val baos = java.io.ByteArrayOutputStream()
-            PptExportEngine.exportPptx(slides, PptThemes.byId("default"), baos)
+            PptExportEngine.exportPptx(slides, PptThemes.fromTone(PptThemes.DEFAULT_TONE), baos)
             val xml = StringBuilder()
             ZipInputStream(ByteArrayInputStream(baos.toByteArray())).use { zis ->
                 var e = zis.nextEntry
@@ -765,7 +765,7 @@ class FontExportVerifyTest {
         PptExportEngine.style = style
         val r = MdAstParser.parse(markdown)
         val paginated = MdAutoPaginator.paginate(r.blocks, autoPaginate = true, r.coverTitle)
-        return PptLayoutEngine.layout(paginated, PptThemes.byId("default"),
+        return PptLayoutEngine.layout(paginated, PptThemes.fromTone(PptThemes.DEFAULT_TONE),
             { _ -> layout }, enableWave = false)
     }
 
@@ -788,7 +788,7 @@ class FontExportVerifyTest {
         val r = MdAstParser.parse(md)
         val paginated = MdAutoPaginator.paginate(r.blocks, autoPaginate = true, r.coverTitle)
         // 强制使用三栏布局
-        val slides = PptLayoutEngine.layout(paginated, PptThemes.byId("default"),
+        val slides = PptLayoutEngine.layout(paginated, PptThemes.fromTone(PptThemes.DEFAULT_TONE),
             { _ -> SlideLayout.THREE_COL }, enableWave = false)
         assertTrue("应生成至少一页", slides.isNotEmpty())
         val slide = slides.first()
@@ -818,7 +818,7 @@ class FontExportVerifyTest {
         PptExportEngine.style = style
         val r = MdAstParser.parse(md)
         val paginated = MdAutoPaginator.paginate(r.blocks, autoPaginate = true, r.coverTitle)
-        val slides = PptLayoutEngine.layout(paginated, PptThemes.byId("default"),
+        val slides = PptLayoutEngine.layout(paginated, PptThemes.fromTone(PptThemes.DEFAULT_TONE),
             { _ -> SlideLayout.THREE_COL }, enableWave = false)
         assertTrue("应生成至少一页，实际 " + slides.size + " 页", slides.isNotEmpty())
 
@@ -869,7 +869,7 @@ class FontExportVerifyTest {
         PptExportEngine.style = style
         val r = MdAstParser.parse(md)
         val paginated = MdAutoPaginator.paginate(r.blocks, autoPaginate = true, r.coverTitle)
-        val slides = PptLayoutEngine.layout(paginated, PptThemes.byId("default"),
+        val slides = PptLayoutEngine.layout(paginated, PptThemes.fromTone(PptThemes.DEFAULT_TONE),
             { _ -> SlideLayout.THREE_COL }, enableWave = false)
         assertTrue("应生成至少一页", slides.isNotEmpty())
         val slide = slides.first()
@@ -908,7 +908,7 @@ class FontExportVerifyTest {
         PptExportEngine.style = style
         val r = MdAstParser.parse(md)
         val paginated = MdAutoPaginator.paginate(r.blocks, autoPaginate = true, r.coverTitle)
-        val slides = PptLayoutEngine.layout(paginated, PptThemes.byId("default"),
+        val slides = PptLayoutEngine.layout(paginated, PptThemes.fromTone(PptThemes.DEFAULT_TONE),
             { _ -> SlideLayout.THREE_COL }, enableWave = false)
         assertTrue(slides.isNotEmpty())
         val slide = slides.first()
@@ -956,10 +956,10 @@ class FontExportVerifyTest {
         PptLayoutEngine.style = style
         PptExportEngine.style = style
         val paginated = MdAutoPaginator.paginate(r.blocks, autoPaginate = true, r.coverTitle)
-        val slides = PptLayoutEngine.layout(paginated, PptThemes.byId("default"),
+        val slides = PptLayoutEngine.layout(paginated, PptThemes.fromTone(PptThemes.DEFAULT_TONE),
             { _ -> SlideLayout.STANDARD }, enableWave = false)
         val baos = java.io.ByteArrayOutputStream()
-        PptExportEngine.exportPptx(slides, PptThemes.byId("default"), baos)
+        PptExportEngine.exportPptx(slides, PptThemes.fromTone(PptThemes.DEFAULT_TONE), baos)
         var xml = ""
         java.util.zip.ZipInputStream(java.io.ByteArrayInputStream(baos.toByteArray())).use { zis ->
             var e = zis.nextEntry
@@ -993,7 +993,7 @@ class FontExportVerifyTest {
         PptExportEngine.style = style
         val r = MdAstParser.parse(md)
         val paginated = MdAutoPaginator.paginate(r.blocks, autoPaginate = true, r.coverTitle)
-        val slides = PptLayoutEngine.layout(paginated, PptThemes.byId("default"),
+        val slides = PptLayoutEngine.layout(paginated, PptThemes.fromTone(PptThemes.DEFAULT_TONE),
             { _ -> SlideLayout.THREE_COL }, enableWave = false)
         assertTrue(slides.isNotEmpty())
         val slide = slides.first()
@@ -1027,10 +1027,10 @@ class FontExportVerifyTest {
         PptExportEngine.style = style2
         val r2 = MdAstParser.parse(md)
         val paginated2 = MdAutoPaginator.paginate(r2.blocks, autoPaginate = true, r2.coverTitle)
-        val slides2 = PptLayoutEngine.layout(paginated2, PptThemes.byId("default"),
+        val slides2 = PptLayoutEngine.layout(paginated2, PptThemes.fromTone(PptThemes.DEFAULT_TONE),
             { _ -> SlideLayout.THREE_COL }, enableWave = false)
         val baos = java.io.ByteArrayOutputStream()
-        PptExportEngine.exportPptx(slides2, PptThemes.byId("default"), baos)
+        PptExportEngine.exportPptx(slides2, PptThemes.fromTone(PptThemes.DEFAULT_TONE), baos)
         var xml = ""
         java.util.zip.ZipInputStream(java.io.ByteArrayInputStream(baos.toByteArray())).use { zis ->
             var e = zis.nextEntry
@@ -1056,7 +1056,7 @@ class FontExportVerifyTest {
     fun threeColHeadingStyleMatchesStandard() {
         val style = PptCssParser.parse("")
         PptLayoutEngine.style = style
-        val theme = PptThemes.byId("default")  // 商务深蓝: titleColor=1A3C6E
+        val theme = PptThemes.fromTone(PptThemes.DEFAULT_TONE)  // 商务深蓝: titleColor=1A3C6E
         val md = "## 被告（五方）\n- 列表项一内容\n- 列表项二内容"
         // 三栏布局
         val threeColUnits = layoutUnits(md, SlideLayout.THREE_COL)
@@ -1130,7 +1130,7 @@ class FontExportVerifyTest {
     fun threeColH3HasAccentBar() {
         val style = PptCssParser.parse("")
         PptLayoutEngine.style = style
-        val theme = PptThemes.byId("default")
+        val theme = PptThemes.fromTone(PptThemes.DEFAULT_TONE)
 
         // H3 作为标题 → 应有竖线
         val mdH3 = "### 被告（五方）\n- 列表项一\n- 列表项二"

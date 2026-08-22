@@ -36,7 +36,7 @@ class EmptySpecialPageTest {
             SlidePage(emptyList(), "结尾", isCover = false),  // 空 blocks → 触发默认致谢语
         )
         val pag = PaginationResult(pages)
-        val theme = PptThemes.ALL[0]
+        val theme = PptThemes.fromTone(PptThemes.DEFAULT_TONE)
 
         val layoutOf: (Int) -> SlideLayout = { idx ->
             when (idx) {
