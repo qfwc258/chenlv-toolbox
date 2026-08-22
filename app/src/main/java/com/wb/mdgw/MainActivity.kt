@@ -151,8 +151,10 @@ fun AppScreen(initialUri: Uri? = null) {
             )
             // 四屏同时存活，仅切换可见性，避免切 Tab 丢失编辑状态。
             // initialUri 仅首次传递给对应模式，之后不再触发。
+            // 注：外层为 Column 作用域，ColumnScope.AnimatedVisibility 扩展与顶层同名函数冲突，
+            //     故此处全部使用全限定名（与 MdPptxScreen 的既有处理一致）。
             Box(Modifier.fillMaxSize().weight(1f)) {
-                AnimatedVisibility(
+                androidx.compose.animation.AnimatedVisibility(
                     visible = mode == DocMode.WORD,
                     enter = fadeIn(), exit = fadeOut()
                 ) {
@@ -161,7 +163,7 @@ fun AppScreen(initialUri: Uri? = null) {
                         initialUri = initialUri.takeIf { detected == DocMode.WORD }
                     )
                 }
-                AnimatedVisibility(
+                androidx.compose.animation.AnimatedVisibility(
                     visible = mode == DocMode.PDF,
                     enter = fadeIn(), exit = fadeOut()
                 ) {
@@ -170,13 +172,13 @@ fun AppScreen(initialUri: Uri? = null) {
                         snackbar = snackbar
                     )
                 }
-                AnimatedVisibility(
+                androidx.compose.animation.AnimatedVisibility(
                     visible = mode == DocMode.WECHAT,
                     enter = fadeIn(), exit = fadeOut()
                 ) {
                     WeChatScreen(snackbar = snackbar)
                 }
-                AnimatedVisibility(
+                androidx.compose.animation.AnimatedVisibility(
                     visible = mode == DocMode.PPTX,
                     enter = fadeIn(), exit = fadeOut()
                 ) {
