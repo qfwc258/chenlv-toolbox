@@ -1,5 +1,8 @@
 package com.wb.mdgw
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -50,7 +53,8 @@ import androidx.compose.ui.unit.sp
  * 设计原则：
  *  - **状态由调用方持有**（内容 [tfv]、字号 [fontSize]、撤销/重做栈），本组件只做 UI 与回调转发；
  *    因此各 Tab 的编辑内容、字号、草稿存储、撤销栈完全独立，互不干扰。
- *  - 编辑区尽量铺满可用空间：信息条与工具栏极薄，编辑卡片 `weight(1f)` 占满剩余高度。
+ *  - 编辑区尽量铺满可用空间：顶部面板（信息条 + 格式工具栏）默认展开，可被外部折叠
+ *    （[toolbarExpanded]），收起后编辑卡片 `weight(1f)` 占满整个 Pane。
  *  - 统一能力：格式工具栏（[MarkdownSnippets.SNIPPETS]）、字号步进、撤销/重做、清空、字数/行数统计。
  *
  * @param tfv           编辑内容（含光标）
@@ -62,6 +66,7 @@ import androidx.compose.ui.unit.sp
  * @param onClear       清空（null 表示不显示清空按钮）
  * @param title         顶部信息条左侧标题
  * @param hint          信息条右侧的轻提示（页面数 / 转换提示等），空态时也作为副文案
+ * @param toolbarExpanded 顶部面板（信息条 + 格式工具栏）是否展开；收起后编辑区最大化
  */
 @Composable
 fun MdEditorPane(
@@ -76,79 +81,89 @@ fun MdEditorPane(
     canRedo: Boolean,
     onClear: (() -> Unit)? = null,
     title: String = "Markdown 源",
-    hint: String? = null
+    hint: String? = null,
+    toolbarExpanded: Boolean = true
 ) {
     val charCount = tfv.text.length
     val lineCount = if (tfv.text.isEmpty()) 0 else tfv.text.lineSequence().count()
 
     Column(Modifier.fillMaxSize().padding(horizontal = 4.dp, vertical = 4.dp)) {
-        // ── 顶部信息条：标题 + 轻提示 + 字数/行数（单行，极薄）──
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
+        // ── 可折叠顶部面板：信息条 + 格式工具栏（收起后编辑区占满）──
+        AnimatedVisibility(
+            visible = toolbarExpanded,
+            enter = expandVertically(),
+            exit = shrinkVertically()
         ) {
-            Text(
-                title,
-                fontSize = 12.sp, fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.weight(1f))
-            if (!hint.isNullOrBlank()) {
-                Text(
-                    hint,
-                    fontSize = 10.sp, color = MaterialTheme.colorScheme.outline,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(end = 8.dp)
-                )
-            }
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                shape = RoundedCornerShape(20.dp)
-            ) {
-                Text(
-                    "$charCount 字 · $lineCount 行",
-                    fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                )
-            }
-        }
-
-        // ── 格式工具栏：chips 横向滚动 + 字号步进 + 撤销/重做/清空 ──
-        Row(
-            Modifier.fillMaxWidth().padding(top = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.weight(1f)
-            ) {
-                items(MarkdownSnippets.SNIPPETS) { s ->
+            Column(Modifier.fillMaxWidth()) {
+                // 顶部信息条：标题 + 轻提示 + 字数/行数（单行，极薄）
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        title,
+                        fontSize = 12.sp, fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.weight(1f))
+                    if (!hint.isNullOrBlank()) {
+                        Text(
+                            hint,
+                            fontSize = 10.sp, color = MaterialTheme.colorScheme.outline,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(end = 8.dp)
+                        )
+                    }
                     Surface(
-                        onClick = { onInsert(s) },
-                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
-                        shape = RoundedCornerShape(15.dp),
-                        modifier = Modifier.height(26.dp)
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                        shape = RoundedCornerShape(20.dp)
                     ) {
-                        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 9.dp)) {
-                            Text(
-                                s.label, fontSize = 11.sp, maxLines = 1, softWrap = false,
-                                color = MaterialTheme.colorScheme.primary
-                            )
+                        Text(
+                            "$charCount 字 · $lineCount 行",
+                            fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+
+                // 格式工具栏：chips 横向滚动 + 字号步进 + 撤销/重做/清空
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        items(MarkdownSnippets.SNIPPETS) { s ->
+                            Surface(
+                                onClick = { onInsert(s) },
+                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
+                                shape = RoundedCornerShape(15.dp),
+                                modifier = Modifier.height(26.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 9.dp)) {
+                                    Text(
+                                        s.label, fontSize = 11.sp, maxLines = 1, softWrap = false,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
                         }
+                    }
+                    Spacer(Modifier.width(6.dp))
+                    FontSizeStepper(fontSize, onFontSizeChange)
+                    Spacer(Modifier.width(2.dp))
+                    MdIconBtn(Icons.Default.Undo, "撤销", enabled = canUndo, onClick = onUndo)
+                    MdIconBtn(Icons.Default.Redo, "重做", enabled = canRedo, onClick = onRedo)
+                    if (onClear != null) {
+                        MdIconBtn(Icons.Default.Delete, "清空", enabled = tfv.text.isNotEmpty(), onClick = onClear)
                     }
                 }
             }
-            Spacer(Modifier.width(6.dp))
-            FontSizeStepper(fontSize, onFontSizeChange)
-            Spacer(Modifier.width(2.dp))
-            MdIconBtn(Icons.Default.Undo, "撤销", enabled = canUndo, onClick = onUndo)
-            MdIconBtn(Icons.Default.Redo, "重做", enabled = canRedo, onClick = onRedo)
-            if (onClear != null) {
-                MdIconBtn(Icons.Default.Delete, "清空", enabled = tfv.text.isNotEmpty(), onClick = onClear)
-            }
         }
 
-        Spacer(Modifier.height(6.dp))
+        if (toolbarExpanded) Spacer(Modifier.height(6.dp))
 
         // ── 编辑卡片：占满剩余空间 ──
         Surface(

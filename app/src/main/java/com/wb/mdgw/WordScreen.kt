@@ -9,6 +9,9 @@ import android.webkit.WebViewClient
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
@@ -102,6 +105,9 @@ fun WordScreen(
     var fontSize by remember { mutableStateOf(15) }
     var busy by remember { mutableStateOf(false) }
     var subView by remember { mutableStateOf(SubView.EDIT) }
+    // 沉浸式布局：顶部工具面板 / 底部操作面板默认收起，仅常驻「编辑|预览」切换条
+    var topExpanded by remember { mutableStateOf(false) }
+    var bottomExpanded by remember { mutableStateOf(false) }
     // 上次用于生成公文的源 Markdown；切到「预览」时若与当前不一致则自动重新生成
     var lastGenSource by remember { mutableStateOf("") }
 
@@ -756,59 +762,50 @@ fun WordScreen(
     // ============================================================
     Scaffold(
         topBar = {
-            WordToolbar(
-                onSave = { doSave() },
-                onUndo = { undo() },
-                canUndo = undoStack.isNotEmpty(),
-                onRedo = { redo() },
-                canRedo = redoStack.isNotEmpty(),
-                onSettings = { showSettings = true }
-            )
+            AnimatedVisibility(
+                visible = topExpanded,
+                enter = expandVertically(),
+                exit = shrinkVertically()
+            ) {
+                WordToolbar(
+                    onSave = { doSave() },
+                    onUndo = { undo() },
+                    canUndo = undoStack.isNotEmpty(),
+                    onRedo = { redo() },
+                    canRedo = redoStack.isNotEmpty(),
+                    onSettings = { showSettings = true }
+                )
+            }
         },
         bottomBar = {
-            WordActionBar(
-                onOpen = { openPicker.launch(arrayOf("text/markdown", "text/x-markdown", "text/plain", DOCX_MIME, "application/octet-stream", "*/*")) },
-                onExportDocx = { exportDocx() },
-                onExportPdf = { exportPdf() }
-            )
+            AnimatedVisibility(
+                visible = bottomExpanded,
+                enter = expandVertically(),
+                exit = shrinkVertically()
+            ) {
+                WordActionBar(
+                    onOpen = { openPicker.launch(arrayOf("text/markdown", "text/x-markdown", "text/plain", DOCX_MIME, "application/octet-stream", "*/*")) },
+                    onExportDocx = { exportDocx() },
+                    onExportPdf = { exportPdf() }
+                )
+            }
         }
     ) { pad ->
         Column(Modifier.fillMaxSize().padding(pad)) {
-            // 编辑 / 预览 分段切换（选中态主色填充）
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                shape = UI_SECTION_RADIUS,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)
-            ) {
-                Row(Modifier.fillMaxWidth().padding(4.dp)) {
-                    SubView.values().forEach { v ->
-                        val label = if (v == SubView.EDIT) "编辑" else "预览"
-                        val icon = if (v == SubView.EDIT) Icons.Default.Edit else Icons.Default.Visibility
-                        val selected = subView == v
-                        val cellMod = Modifier.weight(1f).height(40.dp)
-                            .clickable { if (v == SubView.PREVIEW) switchToPreview() else subView = SubView.EDIT }
-                        if (selected) {
-                            Surface(color = MaterialTheme.colorScheme.primary, shape = UI_SECTION_RADIUS, modifier = cellMod) {
-                                Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-                                    Icon(icon, null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(17.dp))
-                                    Spacer(Modifier.width(6.dp))
-                                    Text(label, color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                }
-                            }
-                        } else {
-                            Box(cellMod, contentAlignment = Alignment.Center) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(icon, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(17.dp))
-                                    Spacer(Modifier.width(6.dp))
-                                    Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            // 常驻切换条：折叠顶栏开关 + 编辑/预览 + 折叠底栏开关（唯一常驻控件）
+            EditPreviewBar(
+                selectedIndex = subView.ordinal,
+                onSelect = { i ->
+                    if (i == SubView.PREVIEW.ordinal) switchToPreview() else subView = SubView.EDIT
+                },
+                topExpanded = topExpanded,
+                onToggleTop = { topExpanded = !topExpanded },
+                bottomExpanded = bottomExpanded,
+                onToggleBottom = { bottomExpanded = !bottomExpanded },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)
+            )
 
-            Box(Modifier.fillMaxSize().weight(1f).padding(horizontal = 12.dp)) {
+            Box(Modifier.fillMaxSize().weight(1f).padding(horizontal = 8.dp)) {
                 when (subView) {
                     SubView.EDIT -> MdEditorPane(
                         tfv = tfv,
@@ -832,7 +829,8 @@ fun WordScreen(
                             dirty = true; autoSaved = false
                         },
                         title = "Markdown 源",
-                        hint = "切到「预览」即自动生成公文"
+                        hint = "切到「预览」即自动生成公文",
+                        toolbarExpanded = topExpanded
                     )
                     SubView.PREVIEW -> PaperPreview(
                         doc = govDoc,

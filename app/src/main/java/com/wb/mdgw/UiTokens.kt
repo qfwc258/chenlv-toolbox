@@ -8,7 +8,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -68,6 +72,48 @@ fun SegmentedTabs(
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * 沉浸式切换条 —— 三个 Tab 唯一常驻的一行控件，最大化编辑 / 预览区。
+ *
+ * 布局：`[顶栏折叠开关] [编辑 | 预览 分段切换] [底栏折叠开关]`。
+ * 顶 / 底工具栏默认收起，点两侧开关展开（展开后箭头方向反转）；中间分段切换编辑 / 预览。
+ */
+@Composable
+fun EditPreviewBar(
+    selectedIndex: Int,
+    onSelect: (Int) -> Unit,
+    topExpanded: Boolean,
+    onToggleTop: () -> Unit,
+    bottomExpanded: Boolean,
+    onToggleBottom: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = onToggleTop, modifier = Modifier.size(34.dp)) {
+            Icon(
+                if (topExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                contentDescription = "编辑工具栏",
+                modifier = Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        SegmentedTabs(
+            items = listOf("编辑" to Icons.Default.Edit, "预览" to Icons.Default.Visibility),
+            selectedIndex = selectedIndex,
+            onSelect = onSelect,
+            modifier = Modifier.weight(1f)
+        )
+        IconButton(onClick = onToggleBottom, modifier = Modifier.size(34.dp)) {
+            Icon(
+                if (bottomExpanded) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
+                contentDescription = "操作栏",
+                modifier = Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }

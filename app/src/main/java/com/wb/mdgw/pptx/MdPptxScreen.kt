@@ -5,8 +5,11 @@ import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -69,11 +72,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.TextRange
 import androidx.core.content.ContextCompat
+import com.wb.mdgw.EditPreviewBar
 import com.wb.mdgw.MdEditorPane
 import com.wb.mdgw.MarkdownSnippets
 import com.wb.mdgw.FileUtils
 import com.wb.mdgw.ExportResultDialog
-import com.wb.mdgw.SegmentedTabs
 import com.wb.mdgw.UI_CARD_RADIUS
 import com.wb.mdgw.UI_BTN_RADIUS
 import com.wb.mdgw.UI_ACTION_HEIGHT
@@ -164,6 +167,9 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
     }
     var layoutsVersion by remember { mutableStateOf(0) }
     var subView by remember { mutableStateOf(SubView.EDIT) }
+    // 沉浸式布局：顶 / 底工具栏默认收起，仅常驻「编辑|预览」切换条
+    var topExpanded by remember { mutableStateOf(false) }
+    var bottomExpanded by remember { mutableStateOf(false) }
 
     // 自定义 CSS 样式（公众号式可编辑）：空 = 默认样式（保底）。持久化由 PptStyleStore 负责。
     var cssText by remember { mutableStateOf(PptStyleStore.load(context)) }
@@ -334,45 +340,62 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
 
     Scaffold(
         topBar = {
-            PptxTopBar(
-                themeId = themeId,
-                onTheme = { themeId = it },
-                customColor = customColor,
-                onCustomColor = { customColor = it },
-                onSettings = { showSettings = true }
-            )
+            // 顶部工具栏（主题/调色板/设置）：可折叠，默认收起（点切换条 ⌄ 展开）
+            AnimatedVisibility(
+                visible = topExpanded,
+                enter = expandVertically(),
+                exit = shrinkVertically()
+            ) {
+                PptxTopBar(
+                    themeId = themeId,
+                    onTheme = { themeId = it },
+                    customColor = customColor,
+                    onCustomColor = { customColor = it },
+                    onSettings = { showSettings = true }
+                )
+            }
         },
         bottomBar = {
-            PptxActionBar(
-                onExport = {
-                    if (slides.isEmpty()) {
-                        scope.launch { snackbar.showSnackbar("没有可导出的内容，请先在编辑区输入 Markdown") }
-                    } else {
-                        fileNameInput = TextFieldValue("陈律工具箱")
-                        showNameDialog = true
+            // 底部操作栏（导出/导入/清空）：可折叠，默认收起（点切换条 ⌃ 展开）
+            AnimatedVisibility(
+                visible = bottomExpanded,
+                enter = expandVertically(),
+                exit = shrinkVertically()
+            ) {
+                PptxActionBar(
+                    onExport = {
+                        if (slides.isEmpty()) {
+                            scope.launch { snackbar.showSnackbar("没有可导出的内容，请先在编辑区输入 Markdown") }
+                        } else {
+                            fileNameInput = TextFieldValue("陈律工具箱")
+                            showNameDialog = true
+                        }
+                    },
+                    onImport = { importLauncher.launch(arrayOf("text/markdown", "text/plain", "*/*")) },
+                    onClear = {
+                        mdTfv = TextFieldValue(""); undoStack.clear(); redoStack.clear()
                     }
-                },
-                onImport = { importLauncher.launch(arrayOf("text/markdown", "text/plain", "*/*")) },
-                onClear = {
-                    mdTfv = TextFieldValue(""); undoStack.clear(); redoStack.clear()
-                }
-            )
+                )
+            }
         }
     ) { pad ->
         // 根 Box：内容层 + 设置覆盖层（覆盖层为 Box 子项，填充内容区并绘制在最上，
         // 彻底规避「放 Column 内与内容争夺高度被压成 0」以及「AlertDialog 不显示」两类问题）
         Box(Modifier.fillMaxSize().padding(pad)) {
             Column(Modifier.fillMaxSize()) {
-                // 子页切换（编辑 / 预览，互斥显示，无分屏）
-                SegmentedTabs(
-                    items = listOf("编辑" to Icons.Default.Edit, "预览" to Icons.Default.Visibility),
+                // 常驻切换条：折叠顶栏开关 + 编辑/预览 + 折叠底栏开关（唯一常驻控件）
+                EditPreviewBar(
                     selectedIndex = subView.ordinal,
                     onSelect = { subView = SubView.values()[it] },
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)
+                    topExpanded = topExpanded,
+                    onToggleTop = { topExpanded = !topExpanded },
+                    bottomExpanded = bottomExpanded,
+                    onToggleBottom = { bottomExpanded = !bottomExpanded },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)
                 )
 
-                Box(Modifier.weight(1f).fillMaxWidth()) {
-                    androidx.compose.animation.AnimatedVisibility(
+                Box(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 8.dp)) {
+                    AnimatedVisibility(
                         visible = subView == SubView.EDIT,
                         enter = fadeIn(), exit = fadeOut()
                     ) {
@@ -410,10 +433,11 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
                                 mdTfv = TextFieldValue(""); undoStack.clear(); redoStack.clear()
                             },
                             title = "幻灯片",
-                            hint = "将生成 ${slides.size} 页 · 版式：${defaultLayout.label}"
+                            hint = "将生成 ${slides.size} 页 · 版式：${defaultLayout.label}",
+                            toolbarExpanded = topExpanded
                         )
                     }
-                    androidx.compose.animation.AnimatedVisibility(
+                    AnimatedVisibility(
                         visible = subView == SubView.PREVIEW,
                         enter = fadeIn(), exit = fadeOut()
                     ) {

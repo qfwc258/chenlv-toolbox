@@ -7,6 +7,9 @@ import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -36,6 +39,8 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Visibility
@@ -56,9 +61,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.material3.SnackbarHostState
+import com.wb.mdgw.EditPreviewBar
 import com.wb.mdgw.MarkdownSnippets
 import com.wb.mdgw.MdEditorPane
-import com.wb.mdgw.SegmentedTabs
 import com.wb.mdgw.UI_CARD_RADIUS
 import com.wb.mdgw.UI_BTN_RADIUS
 import com.wb.mdgw.UI_ACTION_HEIGHT
@@ -101,6 +106,9 @@ fun WeChatScreen(snackbar: SnackbarHostState) {
         )
     }
     var subView by remember { mutableStateOf(SubView.EDIT) }
+    // 沉浸式布局：顶 / 底工具栏默认收起，仅常驻「编辑|预览」切换条
+    var topExpanded by remember { mutableStateOf(false) }
+    var bottomExpanded by remember { mutableStateOf(false) }
     var showCss by remember { mutableStateOf(false) }
     // 预览 WebView 引用：复制按钮依赖它执行「原生全选+复制」，与输入法复制同源
     var previewWebView by remember { mutableStateOf<WebView?>(null) }
@@ -153,53 +161,71 @@ fun WeChatScreen(snackbar: SnackbarHostState) {
 
     Scaffold(
         topBar = {
-            Column {
-                ThemeToolbar(
-                    themeKey = themeKey,
-                    customized = ThemeStorage.hasCustom(context, themeKey),
-                    onSelectTheme = {
-                        themeKey = it
-                        effectiveCss = ThemeStorage.getCss(context, it)
-                    },
-                    onEditCss = { showCss = true },
-                    onReset = {
-                        ThemeStorage.resetCss(context, themeKey)
-                        effectiveCss = ThemePreset.getTheme(themeKey).css
-                        Toast.makeText(context, "已恢复当前主题默认样式", Toast.LENGTH_SHORT).show()
-                    }
-                )
+            // 主题工具栏：可折叠，默认收起（点切换条 ⌄ 展开）
+            AnimatedVisibility(
+                visible = topExpanded,
+                enter = expandVertically(),
+                exit = shrinkVertically()
+            ) {
+                Column {
+                    ThemeToolbar(
+                        themeKey = themeKey,
+                        customized = ThemeStorage.hasCustom(context, themeKey),
+                        onSelectTheme = {
+                            themeKey = it
+                            effectiveCss = ThemeStorage.getCss(context, it)
+                        },
+                        onEditCss = { showCss = true },
+                        onReset = {
+                            ThemeStorage.resetCss(context, themeKey)
+                            effectiveCss = ThemePreset.getTheme(themeKey).css
+                            Toast.makeText(context, "已恢复当前主题默认样式", Toast.LENGTH_SHORT).show()
+                        }
+                    )
+                }
             }
         },
         bottomBar = {
-            ActionBar(
-                onCopy = {
-                    // 预览态且已加载完成：直接走 WebView 原生「全选+复制」，与输入法复制同源；
-                    // 编辑态（WebView 未挂载）：先切到预览，等加载完成后再复制。
-                    if (subView == SubView.PREVIEW && webViewLoaded && previewWebView != null) {
-                        copyViaWebView(previewWebView, copyHtml, context)
-                    } else {
-                        pendingCopy = true
-                        subView = SubView.PREVIEW
-                    }
-                },
-                onClear = {
-                    mdTfv = TextFieldValue(""); undoStack.clear(); redoStack.clear()
-                },
-                onExample = {
-                    mdTfv = TextFieldValue(DEFAULT_MD); undoStack.clear(); redoStack.clear()
-                },
-                onImport = { pickLauncher.launch("text/*") }
-            )
+            // 底部操作栏：可折叠，默认收起（点切换条 ⌃ 展开）
+            AnimatedVisibility(
+                visible = bottomExpanded,
+                enter = expandVertically(),
+                exit = shrinkVertically()
+            ) {
+                ActionBar(
+                    onCopy = {
+                        // 预览态且已加载完成：直接走 WebView 原生「全选+复制」，与输入法复制同源；
+                        // 编辑态（WebView 未挂载）：先切到预览，等加载完成后再复制。
+                        if (subView == SubView.PREVIEW && webViewLoaded && previewWebView != null) {
+                            copyViaWebView(previewWebView, copyHtml, context)
+                        } else {
+                            pendingCopy = true
+                            subView = SubView.PREVIEW
+                        }
+                    },
+                    onClear = {
+                        mdTfv = TextFieldValue(""); undoStack.clear(); redoStack.clear()
+                    },
+                    onExample = {
+                        mdTfv = TextFieldValue(DEFAULT_MD); undoStack.clear(); redoStack.clear()
+                    },
+                    onImport = { pickLauncher.launch("text/*") }
+                )
+            }
         }
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
-            SegmentedTabs(
-                items = listOf("编辑" to Icons.Default.Edit, "预览" to Icons.Default.Visibility),
+            // 常驻切换条：折叠顶栏开关 + 编辑/预览 + 折叠底栏开关（唯一常驻控件）
+            EditPreviewBar(
                 selectedIndex = subView.ordinal,
                 onSelect = { subView = SubView.values()[it] },
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)
+                topExpanded = topExpanded,
+                onToggleTop = { topExpanded = !topExpanded },
+                bottomExpanded = bottomExpanded,
+                onToggleBottom = { bottomExpanded = !bottomExpanded },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)
             )
-            Box(Modifier.fillMaxSize().weight(1f).padding(horizontal = 12.dp)) {
+            Box(Modifier.fillMaxSize().weight(1f).padding(horizontal = 8.dp)) {
                 // 编辑与预览互斥显示：编辑态不挂载 WebView，避免 WebView surface 浮到上层
                 // 导致编辑框与预览叠在一起。复制时（见 LaunchedEffect）会先切到预览态。
                 when (subView) {
@@ -237,7 +263,8 @@ fun WeChatScreen(snackbar: SnackbarHostState) {
                             mdTfv = TextFieldValue(""); undoStack.clear(); redoStack.clear()
                         },
                         title = "公众号排版",
-                        hint = "预览 / 复制将实时排版"
+                        hint = "预览 / 复制将实时排版",
+                        toolbarExpanded = topExpanded
                     )
                     SubView.PREVIEW -> PreviewPane(
                         previewHtml,
