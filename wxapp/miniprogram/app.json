@@ -1,5 +1,6 @@
 {
   "pages": [
+    "pages/resume/index",
     "pages/word/index",
     "pages/wechat/index",
     "pages/pptx/index"
@@ -7,7 +8,7 @@
   "window": {
     "backgroundTextStyle": "light",
     "navigationBarBackgroundColor": "#2E5FA3",
-    "navigationBarTitleText": "陈律工具箱",
+    "navigationBarTitleText": "陈伟律师",
     "navigationBarTextStyle": "white"
   },
   "tabBar": {
@@ -16,6 +17,10 @@
     "backgroundColor": "#ffffff",
     "borderStyle": "black",
     "list": [
+      {
+        "pagePath": "pages/resume/index",
+        "text": "简历"
+      },
       {
         "pagePath": "pages/word/index",
         "text": "公文"

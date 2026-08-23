@@ -4,7 +4,7 @@
   "private": true,
   "description": "陈律工具箱 - 微信小程序版（core 层纯 TS，可在 node 下单测）",
   "scripts": {
-    "test": "tsx test/core.test.ts && tsx test/wechat.test.ts && tsx test/pptx.test.ts"
+    "test": "tsx test/core.test.ts && tsx test/wechat.test.ts && tsx test/pptx.test.ts && tsx test/resume.test.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

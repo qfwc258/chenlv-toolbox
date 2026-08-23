@@ -1,0 +1,187 @@
+/* 简历页样式：融合原 basic + lianxian 两页 */
+.container {
+  padding: 0;
+  background-color: #fff;
+}
+
+.header,
+.section {
+  width: 90vw;
+  margin-left: 5vw;
+  border-radius: 10rpx;
+  text-align: center;
+  box-shadow: 0 0 20rpx #71bff0;
+  margin-top: -50px;
+  z-index: 100;
+  position: relative;
+  background-color: #fff;
+}
+
+.headImg {
+  width: 750rpx;
+  height: 750rpx;
+}
+
+.imgLogo {
+  width: 50px;
+  height: 50px;
+  position: relative;
+  top: -8vh;
+  left: 0;
+  padding: 0 30px;
+}
+
+.textSty {
+  margin-top: -8vh;
+  color: #000;
+  padding-bottom: 3vh;
+}
+
+.jj {
+  color: #999;
+  font-size: 14px;
+}
+
+.name {
+  line-height: 8vh;
+}
+
+.xinxi {
+  border-top: 1px solid #eee;
+  text-align: justify;
+  line-height: 3vh;
+  font-size: 14px;
+  color: #666;
+}
+
+.xx {
+  margin: 1vh 5px;
+  padding-bottom: 1.5vh;
+}
+
+.section {
+  margin-top: 3vh;
+}
+
+.secContent {
+  padding: 10px 15px;
+  font-size: 14px;
+}
+
+.secContent2 {
+  padding: 10px 15px;
+  font-size: 28rpx;
+}
+
+.e {
+  margin-top: 2vh;
+  text-align: left;
+  line-height: 4.5vh;
+  font-size: 14px;
+  color: #666;
+}
+
+.telico {
+  margin-top: 1vh;
+  float: left;
+  width: 30px;
+  height: 30px;
+}
+
+.txt {
+  font-size: 15px;
+  float: left;
+  width: auto;
+  min-width: 60px;
+  height: 25px;
+  margin-left: 20px;
+  margin-right: 25px;
+  color: #333;
+}
+
+.txt2 {
+  font-size: 15px;
+  text-align: center;
+  height: 25px;
+  color: rgba(0, 0, 0, 0.77);
+}
+
+.but {
+  font-size: 15px;
+  height: 40px;
+  box-shadow: 0 0 20rpx #71bff0;
+}
+
+.but2 {
+  font-size: 15px;
+  height: 50px;
+  width: 70%;
+  box-shadow: 0 0 20rpx #71bff0;
+  background-color: #f3c993;
+  text-align: center;
+  top: 0;
+}
+
+.clicks {
+  float: right;
+  font-size: 12px;
+  color: #666;
+  margin-top: 2vh;
+}
+
+.chat2 {
+  margin-top: 2vh;
+}
+
+.neon-text {
+  font-size: 19px;
+  animation: blink 1s ease-in-out infinite alternate;
+}
+
+@keyframes blink {
+  0% {
+    opacity: 1;
+  }
+  20% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+.header1 {
+  width: 750rpx;
+  border-radius: 10px;
+  text-align: center;
+  padding-bottom: 1.5vh;
+}
+
+.head {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  position: relative;
+  top: 5vh;
+}
+
+/* 页脚备案信息（含安全区） */
+.footer {
+  text-align: center;
+  padding: 3vh 0 calc(4vh + env(safe-area-inset-bottom));
+  margin-top: 2vh;
+}
+
+.footer-text {
+  display: block;
+  font-size: 26rpx;
+  color: #666;
+  line-height: 2;
+}
+
+.footer-icp {
+  display: block;
+  font-size: 22rpx;
+  color: #999;
+  line-height: 1.8;
+}

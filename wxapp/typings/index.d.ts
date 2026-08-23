@@ -167,6 +167,31 @@ interface Wx {
   getSystemInfoSync(): any;
   createSelectorQuery(): WechatMiniprogram.SelectorQuery;
   env: { USER_DATA_PATH: string };
+  request(options: {
+    url: string;
+    method?: string;
+    data?: any;
+    header?: any;
+    success?: (res: any) => void;
+    fail?: (err: any) => void;
+  }): void;
+  makePhoneCall(options: {
+    phoneNumber: string;
+    success?: () => void;
+    fail?: (err: any) => void;
+  }): void;
+  addPhoneContact(options: {
+    firstName?: string;
+    mobilePhoneNumber?: string;
+    success?: () => void;
+    fail?: (err: any) => void;
+  }): void;
+  setClipboardData(options: {
+    data: string;
+    success?: () => void;
+    fail?: (err: any) => void;
+  }): void;
+  stopPullDownRefresh(): void;
 }
 
 declare const wx: Wx;

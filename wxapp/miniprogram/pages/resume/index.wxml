@@ -1,0 +1,73 @@
+<view class="container">
+  <view class="content">
+    <!-- 简介：背景图 + 拨号 + 名字/座右铭 + 介绍 -->
+    <image class="headImg" src="{{returnData.background}}" binderror="onImgErr" data-f="background"></image>
+    <view class="header">
+      <view>
+        <image bindtap="tel" class="imgLogo" src="/pages/resume/images/mobile.png"></image>
+      </view>
+      <view class="textSty">
+        <view class="name">{{returnData.name}}</view>
+        <view class="jj">{{returnData.motto1}}</view>
+      </view>
+      <view class="xinxi">
+        <view class="xx">{{returnData.xx01}}</view>
+        <view class="xx">{{returnData.xx02}}</view>
+        <view class="xx">{{returnData.xx03}}</view>
+        <view class="xx">{{returnData.xx04}}</view>
+      </view>
+    </view>
+
+    <!-- 连线：加通讯录 / 复制微信·邮箱·地址 -->
+    <view class="section">
+      <view class="secContent">
+        <view class="e">
+          <button bindtap="addPhone" class="but">
+            <image class="telico" src="/pages/resume/images/tel.png"></image>
+            <text class="txt">{{returnData.mobile}}</text>
+            <text class="clicks">加入通讯录</text>
+          </button>
+        </view>
+        <view class="e" bindtap="copyTBL" data-text="{{returnData.weixin}}">
+          <button class="but">
+            <image class="telico" src="/pages/resume/images/weixin.png"></image>
+            <text class="txt">{{returnData.weixin}}</text>
+            <text class="clicks">点击复制</text>
+          </button>
+        </view>
+        <view class="e" bindtap="copyTBL" data-text="{{returnData.email}}">
+          <button class="but">
+            <image class="telico" src="/pages/resume/images/mail.png"></image>
+            <text class="txt">{{returnData.email}}</text>
+            <text class="clicks">点击复制</text>
+          </button>
+        </view>
+        <view class="e" bindtap="copyTBL" data-text="{{returnData.addr}}">
+          <button class="but">
+            <text class="txt2">{{returnData.addr}}</text>
+          </button>
+        </view>
+      </view>
+    </view>
+
+    <!-- 在线客服 -->
+    <view class="chat2">
+      <view class="secContent2">
+        <view class="chat2">
+          <button id="onlinebutton" openType="contact" class="but2">
+            <text class="neon-text">{{returnData.lianxian}}</text>
+          </button>
+        </view>
+      </view>
+    </view>
+
+    <!-- 头像 + 页脚备案 -->
+    <view class="header1">
+      <image class="head" src="{{returnData.src}}" binderror="onImgErr" data-f="src"></image>
+    </view>
+    <view class="footer">
+      <text class="footer-text">中国 🇨🇳 长沙</text>
+      <text class="footer-icp">湘ICP备2024050769</text>
+    </view>
+  </view>
+</view>
