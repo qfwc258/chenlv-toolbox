@@ -1,0 +1,34 @@
+{
+  "pages": [
+    "pages/word/index",
+    "pages/wechat/index",
+    "pages/pptx/index"
+  ],
+  "window": {
+    "backgroundTextStyle": "light",
+    "navigationBarBackgroundColor": "#2E5FA3",
+    "navigationBarTitleText": "陈律工具箱",
+    "navigationBarTextStyle": "white"
+  },
+  "tabBar": {
+    "color": "#999999",
+    "selectedColor": "#2E5FA3",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "black",
+    "list": [
+      {
+        "pagePath": "pages/word/index",
+        "text": "公文"
+      },
+      {
+        "pagePath": "pages/wechat/index",
+        "text": "公众号"
+      },
+      {
+        "pagePath": "pages/pptx/index",
+        "text": "PPTX"
+      }
+    ]
+  },
+  "sitemapLocation": "sitemap.json"
+}

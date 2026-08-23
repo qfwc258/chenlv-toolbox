@@ -1,0 +1,43 @@
+<view class="page">
+  <view class="card">
+    <view class="card-title">公众号文章</view>
+    <textarea
+      class="md-input"
+      value="{{md}}"
+      bindinput="onMdInput"
+      maxlength="-1"
+      placeholder="输入 Markdown：标题、段落、列表、表格、引用…"
+    />
+  </view>
+
+  <view class="card">
+    <view class="card-title">主题</view>
+    <radio-group class="chips" bindchange="onThemeChange">
+      <label class="chip" wx:for="{{themes}}" wx:key="key">
+        <radio value="{{item.key}}" checked="{{item.key === themeKey}}" color="#2E5FA3" />
+        <text>{{item.name}}</text>
+      </label>
+    </radio-group>
+  </view>
+
+  <view class="card">
+    <view class="actions">
+      <button class="btn primary" bindtap="onPreview">排版预览</button>
+      <button class="btn" bindtap="onRender">渲染图片</button>
+      <button class="btn" bindtap="onSaveAlbum" disabled="{{!img}}">保存相册</button>
+    </view>
+    <view class="tip">公众号仅支持内联样式，小程序无法富文本复制，推荐「渲染图片」后保存到相册再配图发文。</view>
+  </view>
+
+  <view class="card" wx:if="{{previewHtml}}">
+    <view class="card-title">排版预览</view>
+    <rich-text class="preview" nodes="{{previewHtml}}" />
+  </view>
+
+  <view class="card" wx:if="{{img}}">
+    <view class="card-title">图片结果</view>
+    <image class="img" src="{{img}}" mode="widthFix" show-menu-by-longpress="true" />
+  </view>
+
+  <canvas type="2d" id="wc" class="wc-canvas" style="width:{{canvasW}}px;height:{{canvasH}}px;" />
+</view>

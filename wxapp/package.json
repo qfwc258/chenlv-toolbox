@@ -1,0 +1,15 @@
+{
+  "name": "chenlv-toolbox-wxapp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "陈律工具箱 - 微信小程序版（core 层纯 TS，可在 node 下单测）",
+  "scripts": {
+    "test": "tsx test/core.test.ts && tsx test/wechat.test.ts && tsx test/pptx.test.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "fflate": "^0.8.2"
+  }
+}

@@ -1,0 +1,47 @@
+<view class="page">
+  <view class="card">
+    <view class="card-title">Markdown 演示</view>
+    <textarea
+      class="md-input"
+      value="{{md}}"
+      bindinput="onMdInput"
+      maxlength="-1"
+      placeholder="输入 Markdown：FrontMatter(title/theme) + # 标题 + 正文…"
+    />
+  </view>
+
+  <view class="card">
+    <view class="card-title">主色调</view>
+    <view class="palette">
+      <view
+        class="dot"
+        wx:for="{{palette}}"
+        wx:key="*this"
+        style="background:#{{item}};"
+        data-tone="{{item}}"
+        bindtap="onToneChange"
+      >
+        <view class="dot-check" wx:if="{{item === tone}}">✓</view>
+      </view>
+    </view>
+    <view class="tip">整套配色由主色自动派生：标题、竖条、封面、表格头、代码/引用底色。</view>
+  </view>
+
+  <view class="card">
+    <view class="actions">
+      <button class="btn primary" bindtap="onConvert">转换预览</button>
+      <button class="btn" bindtap="onExport">导出 pptx</button>
+      <button class="btn" bindtap="onShare">分享文件</button>
+    </view>
+  </view>
+
+  <view class="card" wx:if="{{slideCount > 0}}">
+    <view class="card-title">分页结果（{{slideCount}} 页）</view>
+    <view class="info" wx:for="{{pageTitles}}" wx:key="*this">
+      {{index + 1}}. {{item}}
+    </view>
+    <view class="warn" wx:if="{{overflowPages.length > 0}}">
+      第 {{overflowPages}} 页存在超长内容，请拆分后再导出。
+    </view>
+  </view>
+</view>
