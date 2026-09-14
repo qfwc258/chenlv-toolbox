@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -193,7 +195,12 @@ fun MdEditorPane(
             BasicTextField(
                 value = tfv,
                 onValueChange = onChange,
-                modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 10.dp),
+                // 垂直可滚动：键盘弹出、窗口收缩后，超出行高的正文仍可上下拉动，
+                // 被输入法遮住的文字可以滚上来（配合 Manifest 的 adjustResize）。
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
                 textStyle = TextStyle(
                     fontFamily = FontFamily.Monospace,
                     fontSize = fontSize.sp,

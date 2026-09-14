@@ -534,7 +534,7 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
             icon = { Icon(Icons.Filled.Save, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(30.dp)) },
             title = { Text("命名并导出 PPTX", fontWeight = FontWeight.Bold, fontSize = 17.sp) },
             text = {
-                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     OutlinedTextField(
                         value = fileNameInput,
                         onValueChange = { fileNameInput = it },
@@ -595,6 +595,7 @@ private fun PptxSettingsDialog(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black.copy(alpha = 0.45f))
+            .imePadding()
             .clickable(
                 onClick = onDismiss,
                 indication = null,
@@ -909,6 +910,7 @@ private fun PptxStyleDialog(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black.copy(alpha = 0.45f))
+            .imePadding()
             .clickable(
                 onClick = onDismiss,
                 indication = null,
@@ -933,6 +935,7 @@ private fun PptxStyleDialog(
             Column(
                 Modifier
                     .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
                     .padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {

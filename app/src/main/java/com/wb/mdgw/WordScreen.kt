@@ -833,7 +833,7 @@ fun WordScreen(
             icon = { Icon(dialogIcon, null, tint = MaterialTheme.colorScheme.primary) },
             title = { Text(dialogTitle, fontWeight = FontWeight.Bold, fontSize = 17.sp) },
             text = {
-                Column(Modifier.fillMaxWidth()) {
+                Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
                     OutlinedTextField(value = exportName, onValueChange = { exportName = it }, label = { Text("文件名") }, singleLine = true,
                         suffix = { Text(".$ext", fontSize = 13.sp) }, modifier = Modifier.fillMaxWidth(), textStyle = TextStyle(fontSize = 15.sp))
                     if (isCustom) {
@@ -937,7 +937,7 @@ fun WordScreen(
             icon = { Icon(Icons.Default.EditNote, null, tint = MaterialTheme.colorScheme.primary) },
             title = { Text(if (templateEdit == null) "新建模板" else "编辑模板", fontWeight = FontWeight.Bold, fontSize = 17.sp) },
             text = {
-                Column(Modifier.fillMaxWidth()) {
+                Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
                     OutlinedTextField(value = templateName, onValueChange = { templateName = it }, label = { Text("模板名称") }, singleLine = true,
                         modifier = Modifier.fillMaxWidth(), textStyle = TextStyle(fontSize = 15.sp))
                     Spacer(Modifier.height(8.dp))
@@ -977,7 +977,7 @@ fun WordScreen(
             icon = { Icon(Icons.Default.Save, null, tint = MaterialTheme.colorScheme.primary) },
             title = { Text("保存文件", fontWeight = FontWeight.Bold, fontSize = 17.sp) },
             text = {
-                Column(Modifier.fillMaxWidth()) {
+                Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
                     OutlinedTextField(value = saveName, onValueChange = { saveName = it }, label = { Text("文件名") }, singleLine = true,
                         suffix = { Text(if (isDocxSource) ".docx" else ".md", fontSize = 13.sp) }, modifier = Modifier.fillMaxWidth(), textStyle = TextStyle(fontSize = 15.sp))
                     Spacer(Modifier.height(6.dp))
@@ -1115,7 +1115,7 @@ fun WordScreen(
             onDismissRequest = { findReplaceOpen = false },
             title = { Text("全局查找替换", fontWeight = FontWeight.Bold, fontSize = 17.sp) },
             text = {
-                Column(Modifier.fillMaxWidth()) {
+                Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
                     OutlinedTextField(value = findText, onValueChange = { findText = it },
                         label = { Text("查找") }, singleLine = true, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp))
                     OutlinedTextField(value = replaceText, onValueChange = { replaceText = it },
