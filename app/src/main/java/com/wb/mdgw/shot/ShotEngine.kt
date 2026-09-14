@@ -268,13 +268,13 @@ object ShotEngine {
     fun process(
         context: Context,
         images: List<ImageRef>,
-        ratio: Double,
+        config: ShotLayout.ShotConfig,
         onProgress: (Int, Int) -> Unit = { _, _ -> }
     ): Result {
         val plan = ShotLayout.plan(
-            images.map { ShotLayout.ImageInput(it.widthPx, it.heightPx) }, ratio
+            images.map { ShotLayout.ImageInput(it.widthPx, it.heightPx) }, config
         )
-        require(plan.segments.isNotEmpty()) { "没有可切分的图片" }
+        require(plan.segments.isNotEmpty()) { "没有可排版的图片" }
         val total = plan.segments.size
 
         // ---------- docx：截图文档专用窄边距 + gridless（防行网格撑破页高） ----------
@@ -295,22 +295,27 @@ object ShotEngine {
         val pageH = 841.89f  // 29.7cm
         val margin = (ShotLayout.MARGIN_CM * 28.3465).toFloat()
         val usableW = pageW - 2 * margin
-        val colCenterX = floatArrayOf(margin + usableW / 4f, margin + 3 * usableW / 4f)
+        // 列中心 x 坐标：columns 列沿可用宽度均匀分布（单列即居中整宽）
+        val colCenterX = FloatArray(plan.cols) { c ->
+            margin + (2 * c + 1) * usableW / (2 * plan.cols)
+        }
         val imgWPt = (plan.imgWIn * 72).toFloat()
 
         val slots = ArrayList<Slot>(total)
         var yPt = margin
         var pageNo = 1
         for (row in 0 until plan.rows) {
-            val left = plan.cell(row, 0)
-            val right = plan.cell(row, 1)
-            // 行高 = 本行左右段显示高的最大值（矮段不占多余行）
-            val rowHPt = (maxOf(left?.dispHIn ?: 0.0, right?.dispHIn ?: 0.0) * 72).toFloat()
+            // 行高 = 本行各列中显示高的最大值（矮格不占多余行）
+            var rowHPt = 0f
+            for (col in 0 until plan.cols) {
+                val seg = plan.cell(row, col) ?: continue
+                rowHPt = maxOf(rowHPt, (seg.dispHIn * 72f).toFloat())
+            }
             if (rowHPt > 0f && yPt + rowHPt > pageH - margin) {
                 pageNo++
                 yPt = margin
             }
-            for (col in 0 until ShotLayout.COLS) {
+            for (col in 0 until plan.cols) {
                 val seg = plan.cell(row, col) ?: continue
                 val cx = colCenterX[col]
                 slots += Slot(
@@ -340,7 +345,7 @@ object ShotEngine {
         val pdf = PdfDocument()
         val filterPaint = Paint(Paint.FILTER_BITMAP_FLAG)
         // docx 表格网格（行 × 列 → ImageCell）
-        val cells = List(plan.rows) { arrayOfNulls<DocxWriter.ImageCell>(ShotLayout.COLS) }
+        val cells = List(plan.rows) { arrayOfNulls<DocxWriter.ImageCell>(plan.cols) }
         var done = 0
         var openPage: PdfDocument.Page? = null
         var openPageNo = 0
@@ -382,7 +387,7 @@ object ShotEngine {
                 }
             }
 
-            writer.addImageTable(ShotLayout.COLS, cells.map { it.toList() })
+            writer.addImageTable(plan.cols, cells.map { it.toList() })
             val docxBytes = writer.build("长截图文档")
 
             openPage?.let { pdf.finishPage(it) }
@@ -393,4 +398,12 @@ object ShotEngine {
             pdf.close()
         }
     }
+
+    /** 便捷转发：与旧调用签名兼容（长截图两列切分，仅传比例） */
+    fun process(
+        context: Context,
+        images: List<ImageRef>,
+        ratio: Double,
+        onProgress: (Int, Int) -> Unit = { _, _ -> }
+    ): Result = process(context, images, ShotLayout.ShotConfig(splitLongImage = true, splitRatio = ratio), onProgress)
 }

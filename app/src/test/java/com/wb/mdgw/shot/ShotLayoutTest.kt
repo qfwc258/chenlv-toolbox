@@ -162,4 +162,87 @@ class ShotLayoutTest {
         // 1080×8000 px × 0.4MB/百万px ≈ 3.3MB
         assertTrue("估算值异常: ${p.estimatedBytes}", p.estimatedBytes in 2_000_000..5_000_000)
     }
+
+    // ----------------------- 整图模式（不切分） -----------------------
+
+    @Test
+    fun wholeImageModeKeepsOneSegmentPerImage() {
+        // 关闭切分：整图作为一格，不切段
+        val cfg = ShotLayout.ShotConfig(splitLongImage = false)
+        val p = ShotLayout.plan(listOf(ShotLayout.ImageInput(1080, 2000)), cfg)
+        assertEquals(1, p.segments.size)
+        assertEquals(0, p.segments[0].yPx)
+        assertEquals(2000, p.segments[0].hPx)
+        // 显示高 = imgW × 整图纵横比
+        assertEquals(p.imgWIn * 2000.0 / 1080.0, p.segments[0].dispHIn, 1e-9)
+    }
+
+    @Test
+    fun wholeImageGridColumns() {
+        // 关闭切分 + 3 列：2 张图 → 2 段、3 列、1 行、末列空格子
+        val cfg = ShotLayout.ShotConfig(splitLongImage = false, columns = 3)
+        val p = ShotLayout.plan(List(2) { ShotLayout.ImageInput(1080, 2000) }, cfg)
+        assertEquals(3, p.cols)
+        assertEquals(2, p.segments.size)
+        assertEquals(1, p.rows)
+        assertNotNull(p.cell(0, 0))
+        assertNotNull(p.cell(0, 1))
+        assertNull(p.cell(0, 2))
+    }
+
+    @Test
+    fun wholeImageTallNotExceedingPage() {
+        // 极竖图（500×3000，aspect=6）：整图模式仍须单格不跨页
+        val cfg = ShotLayout.ShotConfig(splitLongImage = false)
+        val p = ShotLayout.plan(listOf(ShotLayout.ImageInput(500, 3000)), cfg)
+        assertEquals(1, p.segments.size)
+        assertTrue(p.segments[0].dispHIn <= ShotLayout.MAX_SEG_H_IN + 1e-9)
+    }
+
+    // ----------------------- 自定义列数 / 行数 -----------------------
+
+    @Test
+    fun customRowsMergedWithAutoLower() {
+        // 用户行数(1) 小于自动下限(2) → 取自动下限，保证全部放下
+        val cfg = ShotLayout.ShotConfig(splitLongImage = true, splitRatio = 3.6, rows = 1)
+        val p = ShotLayout.plan(listOf(ShotLayout.ImageInput(1080, 9999)), cfg) // 3 段 → 自动 2 行
+        assertEquals(3, p.segments.size)
+        assertEquals(2, p.rows)
+    }
+
+    @Test
+    fun customRowsLargerThanAutoAddsBlankRows() {
+        // 用户行数(5) 大于自动下限(1) → 实际 5 行（含空白行），不裁掉图片
+        val cfg = ShotLayout.ShotConfig(splitLongImage = true, splitRatio = 3.6, rows = 5)
+        val p = ShotLayout.plan(listOf(ShotLayout.ImageInput(1080, 2000)), cfg) // 1 段 → 自动 1 行
+        assertEquals(5, p.rows)
+        assertNotNull(p.cell(0, 0))
+        assertNull(p.cell(0, 1)) // 一行只有 1 段，右格空
+        assertNull(p.cell(4, 0)) // 第 5 行无内容（空行占位）
+    }
+
+    @Test
+    fun columnsClampedToRange() {
+        val tooMany = ShotLayout.plan(listOf(ShotLayout.ImageInput(1080, 2000)),
+            ShotLayout.ShotConfig(splitLongImage = false, columns = 99))
+        assertEquals(ShotLayout.MAX_COLS, tooMany.cols)
+        val tooFew = ShotLayout.plan(listOf(ShotLayout.ImageInput(1080, 2000)),
+            ShotLayout.ShotConfig(splitLongImage = false, columns = 0))
+        assertEquals(ShotLayout.MIN_COLS, tooFew.cols)
+    }
+
+    @Test
+    fun planColsFieldUsedForCellIndexing() {
+        // 3 列：3 张图各 3 段（共 9 段）→ 3 行；列优先填充顺序验证
+        val cfg = ShotLayout.ShotConfig(splitLongImage = true, splitRatio = 3.6, columns = 3)
+        val p = ShotLayout.plan(List(3) { ShotLayout.ImageInput(1080, 8000) }, cfg)
+        assertEquals(3, p.cols)
+        assertEquals(9, p.segments.size)
+        assertEquals(3, p.rows)
+        assertEquals(p.segments[0], p.cell(0, 0))
+        assertEquals(p.segments[2], p.cell(0, 2))
+        assertEquals(p.segments[3], p.cell(1, 0))
+        assertEquals(p.segments[8], p.cell(2, 2))
+        assertNull(p.cell(3, 0))
+    }
 }

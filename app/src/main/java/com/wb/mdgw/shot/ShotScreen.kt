@@ -85,6 +85,9 @@ fun ShotScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
     var selected by remember { mutableStateOf<List<ShotEngine.ImageRef>>(emptyList()) }
     var probing by remember { mutableStateOf(false) }
     var ratioText by remember { mutableStateOf("3.6") }
+    var splitLongImage by remember { mutableStateOf(true) }
+    var colsText by remember { mutableStateOf("2") }
+    var rowsText by remember { mutableStateOf("") } // 空 = 自动行数
 
     var busy by remember { mutableStateOf(false) }
     var doneSeg by remember { mutableStateOf(0) }
@@ -102,10 +105,22 @@ fun ShotScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
 
     /** 当前输入的切分比例；非法输入按默认 3.6 参与预估与生成 */
     val ratio: Double = ratioText.toDoubleOrNull()?.takeIf { it > 0.0 } ?: ShotLayout.DEFAULT_RATIO
+    /** 列数（1~6）；非法输入按默认 2 */
+    val columns: Int = colsText.toIntOrNull()?.takeIf { it > 0 } ?: ShotLayout.DEFAULT_COLS
+    /** 行数（可选）；空 / ≤0 = 自动（ceil(段数/列数)） */
+    val rows: Int? = rowsText.toIntOrNull()?.takeIf { it > 0 }
 
-    /** 实时布局预估（选图 / 比例变化即重算，纯计算无位图开销） */
-    val previewPlan = remember(selected, ratio) {
-        ShotLayout.plan(selected.map { ShotLayout.ImageInput(it.widthPx, it.heightPx) }, ratio)
+    /** 当前排版配置（切分开关 / 比例 / 行列） */
+    val config = ShotLayout.ShotConfig(
+        splitLongImage = splitLongImage,
+        splitRatio = ratio,
+        columns = columns,
+        rows = rows
+    )
+
+    /** 实时布局预估（选图 / 配置变化即重算，纯计算无位图开销） */
+    val previewPlan = remember(selected, config) {
+        ShotLayout.plan(selected.map { ShotLayout.ImageInput(it.widthPx, it.heightPx) }, config)
     }
 
     /** 追加图片：探测尺寸，失败剔除并提示 */
@@ -155,7 +170,7 @@ fun ShotScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
             totalSeg = 0
             runCatching {
                 withContext(Dispatchers.IO) {
-                    ShotEngine.process(context, selected, ratio) { done, total ->
+                    ShotEngine.process(context, selected, config) { done, total ->
                         scope.launch(Dispatchers.Main.immediate) {
                             doneSeg = done
                             totalSeg = total
@@ -167,7 +182,7 @@ fun ShotScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                 savedDocx = null
                 savedPdf = null
                 stage = ShotStage.DONE
-                scope.launch { snackbar.showSnackbar("✓ 切分完成，共 ${r.plan.segments.size} 段") }
+                scope.launch { snackbar.showSnackbar("✓ 排版完成，共 ${r.plan.segments.size} 张/段") }
             }.onFailure {
                 errorMessage = friendlyError(it)
                 showErrorDialog = true
@@ -191,10 +206,10 @@ fun ShotScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
             runCatching {
                 withContext(Dispatchers.IO) {
                     if (kind == "docx") {
-                        val name = "${base}_切分.docx"
+                        val name = "${base}_排版.docx"
                         FileUtils.saveToDownloads(context, name, r.docxBytes, DOCX_MIME) to name
                     } else {
-                        val name = "${base}_切分.pdf"
+                        val name = "${base}_排版.pdf"
                         FileUtils.saveToDownloads(context, name, r.pdfBytes, FileUtils.PDF_MIME) to name
                     }
                 }
@@ -242,7 +257,7 @@ fun ShotScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                     )
                     Spacer(Modifier.height(18.dp))
                     Text(
-                        if (probing) "正在读取截图…" else "正在切分并生成文档…",
+                        if (probing) "正在读取截图…" else "正在生成文档…",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurface
@@ -260,7 +275,7 @@ fun ShotScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                         )
                         Spacer(Modifier.height(8.dp))
                         Text(
-                            "已切分 $doneSeg / $totalSeg 段（${(progress * 100).toInt()}%）",
+                            "已处理 $doneSeg / $totalSeg 段（${(progress * 100).toInt()}%）",
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -312,21 +327,21 @@ fun ShotScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
         visible = showDocxResult,
         onDismiss = { showDocxResult = false },
         title = "Word 文档已保存",
-        fileName = "${FileUtils.baseName(selected.firstOrNull()?.displayName ?: "").ifBlank { "长截图" }}_切分.docx",
+        fileName = "${FileUtils.baseName(selected.firstOrNull()?.displayName ?: "").ifBlank { "长截图" }}_排版.docx",
         savePath = savedDocx?.displayPath ?: "",
         fileIcon = Icons.Default.Description,
-        onOpen = { openOrShare(savedDocx, "切分文档", DOCX_MIME, open = true) },
-        onShare = { openOrShare(savedDocx, "切分文档", DOCX_MIME, open = false) }
+        onOpen = { openOrShare(savedDocx, "排版文档", DOCX_MIME, open = true) },
+        onShare = { openOrShare(savedDocx, "排版文档", DOCX_MIME, open = false) }
     )
     ExportResultDialog(
         visible = showPdfResult,
         onDismiss = { showPdfResult = false },
         title = "PDF 文档已保存",
-        fileName = "${FileUtils.baseName(selected.firstOrNull()?.displayName ?: "").ifBlank { "长截图" }}_切分.pdf",
+        fileName = "${FileUtils.baseName(selected.firstOrNull()?.displayName ?: "").ifBlank { "长截图" }}_排版.pdf",
         savePath = savedPdf?.displayPath ?: "",
         fileIcon = Icons.Default.PictureAsPdf,
-        onOpen = { openOrShare(savedPdf, "切分文档", FileUtils.PDF_MIME, open = true) },
-        onShare = { openOrShare(savedPdf, "切分文档", FileUtils.PDF_MIME, open = false) }
+        onOpen = { openOrShare(savedPdf, "排版文档", FileUtils.PDF_MIME, open = true) },
+        onShare = { openOrShare(savedPdf, "排版文档", FileUtils.PDF_MIME, open = false) }
     )
 
     Column(
@@ -387,19 +402,66 @@ fun ShotScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
         if (selected.isNotEmpty()) {
             ElevatedCard(shape = RoundedCornerShape(16.dp)) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    StepTitle(2, "切分比例")
+                    StepTitle(2, "排版设置")
+
+                    // 切分长图开关：开=按高度比例切多段；关=整图直接入格（普通照片网格）
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.weight(1f)) {
+                            Text("切分长图", fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                            Text(
+                                "开启：按高度比例切成多段（适合长截图）；关闭：整图直接排版（适合照片网格）",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(checked = splitLongImage, onCheckedChange = { splitLongImage = it })
+                    }
+
+                    // 切分比例（仅切分模式可见）
+                    if (splitLongImage) {
+                        OutlinedTextField(
+                            value = ratioText,
+                            onValueChange = { ratioText = it.filter { c -> c.isDigit() || c == '.' }.take(5) },
+                            label = { Text("每段高度 = 图宽 × 比例") },
+                            supportingText = { Text("范围 ${ShotLayout.MIN_RATIO.toInt()} ~ ${ShotLayout.MAX_RATIO.toInt()}，默认 ${ShotLayout.DEFAULT_RATIO}；比例越大每段越长") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        val segHCm = previewPlan.imgWIn * ratio * 2.54
+                        Text(
+                            "每段显示高 ≈ ${"%.1f".format(segHCm)}cm（自动适配 A4 页面，单段不跨页）",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    // 列数
                     OutlinedTextField(
-                        value = ratioText,
-                        onValueChange = { ratioText = it.filter { c -> c.isDigit() || c == '.' }.take(5) },
-                        label = { Text("每段高度 = 图宽 × 比例") },
-                        supportingText = { Text("范围 ${ShotLayout.MIN_RATIO.toInt()} ~ ${ShotLayout.MAX_RATIO.toInt()}，默认 ${ShotLayout.DEFAULT_RATIO}；比例越大每段越长") },
+                        value = colsText,
+                        onValueChange = { colsText = it.filter { c -> c.isDigit() }.take(1) },
+                        label = { Text("列数") },
+                        supportingText = { Text("每行图片数 ${ShotLayout.MIN_COLS} ~ ${ShotLayout.MAX_COLS}，默认 ${ShotLayout.DEFAULT_COLS}") },
                         singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.fillMaxWidth()
                     )
-                    val segHCm = previewPlan.imgWIn * ratio * 2.54
+
+                    // 行数（可选）
+                    OutlinedTextField(
+                        value = rowsText,
+                        onValueChange = { rowsText = it.filter { c -> c.isDigit() }.take(2) },
+                        label = { Text("行数（可选，留空 = 自动）") },
+                        supportingText = { Text("自动时按图片数均分；手动设定后实际行数取较大值以保证全部放下") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    // 实时预估
+                    val modeHint = if (splitLongImage) "（${previewPlan.segments.size} 段）" else ""
                     Text(
-                        "每段显示高 ≈ ${"%.1f".format(segHCm)}cm（自动适配 A4 页面，单段不跨页）· 两列表格排布",
+                        "共 ${selected.size} 张$modeHint · ${previewPlan.cols} 列 × ${previewPlan.rows} 行 · 约 ${previewPlan.pages} 页",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -418,9 +480,9 @@ fun ShotScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                     Spacer(Modifier.width(10.dp))
                     Text("处理中…")
                 } else {
-                    Icon(Icons.Default.ContentCut, contentDescription = null)
+                    Icon(Icons.Default.Image, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
-                    Text("开始切分并生成", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text("开始生成", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -432,7 +494,7 @@ fun ShotScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF2E7D32))
                         Spacer(Modifier.width(8.dp))
-                        Text("✓ 切分完成（${result!!.plan.segments.size} 段 · ${result!!.plan.pages} 页）", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        Text("✓ 排版完成（${result!!.plan.segments.size} 张/段 · ${result!!.plan.cols} 列 × ${result!!.plan.rows} 行 · ${result!!.plan.pages} 页）", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         OutlinedButton(
@@ -474,12 +536,14 @@ fun ShotScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                     Text("功能说明", fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(2.dp))
                     Text(
-                        "把手机长截图按「每段高度 = 图宽 × 比例」切分为多段，以两列表格排入 A4 文档，" +
+                        "把长截图切分、或把普通照片整图，按你设定的「列数 × 行数」网格排入 A4 文档，" +
                             "可导出 Word 与 PDF 两种格式。\n\n" +
-                            "· 支持一次选择多张长截图，按选择顺序合并进同一文档\n" +
-                            "· 比例可调（1.0 ~ 5.0），段高自动适配页面、单段不跨页\n" +
-                            "· 相册「分享」长截图到本应用可直达此页\n" +
-                            "· 纯本地处理，截图不会上传",
+                            "· 长截图：开启「切分长图」，按高度比例切成多段自动排版（比例 1.0 ~ 5.0）\n" +
+                            "· 普通照片：关闭「切分长图」，整图直接按网格摆放（如 2×2、3×3 归档）\n" +
+                            "· 列数（1 ~ 6）与行数（可选）均可自定义，实时预览行列与页数\n" +
+                            "· 支持一次选择多张，按选择顺序合并进同一文档\n" +
+                            "· 相册「分享」图片到本应用可直达此页\n" +
+                            "· 纯本地处理，图片不会上传",
                         fontSize = 13.sp,
                         lineHeight = 20.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
