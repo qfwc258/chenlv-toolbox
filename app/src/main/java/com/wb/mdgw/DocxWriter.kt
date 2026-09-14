@@ -4,6 +4,7 @@ import java.io.ByteArrayOutputStream
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import kotlin.math.roundToInt
+import kotlin.math.roundToLong
 import kotlinx.serialization.Serializable
 
 /**
@@ -182,6 +183,9 @@ data class PageNumStyle(
     val footerDistanceCm: Double = 1.75
 )
 
+/** 英寸 -> EMU（English Metric Unit，1 英寸 = 914400，DrawingML 图片尺寸单位） */
+fun inchToEmu(inch: Double): Long = (inch * 914400.0).roundToLong()
+
 class DocxWriter(
     private val page: PageSetup = PageSetup(),
     private val defaultFont: String = "仿宋_GB2312",
@@ -190,24 +194,80 @@ class DocxWriter(
     private val defaultLineSpacingPt: Double = 28.0,
     private val pageNumber: Boolean = false,
     /** 页码样式；与 PDF 导出共用，二者必须取自同一个对象 */
-    private val pageNumStyle: PageNumStyle = PageNumStyle()
+    private val pageNumStyle: PageNumStyle = PageNumStyle(),
+    /**
+     * 节级行网格是否退化为 default（不对齐行网格）。默认 false 维持公文行为不变；
+     * 截图文档必须传 true：docGrid type="lines" 会把行高向上取整到 linePitch=312 缇
+     * （15.6 磅）的整数倍，内嵌大图的行可能被撑破页高。
+     */
+    private val gridless: Boolean = false
 ) {
-    private val _blocks = mutableListOf<Block>()
+    /**
+     * 文档流条目。图片表格是纯导出形态（字节大、无序列化价值），不进 [Block]
+     * 模型——[blocks] 视图只暴露普通块，与历史行为完全一致（GovDoc/草稿/预览
+     * 等消费者看到的列表内容与顺序不变）。
+     */
+    private sealed interface FlowItem {
+        class Plain(val block: Block) : FlowItem
+        class ImageTable(val spec: ImageTableSpec) : FlowItem
+    }
 
-    /** 已收集的块级元素（供预览 / PDF 等其它消费者复用同一份模型） */
-    val blocks: List<Block> get() = _blocks
+    /** 已登记的图片（顺序即 rIdImg 序号） */
+    private class ImageData(val bytes: ByteArray, val ext: String)
+
+    /** 图片网格表格的内部描述 */
+    private class ImageTableSpec(
+        val cols: Int,
+        val rows: List<List<ImageCell?>>
+    )
+
+    private val _flow = mutableListOf<FlowItem>()
+    private val _images = mutableListOf<ImageData>()
+
+    /** 已收集的块级元素（供预览 / PDF 等其它消费者复用同一份模型；不含图片表格） */
+    val blocks: List<Block> get() = _flow.filterIsInstance<FlowItem.Plain>().map { it.block }
 
     fun addParagraph(runs: List<TextRun>, props: ParaProps) {
-        _blocks += Block.Para(runs, props)
+        _flow += FlowItem.Plain(Block.Para(runs, props))
     }
 
     /** 添加空段落（用于标题后的空行） */
     fun addEmptyParagraph(props: ParaProps = ParaProps(lineSpacingPt = defaultLineSpacingPt)) {
-        _blocks += Block.Para(emptyList(), props)
+        _flow += FlowItem.Plain(Block.Para(emptyList(), props))
     }
 
     fun addTable(rows: List<List<List<TextRun>>>) {
-        if (rows.isNotEmpty()) _blocks += Block.Table(rows)
+        if (rows.isNotEmpty()) _flow += FlowItem.Plain(Block.Table(rows))
+    }
+
+    /**
+     * 登记一张图片（写入 word/media/），返回图片序号（1 起，供 [ImageCell.imageSeq]
+     * 引用）。与普通块按登记顺序混排输出由 [addImageTable] 决定，登记本身不占文档流。
+     *
+     * @param ext 扩展名（"png" / "jpeg"），决定 media 命名与 [Content_Types] 声明
+     */
+    fun addImage(bytes: ByteArray, ext: String): Int {
+        val normalized = if (ext.equals("png", true)) "png" else "jpeg"
+        _images += ImageData(bytes, normalized)
+        return _images.size
+    }
+
+    /**
+     * 图片表格的格子。
+     * @param imageSeq [addImage] 返回的序号（1 起）；null 表示空格（末行不满时占位）
+     * @param widthEmu / heightEmu 该图的显示尺寸（EMU）；各段独立计算，末尾矮段不拉伸
+     */
+    data class ImageCell(val imageSeq: Int?, val widthEmu: Long, val heightEmu: Long)
+
+    /**
+     * 追加一个无边框图片网格（典型用法：长截图切分后两列排布）。与普通块按调用
+     * 顺序混排输出。单元格零边距、图片段落行距 auto、清零首行缩进——这三点是
+     * 图片在 Word 中完整显示的关键（docDefaults 的 exact 行距 + 首行缩进会把
+     * 图片裁成一条缝）。
+     */
+    fun addImageTable(cols: Int, rows: List<List<ImageCell?>>) {
+        if (rows.isEmpty() || cols <= 0) return
+        _flow += FlowItem.ImageTable(ImageTableSpec(cols, rows))
     }
 
     // ---------- XML 片段构造 ----------
@@ -382,6 +442,124 @@ class DocxWriter(
         return sb.toString()
     }
 
+    /**
+     * 图片网格表格 XML（独立于 [tableXml] 的代码路径）。
+     *
+     * 设计要点（均为了截图文档「视觉无缝拼接 + 图片完整显示」）：
+     * - 六边框线全 none、单元格四边距 0：段与段之间不产生可见缝隙；
+     * - 图片段落显式 `line=240 lineRule=auto`：覆盖 docDefaults 的 exact 行距
+     *   （否则图片行被压成一条缝、图片被裁剪）；
+     * - 显式 `ind firstLine=0`：覆盖 docDefaults 的 32 磅首行缩进；
+     * - `wp:inline`（非 anchor）+ `noChangeAspect`：WPS / Word / LibreOffice
+     *   三端渲染最稳的嵌入方式；
+     * - 空格子输出空段落（OOXML 要求 w:tc 至少含一个块级元素）。
+     */
+    private fun imageTableXml(spec: ImageTableSpec): String {
+        val colCount = spec.cols
+        // 可用正文宽度（缇），与 tableXml 同源
+        val usable = cmToTwips(page.widthCm - page.leftCm - page.rightCm)
+        val colW = usable / colCount
+        var docPrId = 0 // wp:docPr 的 id 必须全文档唯一，从 1 递增
+
+        val sb = StringBuilder()
+        sb.append("<w:tbl><w:tblPr>")
+        sb.append("<w:tblStyle w:val=\"TableGrid\"/>")
+        sb.append("<w:tblW w:w=\"").append(usable).append("\" w:type=\"dxa\"/>")
+        sb.append("<w:jc w:val=\"center\"/>")
+        // 无边框：截图分段之间视觉上应无缝衔接
+        sb.append("<w:tblBorders>")
+        for (edge in listOf("top", "left", "bottom", "right", "insideH", "insideV")) {
+            sb.append("<w:").append(edge).append(" w:val=\"none\" w:sz=\"0\" w:space=\"0\" w:color=\"auto\"/>")
+        }
+        sb.append("</w:tblBorders>")
+        sb.append("<w:tblLayout w:type=\"fixed\"/>")
+        // 单元格边距压 0，图片贴满列宽
+        sb.append("<w:tblCellMar>")
+        for (edge in listOf("top", "left", "bottom", "right")) {
+            sb.append("<w:").append(edge).append(" w:w=\"0\" w:type=\"dxa\"/>")
+        }
+        sb.append("</w:tblCellMar>")
+        sb.append("</w:tblPr>")
+
+        sb.append("<w:tblGrid>")
+        repeat(colCount) { sb.append("<w:gridCol w:w=\"").append(colW).append("\"/>") }
+        sb.append("</w:tblGrid>")
+
+        // 图片段落 pPr：行距 auto + 零缩进 + 居中（空格子复用同一份）
+        fun cellParaPPr(): String = "<w:pPr>" +
+            "<w:spacing w:before=\"0\" w:after=\"0\" w:line=\"240\" w:lineRule=\"auto\"/>" +
+            "<w:ind w:firstLine=\"0\"/>" +
+            "<w:jc w:val=\"center\"/>" +
+            "</w:pPr>"
+
+        for (row in spec.rows) {
+            sb.append("<w:tr>")
+            for (c in 0 until colCount) {
+                val cell = row.getOrNull(c)
+                sb.append("<w:tc><w:tcPr>")
+                sb.append("<w:tcW w:w=\"").append(colW).append("\" w:type=\"dxa\"/>")
+                sb.append("<w:vAlign w:val=\"top\"/>")
+                sb.append("<w:tcMar>")
+                for (edge in listOf("top", "left", "bottom", "right")) {
+                    sb.append("<w:").append(edge).append(" w:w=\"0\" w:type=\"dxa\"/>")
+                }
+                sb.append("</w:tcMar>")
+                sb.append("</w:tcPr>")
+                if (cell?.imageSeq != null && cell.imageSeq in 1.._images.size) {
+                    docPrId++
+                    sb.append("<w:p>").append(cellParaPPr())
+                    sb.append(drawingXml(cell, docPrId))
+                    sb.append("</w:p>")
+                } else {
+                    // 空格子：OOXML 要求 w:tc 至少含一个块级元素
+                    sb.append("<w:p>").append(cellParaPPr()).append("</w:p>")
+                }
+                sb.append("</w:tc>")
+            }
+            sb.append("</w:tr>")
+        }
+        sb.append("</w:tbl>")
+        // 表格后空段落，防止与后续相邻表格合并（与 tableXml 同一先例）
+        sb.append("<w:p>").append(cellParaPPr()).append("</w:p>")
+        return sb.toString()
+    }
+
+    /** 单张内嵌图片的 w:drawing XML（wp:inline + a:blip 引用 word/media 关系） */
+    private fun drawingXml(cell: ImageCell, docPrId: Int): String {
+        val img = _images[cell.imageSeq!! - 1]
+        val n = cell.imageSeq
+        val cx = cell.widthEmu
+        val cy = cell.heightEmu
+        return "<w:r><w:drawing>" +
+            "<wp:inline distT=\"0\" distB=\"0\" distL=\"0\" distR=\"0\">" +
+            "<wp:extent cx=\"$cx\" cy=\"$cy\"/>" +
+            "<wp:effectExtent l=\"0\" t=\"0\" r=\"0\" b=\"0\"/>" +
+            "<wp:docPr id=\"$docPrId\" name=\"图片 $n\"/>" +
+            "<wp:cNvGraphicFramePr>" +
+            "<a:graphicFrameLocks xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" noChangeAspect=\"1\"/>" +
+            "</wp:cNvGraphicFramePr>" +
+            "<a:graphic>" +
+            "<a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/picture\">" +
+            "<pic:pic>" +
+            "<pic:nvPicPr>" +
+            "<pic:cNvPr id=\"$n\" name=\"image$n.${img.ext}\"/>" +
+            "<pic:cNvPicPr/>" +
+            "</pic:nvPicPr>" +
+            "<pic:blipFill>" +
+            "<a:blip r:embed=\"rIdImg$n\"/>" +
+            "<a:stretch><a:fillRect/></a:stretch>" +
+            "</pic:blipFill>" +
+            "<pic:spPr>" +
+            "<a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"$cx\" cy=\"$cy\"/></a:xfrm>" +
+            "<a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom>" +
+            "</pic:spPr>" +
+            "</pic:pic>" +
+            "</a:graphicData>" +
+            "</a:graphic>" +
+            "</wp:inline>" +
+            "</w:drawing></w:r>"
+    }
+
     private fun sectPrXml(): String {
         val sb = StringBuilder()
         sb.append("<w:sectPr>")
@@ -397,7 +575,13 @@ class DocxWriter(
             .append(cmToTwips(pageNumStyle.footerDistanceCm))
             .append("\" w:gutter=\"0\"/>")
         sb.append("<w:cols w:space=\"425\"/>")
-        sb.append("<w:docGrid w:type=\"lines\" w:linePitch=\"312\"/>")
+        // gridless：去掉 type="lines"（不对齐行网格），避免行高被取整到 linePitch 整数倍
+        // 而撑破内嵌大图；默认 false 时维持公文原有的行网格行为
+        if (gridless) {
+            sb.append("<w:docGrid w:linePitch=\"312\"/>")
+        } else {
+            sb.append("<w:docGrid w:type=\"lines\" w:linePitch=\"312\"/>")
+        }
         if (pageNumber) {
             // 引用页脚部件（rId 须与 document.xml.rels 中一致）
             sb.append("<w:footerReference w:type=\"default\" r:id=\"rIdFtr\"/>")
@@ -410,12 +594,22 @@ class DocxWriter(
         val sb = StringBuilder(1 shl 16)
         sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n")
         sb.append("<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" ")
-        sb.append("xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">")
+        sb.append("xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"")
+        // drawing 命名空间仅在实际包含图片时追加，保证无图片文档的输出与历史版本逐字节一致
+        if (_images.isNotEmpty()) {
+            sb.append(" xmlns:wp=\"http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing\"")
+            sb.append(" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\"")
+            sb.append(" xmlns:pic=\"http://schemas.openxmlformats.org/drawingml/2006/picture\"")
+        }
+        sb.append(">")
         sb.append("<w:body>")
-        for (b in _blocks) {
-            when (b) {
-                is Block.Para -> sb.append(paraXml(b))
-                is Block.Table -> sb.append(tableXml(b))
+        for (item in _flow) {
+            when (item) {
+                is FlowItem.Plain -> when (val b = item.block) {
+                    is Block.Para -> sb.append(paraXml(b))
+                    is Block.Table -> sb.append(tableXml(b))
+                }
+                is FlowItem.ImageTable -> sb.append(imageTableXml(item.spec))
             }
         }
         sb.append(sectPrXml())
@@ -464,8 +658,13 @@ class DocxWriter(
         append("""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
 <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-<Default Extension="xml" ContentType="application/xml"/>
-<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>""")
+        // 图片 MIME 声明：按实际用到的扩展名追加（无图片文档零变化）
+        for (ext in _images.map { it.ext }.toSortedSet()) {
+            val mime = if (ext == "png") "image/png" else "image/jpeg"
+            append("<Default Extension=\"$ext\" ContentType=\"$mime\"/>")
+        }
+        append("""<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
 <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>""")
         if (pageNumber) {
             append("""<Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>""")
@@ -488,6 +687,10 @@ class DocxWriter(
 <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>""")
         if (pageNumber) {
             append("""<Relationship Id="rIdFtr" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>""")
+        }
+        // 图片关系：Id 与 drawingXml 的 r:embed 一一对应
+        _images.forEachIndexed { i, img ->
+            append("<Relationship Id=\"rIdImg${i + 1}\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"media/image${i + 1}.${img.ext}\"/>")
         }
         append("</Relationships>")
     }
@@ -548,6 +751,12 @@ $pageField
                 zip.write(content.toByteArray(Charsets.UTF_8))
                 zip.closeEntry()
             }
+            // 二进制部件（图片）：媒体本身已压缩，直接存储写入
+            fun put(name: String, content: ByteArray) {
+                zip.putNextEntry(ZipEntry(name))
+                zip.write(content)
+                zip.closeEntry()
+            }
             put("[Content_Types].xml", contentTypesXml())
             put("_rels/.rels", rootRelsXml())
             put("docProps/core.xml", corePropsXml(title))
@@ -556,6 +765,9 @@ $pageField
             put("word/styles.xml", stylesXml())
             if (pageNumber) put("word/footer1.xml", footerXml())
             put("word/document.xml", documentXml())
+            _images.forEachIndexed { i, img ->
+                put("word/media/image${i + 1}.${img.ext}", img.bytes)
+            }
         }
         return bos.toByteArray()
     }

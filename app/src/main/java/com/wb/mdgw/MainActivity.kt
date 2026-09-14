@@ -27,6 +27,7 @@ import androidx.core.view.WindowCompat
 import com.wb.mdgw.BuildConfig
 import com.wb.mdgw.wechat.WeChatScreen
 import com.wb.mdgw.pptx.MdPptxScreen
+import com.wb.mdgw.shot.ShotScreen
 
 class MainActivity : ComponentActivity() {
 
@@ -75,7 +76,7 @@ fun MdGwTheme(darkTheme: Boolean = false, content: @Composable () -> Unit) {
     MaterialTheme(colorScheme = colors, content = content)
 }
 
-private enum class DocMode { WORD, PDF, WECHAT, PPTX, SETTINGS }
+private enum class DocMode { WORD, PDF, WECHAT, PPTX, SHOT, SETTINGS }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -86,7 +87,11 @@ fun AppScreen(initialUri: Uri? = null) {
         val detected = remember(initialUri) {
             if (initialUri != null) {
                 val name = FileUtils.displayName(context, initialUri).lowercase()
+                val mime = runCatching { context.contentResolver.getType(initialUri) }.getOrNull()
                 when {
+                    // 长截图：mime 或扩展名识别，直达截图切分 Tab（分享入口 SEND image/*）
+                    mime?.startsWith("image/") == true -> DocMode.SHOT
+                    name.endsWith(".png") || name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".webp") -> DocMode.SHOT
                     name.endsWith(".pdf") || initialUri.toString().contains("pdf", true) -> DocMode.PDF
                     name.endsWith(".docx") || name.endsWith(".doc") -> DocMode.WORD
                     else -> DocMode.WORD
@@ -128,6 +133,12 @@ fun AppScreen(initialUri: Uri? = null) {
                     onClick = { mode = DocMode.PPTX },
                     icon = { Icon(Icons.Default.Slideshow, contentDescription = null) },
                     label = { Text("PPTX", fontSize = 11.sp, maxLines = 1, softWrap = false) }
+                )
+                NavigationBarItem(
+                    selected = mode == DocMode.SHOT,
+                    onClick = { mode = DocMode.SHOT },
+                    icon = { Icon(Icons.Default.Screenshot, contentDescription = null) },
+                    label = { Text("截图", fontSize = 11.sp, maxLines = 1, softWrap = false) }
                 )
                 NavigationBarItem(
                     selected = mode == DocMode.SETTINGS,
@@ -172,6 +183,15 @@ fun AppScreen(initialUri: Uri? = null) {
                 enter = fadeIn(), exit = fadeOut()
             ) {
                 MdPptxScreen(snackbar = snackbar)
+            }
+            androidx.compose.animation.AnimatedVisibility(
+                visible = mode == DocMode.SHOT,
+                enter = fadeIn(), exit = fadeOut()
+            ) {
+                ShotScreen(
+                    snackbar = snackbar,
+                    initialUri = initialUri.takeIf { detected == DocMode.SHOT }
+                )
             }
             androidx.compose.animation.AnimatedVisibility(
                 visible = mode == DocMode.SETTINGS,

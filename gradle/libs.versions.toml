@@ -13,6 +13,7 @@ coreKtx = "1.12.0"
 lifecycle = "2.7.0"
 activityCompose = "1.8.2"
 documentFile = "1.0.1"
+exifInterface = "1.3.7"
 pdfbox = "2.0.27.0"
 junit = "4.13.2"
 serialization = "1.6.3"
@@ -24,6 +25,8 @@ core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx"
 lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycle" }
 activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
 documentfile = { group = "androidx.documentfile", name = "documentfile", version.ref = "documentFile" }
+# 长截图切分：读取相册照片的 EXIF 旋转（截图通常无旋转，此为照片兜底）
+exifinterface = { group = "androidx.exifinterface", name = "exifinterface", version.ref = "exifInterface" }
 
 # Compose（BOM 管控版本，不单独指定）
 compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }

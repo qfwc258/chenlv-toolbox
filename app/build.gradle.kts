@@ -120,6 +120,7 @@ dependencies {
     implementation(libs.lifecycle.runtime.ktx)
     implementation(libs.activity.compose)
     implementation(libs.documentfile)
+    implementation(libs.exifinterface)
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)

@@ -54,6 +54,14 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="application/pdf" />
             </intent-filter>
+
+            <!-- 支持从相册 / 截图工具「分享」长截图进来，直达截图切分 Tab。
+                 不加 VIEW image/*：会与系统相册竞争「打开方式」默认应用，弊大于利。 -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
         </activity>
 
         <provider
