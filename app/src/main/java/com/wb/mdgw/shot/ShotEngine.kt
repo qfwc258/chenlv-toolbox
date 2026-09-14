@@ -6,12 +6,15 @@ import android.graphics.BitmapFactory
 import android.graphics.BitmapRegionDecoder
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ImageDecoder
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.pdf.PdfDocument
 import android.net.Uri
+import android.os.Build
+import android.util.Log
 import androidx.exifinterface.media.ExifInterface
 import com.wb.mdgw.DocxWriter
 import com.wb.mdgw.FileUtils
@@ -34,6 +37,8 @@ import java.io.ByteArrayOutputStream
  * （android.graphics.pdf.PdfDocument），两者**行优先顺序一致**，阅读顺序相同。
  */
 object ShotEngine {
+
+    private const val TAG = "ShotEngine"
 
     /** 一张已探测的长截图。widthPx/heightPx 为**显示坐标系**尺寸（EXIF 已换算） */
     data class ImageRef(
@@ -63,20 +68,44 @@ object ShotEngine {
     )
 
     /**
-     * 探测图片尺寸（不分配像素内存）。无法解码（HEIF 特例/GIF/损坏文件）返回 null，
-     * 由 UI 层剔除并提示。
+     * 探测图片尺寸（尽量不分配像素内存）。
+     *
+     * 优先用 [BitmapFactory] 读 bounds；若失败（HEIF/AVIF/特殊 WebP / 损坏文件），
+     * 在 Android P+ 上用 [ImageDecoder] 读头信息再试一次。仍失败返回 null，由 UI 层剔除。
      */
     fun probe(context: Context, uri: Uri): ImageRef? = runCatching {
+        var width = 0
+        var height = 0
+
+        // 1) BitmapFactory（大部分 PNG/JPG/WebP 直接过）
         val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         context.contentResolver.openInputStream(uri)?.use {
             BitmapFactory.decodeStream(it, null, opts)
-        } ?: return null
-        if (opts.outWidth <= 0 || opts.outHeight <= 0) return null
+        }
+        if (opts.outWidth > 0 && opts.outHeight > 0) {
+            width = opts.outWidth
+            height = opts.outHeight
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            // 2) ImageDecoder 读头（支持 HEIF、AVIF 等 BitmapFactory 读不出的格式）
+            // 用 1×1 crop + 大 sample 避免真实分配像素
+            val source = ImageDecoder.createSource(context.contentResolver, uri)
+            ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+                width = info.size.width
+                height = info.size.height
+                decoder.setCrop(Rect(0, 0, 1, 1))
+                decoder.setTargetSampleSize(8)
+            }
+        }
+
+        if (width <= 0 || height <= 0) {
+            Log.w(TAG, "probe 无法读取图片尺寸: ${FileUtils.displayName(context, uri)}")
+            return null
+        }
 
         val rotation = readRotation(context, uri)
         // 显示坐标系宽高：90/270 时互换
-        val w = if (rotation == 90 || rotation == 270) opts.outHeight else opts.outWidth
-        val h = if (rotation == 90 || rotation == 270) opts.outWidth else opts.outHeight
+        val w = if (rotation == 90 || rotation == 270) height else width
+        val h = if (rotation == 90 || rotation == 270) width else height
 
         ImageRef(
             uri = uri,
@@ -84,6 +113,8 @@ object ShotEngine {
             widthPx = w,
             heightPx = h
         )
+    }.onFailure {
+        Log.w(TAG, "probe 失败: ${FileUtils.displayName(context, uri)}", it)
     }.getOrNull()
 
     /** 读取 EXIF 旋转角，归一为 0/90/180/270；读取失败按无旋转处理 */
@@ -124,6 +155,103 @@ object ShotEngine {
         if (out != bmp) bmp.recycle()
         return out
     }
+
+    /** 兜底采样时的最大目标边长（px）：1440 足够满足 A4 两列打印质量，同时控内存 */
+    private const val FALLBACK_MAX_DIM = 1440
+
+    /**
+     * 区域解码（带多重降级）。
+     *
+     * 1. [BitmapRegionDecoder]：首选，逐段解码不载全图；
+     * 2. [ImageDecoder]（API 28+）：支持 HEIF/AVIF/特殊 WebP 等；
+     * 3. [BitmapFactory] 整图采样 + 裁剪：最后兜底。
+     *
+     * @return null 表示该段（进而该图）确实无法解码
+     */
+    @Suppress("DEPRECATION")
+    private fun decodeSegment(
+        context: Context,
+        ref: ImageRef,
+        seg: ShotLayout.Segment,
+        rotation: Int
+    ): Bitmap? {
+        val storageH = if (rotation == 90 || rotation == 270) ref.widthPx else ref.heightPx
+        val region = mapRegion(seg, ref.heightPx, storageH, rotation)
+
+        // 1) BitmapRegionDecoder（首选）
+        context.contentResolver.openInputStream(ref.uri)?.use { ins ->
+            val decoder = runCatching { BitmapRegionDecoder.newInstance(ins, false) }.getOrNull()
+            if (decoder != null) {
+                return try {
+                    rotateIfNeeded(decoder.decodeRegion(region, BitmapFactory.Options()), rotation)
+                } catch (e: Exception) {
+                    Log.w(TAG, "BitmapRegionDecoder 失败: ${ref.displayName}", e)
+                    null
+                } finally {
+                    decoder.recycle()
+                }
+            }
+        }
+
+        // 2) ImageDecoder（API 28+，对 HEIF/AVIF/特殊 WebP 更友好）
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            runCatching {
+                val source = ImageDecoder.createSource(context.contentResolver, ref.uri)
+                val bmp = ImageDecoder.decodeBitmap(source) { decoder, _, _ ->
+                    decoder.setCrop(region)
+                    // 限制采样：避免整图按原分辨率分配
+                    decoder.setTargetSampleSize(
+                        Integer.highestOneBit((region.width() / FALLBACK_MAX_DIM).coerceAtLeast(1))
+                    )
+                }
+                return rotateIfNeeded(bmp, rotation)
+            }.onFailure {
+                Log.w(TAG, "ImageDecoder 失败: ${ref.displayName}", it)
+            }
+        }
+
+        // 3) 整图采样 + 裁剪（最后兜底）
+        return decodeSegmentByFullBitmap(context, ref, region, rotation)
+    }
+
+    /** 用 BitmapFactory 先解码整图（采样控内存），再裁剪出目标区域 */
+    private fun decodeSegmentByFullBitmap(
+        context: Context,
+        ref: ImageRef,
+        region: Rect,
+        rotation: Int
+    ): Bitmap? = runCatching {
+        val storageW = if (rotation == 90 || rotation == 270) ref.heightPx else ref.widthPx
+        val storageH = if (rotation == 90 || rotation == 270) ref.widthPx else ref.heightPx
+        val maxDim = maxOf(storageW, storageH)
+        val sample = Integer.highestOneBit((maxDim / FALLBACK_MAX_DIM).coerceAtLeast(1))
+
+        val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+        context.contentResolver.openInputStream(ref.uri)?.use { ins ->
+            val full = BitmapFactory.decodeStream(ins, null, opts)
+                ?: return@runCatching null
+            val scaled = Rect(
+                region.left / sample,
+                region.top / sample,
+                region.right / sample,
+                region.bottom / sample
+            )
+            // 边界保护（采样后坐标可能因整除略有偏差）
+            scaled.left = scaled.left.coerceIn(0, full.width)
+            scaled.top = scaled.top.coerceIn(0, full.height)
+            scaled.right = scaled.right.coerceIn(scaled.left, full.width)
+            scaled.bottom = scaled.bottom.coerceIn(scaled.top, full.height)
+            if (scaled.width() <= 0 || scaled.height() <= 0) {
+                full.recycle()
+                return@runCatching null
+            }
+            val cropped = Bitmap.createBitmap(full, scaled.left, scaled.top, scaled.width(), scaled.height())
+            if (cropped != full) full.recycle()
+            rotateIfNeeded(cropped, rotation)
+        }
+    }.onFailure {
+        Log.w(TAG, "整图采样解码失败: ${ref.displayName}", it)
+    }.getOrNull()
 
     /**
      * 全流程：切分 + 组装 docx（两列表格）+ 绘制 PDF（双列排布）。
@@ -221,48 +349,36 @@ object ShotEngine {
             for ((imgIdx, ref) in images.withIndex()) {
                 val segs = segsByImage[imgIdx] ?: continue
                 val rotation = readRotation(context, ref.uri)
-                val decoder = context.contentResolver.openInputStream(ref.uri)?.use {
-                    BitmapRegionDecoder.newInstance(it, false)
-                } ?: continue
-                try {
-                    for ((segIdx, seg) in segs) {
-                        val slot = slotBySegIndex.getValue(segIdx)
-                        // 换页：finish 旧页 → start 新页（页按段落顺序顺序生成）
-                        if (slot.pageNo != openPageNo) {
-                            openPage?.let { pdf.finishPage(it) }
-                            openPage = pdf.startPage(
-                                PdfDocument.PageInfo.Builder(pageW.toInt(), pageH.toInt(), slot.pageNo).create()
-                            )
-                            // PDF 默认无底色，透明 PNG 在部分查看器里会黑底
-                            openPage!!.canvas.drawColor(Color.WHITE)
-                            openPageNo = slot.pageNo
-                        }
-                        val bmp = rotateIfNeeded(
-                            decoder.decodeRegion(
-                                mapRegion(seg, ref.heightPx, decoder.height, rotation),
-                                BitmapFactory.Options()
-                            ),
-                            rotation
+                for ((segIdx, seg) in segs) {
+                    val slot = slotBySegIndex.getValue(segIdx)
+                    // 换页：finish 旧页 → start 新页（页按段落顺序顺序生成）
+                    if (slot.pageNo != openPageNo) {
+                        openPage?.let { pdf.finishPage(it) }
+                        openPage = pdf.startPage(
+                            PdfDocument.PageInfo.Builder(pageW.toInt(), pageH.toInt(), slot.pageNo).create()
                         )
-                        // PDF：画到预算好的矩形（保持纵横比由 dispH 按实际像素高计算保证）
-                        openPage!!.canvas.drawBitmap(bmp, null, slot.rect, filterPaint)
-                        // docx：压缩登记（透明 PNG 保持 PNG，否则 JPEG）
-                        val bos = ByteArrayOutputStream(1 shl 16)
-                        val ext = if (bmp.hasAlpha()) {
-                            bmp.compress(Bitmap.CompressFormat.PNG, 100, bos); "png"
-                        } else {
-                            bmp.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, bos); "jpeg"
-                        }
-                        cells[slot.rowIdx][slot.colIdx] = DocxWriter.ImageCell(
-                            writer.addImage(bos.toByteArray(), ext),
-                            inchToEmu(plan.imgWIn),
-                            inchToEmu(seg.dispHIn)
-                        )
-                        bmp.recycle() // 峰值内存控制：用完即回收
-                        onProgress(++done, total)
+                        // PDF 默认无底色，透明 PNG 在部分查看器里会黑底
+                        openPage!!.canvas.drawColor(Color.WHITE)
+                        openPageNo = slot.pageNo
                     }
-                } finally {
-                    decoder.recycle()
+                    val bmp = decodeSegment(context, ref, seg, rotation)
+                        ?: continue // 该图格式不支持：跳过此段（该图其它段也会跳过）
+                    // PDF：画到预算好的矩形（保持纵横比由 dispH 按实际像素高计算保证）
+                    openPage!!.canvas.drawBitmap(bmp, null, slot.rect, filterPaint)
+                    // docx：压缩登记（透明 PNG 保持 PNG，否则 JPEG）
+                    val bos = ByteArrayOutputStream(1 shl 16)
+                    val ext = if (bmp.hasAlpha()) {
+                        bmp.compress(Bitmap.CompressFormat.PNG, 100, bos); "png"
+                    } else {
+                        bmp.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, bos); "jpeg"
+                    }
+                    cells[slot.rowIdx][slot.colIdx] = DocxWriter.ImageCell(
+                        writer.addImage(bos.toByteArray(), ext),
+                        inchToEmu(plan.imgWIn),
+                        inchToEmu(seg.dispHIn)
+                    )
+                    bmp.recycle() // 峰值内存控制：用完即回收
+                    onProgress(++done, total)
                 }
             }
 
