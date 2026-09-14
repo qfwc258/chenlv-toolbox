@@ -141,10 +141,11 @@ object PptCssParser {
     private fun applyCode(s: PptStyleSheet, p: Map<String, String>, ov: MutableSet<String>): PptStyleSheet {
         var r = s
         p["font-size"]?.let { r = r.copy(fsCode = parsePt(it)); ov += "fsCode" }
-        p["font-family"]?.let { val (latin, ea) = splitFontFamily(it)
-            // 代码块拉丁槽由 runXml 固定 Consolas（等宽）；codeFont 作为东亚槽，
-            // 优先取用户指定的东亚字体，否则取 Latin 字体名（如 Consolas，CJK 回落可接受）。
-            r = r.copy(codeFont = if (ea == DEFAULT_EA) latin else ea)
+        p["font-family"]?.let { val (_, ea) = splitFontFamily(it)
+            // 代码块拉丁槽由 runXml 固定 Consolas（等宽）；codeFont 只承载东亚槽，
+            // 因此只有用户显式给出 CJK 字体才覆盖。仅写 Latin 字体（如 "Consolas"）时保持
+            // 默认东亚字体——把西文字体写进东亚槽会让中文回落到衬线默认字体。
+            if (ea != DEFAULT_EA) r = r.copy(codeFont = ea)
             ov += "codeFont"
         }
         p["background"]?.let { r = r.copy(codeBg = parseColor(it)); ov += "codeBg" }

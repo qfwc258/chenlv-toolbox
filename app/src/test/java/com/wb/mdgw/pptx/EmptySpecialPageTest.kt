@@ -45,9 +45,9 @@ class EmptySpecialPageTest {
                 else -> SlideLayout.STANDARD
             }
         }
-        val slides = PptLayoutEngine.layout(pag, theme, layoutOf, enableWave = false)
+        val slides = PptLayoutEngine.layout(pag, theme, layoutOf)
         val out = FileOutputStream("/tmp/kotlin_empty_special.pptx")
-        PptExportEngine.exportPptx(slides, theme, out)
+        PptExportEngine.exportPptx(slides, theme, PptCssParser.parse(""), out)
         out.close()
 
         slides.forEachIndexed { i, s ->

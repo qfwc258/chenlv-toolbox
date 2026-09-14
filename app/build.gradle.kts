@@ -90,6 +90,13 @@ android {
         }
     }
 
+    // 纯 JVM 单元测试（无 Robolectric）：android.jar 的 android.util.Log 等方法默认是
+    // "not mocked" 桩，一调用就抛 RuntimeException，会让 DocxInPlaceTest 等用例整体失败。
+    // 开启后这些桩返回默认值（Log.d 返回 0），日志不影响被测逻辑的正确性。
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

@@ -59,9 +59,17 @@ class PptCssParserTest {
     @Test
     fun codeFontBg() {
         val s = PptCssParser.parse(".code { font-family: \"Consolas\"; font-size: 13pt; background: #EEEEEE; }")
-        assertEquals("Consolas", s.codeFont)
+        // 只给了西文字体：东亚槽保持默认（微软雅黑），不能写成 Consolas，否则中文回落衬线体
+        assertEquals("微软雅黑", s.codeFont)
         assertEquals(13, s.fsCode)
         assertEquals("EEEEEE", s.codeBg)
+    }
+
+    @Test
+    fun codeFontEastAsianSlot() {
+        // 显式给出 CJK 字体时，才覆盖代码块东亚槽
+        val s = PptCssParser.parse(".code { font-family: \"Consolas\", \"黑体\"; }")
+        assertEquals("黑体", s.codeFont)
     }
 
     @Test

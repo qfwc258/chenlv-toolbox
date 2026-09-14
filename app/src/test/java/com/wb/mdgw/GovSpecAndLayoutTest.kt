@@ -84,7 +84,7 @@ class GovSpecAndLayoutTest {
     /**
      * 诉讼文书输出必须逐项匹配 Python 参考实现 md_to_official_word：
      *  - 主标题：小标宋体 + 居中
-     *  - 正文：仿宋_GB2312 + 首行缩进 2 字(32pt) + 固定行距 28pt(精确值) + 两端对齐
+     *  - 正文：仿宋_GB2312 四号(14pt) + 首行缩进 2 字(28pt) + 固定行距 25pt(精确值) + 两端对齐
      *  - 生成的 docx XML 真正写入上述字体名与精确行距(560 twips)
      */
     @Test
@@ -112,13 +112,13 @@ class GovSpecAndLayoutTest {
         assertEquals("主标题应为小标宋体", "小标宋体", title.runs.first().font)
         assertEquals("主标题应居中", Align.CENTER, title.props.align)
 
-        // 正文：仿宋_GB2312 + 缩进32 + 行距25 + 两端对齐
+        // 正文：仿宋_GB2312 四号 + 缩进 28(=14pt×2 字) + 行距 25 + 两端对齐
         val body = doc.blocks.filterIsInstance<Block.Para>().first {
             it.runs.isNotEmpty() && it.props.align == Align.BOTH && it.runs.first().font == "仿宋_GB2312"
         }
         assertEquals("正文应为仿宋_GB2312", "仿宋_GB2312", body.runs.first().font)
         assertEquals("正文应为四号(14pt)", 14.0, body.runs.first().sizePt, 1e-9)
-        assertEquals("正文首行缩进应为 2 字(32pt)", 32.0, body.props.firstLineIndentPt, 1e-9)
+        assertEquals("正文首行缩进应为 2 字(四号 14pt × 2 = 28pt)", 28.0, body.props.firstLineIndentPt, 1e-9)
         assertEquals("正文固定行距应为 25pt", 25.0, body.props.lineSpacingPt, 1e-9)
         assertEquals("正文应两端对齐", Align.BOTH, body.props.align)
 

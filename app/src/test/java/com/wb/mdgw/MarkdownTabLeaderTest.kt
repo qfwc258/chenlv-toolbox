@@ -36,7 +36,7 @@ class MarkdownTabLeaderTest {
     }
 
     @Test
-    fun `tab. 前缀生成点线目录且右侧文字右对齐`() {
+    fun `tab点前缀生成点线目录且右侧文字右对齐`() {
         val doc = MdToGongwen.convert("tab. 第一章 总则::1", options)
         val p = doc.blocks.filterIsInstance<Block.Para>().single()
         assertEquals("dot", p.props.tabs[0].leader)
@@ -72,9 +72,10 @@ class MarkdownTabLeaderTest {
     }
 
     @Test
-    fun `填空线段落导出的 docx 含 w:tabs 与 w:leader`() {
+    fun `填空线段落导出的 docx 含 w_tabs 与 w_leader`() {
         val doc = MdToGongwen.convert("tab 甲方（盖章）：", options)
-        val xml = String(doc.toDocx())
+        // docx 是 zip 包，必须解压取 document.xml，不能直接 String(bytes)（二进制按 UTF-8 解码会损坏内容）
+        val xml = unzipEntry(doc.toDocx(), "word/document.xml") ?: error("应生成 document.xml")
         assertTrue("应含 w:tabs", xml.contains("<w:tabs>"))
         assertTrue("应含 w:leader", xml.contains("w:leader=\"underline\""))
         assertTrue("应含 w:tab 制表符", xml.contains("<w:tab/>"))
@@ -88,5 +89,16 @@ class MarkdownTabLeaderTest {
 
         val toc = MdToGongwen.convert("tab. 第一章 总则::1", options)
         assertTrue(toc.toMarkdown().contains("tab. 第一章 总则::1"))
+    }
+
+    private fun unzipEntry(bytes: ByteArray, name: String): String? {
+        java.util.zip.ZipInputStream(java.io.ByteArrayInputStream(bytes)).use { zis ->
+            var e = zis.nextEntry
+            while (e != null) {
+                if (e.name == name) return zis.readBytes().toString(Charsets.UTF_8)
+                e = zis.nextEntry
+            }
+        }
+        return null
     }
 }

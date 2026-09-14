@@ -810,46 +810,14 @@ fun WordScreen(
 
     // ---------- 导出命名 ----------
     if (showExportDialog) {
-        val isCustom = pendingKind == "custom"
-        val ext = when (pendingKind) {
-            "pdf" -> "pdf"
-            "docx" -> "docx"
-            "md" -> "md"
-            "txt" -> "txt"
-            else -> exportSuffix.trim().trimStart('.').ifBlank { "txt" }
-        }
-        val dialogTitle = when (pendingKind) {
-            "pdf" -> "导出为 PDF"
-            "docx" -> "导出为 Word"
-            "md" -> "导出为 Markdown"
-            "txt" -> "导出为 纯文本"
-            else -> "自定义导出"
-        }
-        val dialogIcon = if (pendingKind == "pdf") Icons.Default.PictureAsPdf
-        else if (pendingKind == "docx") Icons.Default.Description
-        else Icons.Default.Article
-        AlertDialog(
-            onDismissRequest = { showExportDialog = false },
-            icon = { Icon(dialogIcon, null, tint = MaterialTheme.colorScheme.primary) },
-            title = { Text(dialogTitle, fontWeight = FontWeight.Bold, fontSize = 17.sp) },
-            text = {
-                Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
-                    OutlinedTextField(value = exportName, onValueChange = { exportName = it }, label = { Text("文件名") }, singleLine = true,
-                        suffix = { Text(".$ext", fontSize = 13.sp) }, modifier = Modifier.fillMaxWidth(), textStyle = TextStyle(fontSize = 15.sp))
-                    if (isCustom) {
-                        Spacer(Modifier.height(8.dp))
-                        OutlinedTextField(value = exportSuffix, onValueChange = { exportSuffix = it }, label = { Text("自定义后缀（不含点）") }, singleLine = true,
-                            suffix = { Text(".xxx", fontSize = 13.sp) }, modifier = Modifier.fillMaxWidth(), textStyle = TextStyle(fontSize = 15.sp))
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        if (pendingKind == "md" || pendingKind == "txt" || isCustom) "导出源 Markdown 文本到系统「下载」文件夹，可随时在结果弹窗中打开或分享"
-                        else "将保存到系统「下载」文件夹，可随时在结果弹窗中打开或分享",
-                        fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            },
-            confirmButton = { Button(onClick = { val k = pendingKind; val c = exportSuffix; showExportDialog = false; doExport(k, exportName, c) }) { Text("导出") } },
-            dismissButton = { TextButton(onClick = { showExportDialog = false }) { Text("取消") } }
+        ExportNameDialog(
+            kind = pendingKind,
+            name = exportName,
+            suffix = exportSuffix,
+            onNameChange = { exportName = it },
+            onSuffixChange = { exportSuffix = it },
+            onConfirm = { k, n, c -> showExportDialog = false; doExport(k, n, c) },
+            onDismiss = { showExportDialog = false }
         )
     }
 
@@ -877,260 +845,109 @@ fun WordScreen(
 
     // ---------- 模板管理（列表） ----------
     if (showTemplates) {
-        AlertDialog(
-            onDismissRequest = { showTemplates = false },
-            icon = { Icon(Icons.Default.Description, null, tint = MaterialTheme.colorScheme.primary) },
-            title = { Text("我的模板", fontWeight = FontWeight.Bold, fontSize = 17.sp) },
-            text = {
-                Column(Modifier.fillMaxWidth()) {
-                    if (templates.isEmpty()) {
-                        Text("暂无模板。可从当前文档「存为模板」，或「新建空白」模板。", fontSize = 12.sp, lineHeight = 18.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 10.dp))
-                    } else {
-                        LazyColumn(Modifier.height(260.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            items(templates, key = { it.id }) { t ->
-                                Surface(
-                                    onClick = { applyTemplate(t) },
-                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                                    shape = RoundedCornerShape(10.dp),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
-                                        Column(Modifier.weight(1f)) {
-                                            Text(t.name, fontWeight = FontWeight.Medium, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                            val previewLine = t.content.lineSequence().firstOrNull { it.isNotBlank() }
-                                            Text(previewLine ?: "（空模板）", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                        }
-                                        Spacer(Modifier.width(6.dp))
-                                        Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(8.dp)) {
-                                            Text("." + t.ext, fontSize = 10.sp, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
-                                        }
-                                        IconButton(onClick = { editTemplate(t) }, modifier = Modifier.size(30.dp)) {
-                                            Icon(Icons.Default.Edit, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        }
-                                        IconButton(onClick = { deleteTemplate(t) }, modifier = Modifier.size(30.dp)) {
-                                            Icon(Icons.Default.Delete, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        Spacer(Modifier.height(6.dp))
-                        Text("点击模板即插入到当前光标处", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            },
-            confirmButton = {
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    TextButton(onClick = { saveCurrentAsTemplate() }) { Text("存为模板") }
-                    TextButton(onClick = { newBlankTemplate() }) { Text("新建空白") }
-                }
-            },
-            dismissButton = { TextButton(onClick = { showTemplates = false }) { Text("关闭") } }
+        TemplateListDialog(
+            templates = templates,
+            onApply = { applyTemplate(it) },
+            onEdit = { editTemplate(it) },
+            onDelete = { deleteTemplate(it) },
+            onSaveCurrent = { saveCurrentAsTemplate() },
+            onNewBlank = { newBlankTemplate() },
+            onDismiss = { showTemplates = false }
         )
     }
 
     // ---------- 模板管理（新建 / 编辑） ----------
     if (showTemplateEdit) {
-        AlertDialog(
-            onDismissRequest = { showTemplateEdit = false; showTemplates = true },
-            icon = { Icon(Icons.Default.EditNote, null, tint = MaterialTheme.colorScheme.primary) },
-            title = { Text(if (templateEdit == null) "新建模板" else "编辑模板", fontWeight = FontWeight.Bold, fontSize = 17.sp) },
-            text = {
-                Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
-                    OutlinedTextField(value = templateName, onValueChange = { templateName = it }, label = { Text("模板名称") }, singleLine = true,
-                        modifier = Modifier.fillMaxWidth(), textStyle = TextStyle(fontSize = 15.sp))
-                    Spacer(Modifier.height(8.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        listOf("md", "txt").forEach { e ->
-                            Surface(
-                                onClick = { templateExt = e },
-                                color = if (templateExt == e) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier.height(30.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 14.dp)) {
-                                    Text(".$e", fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
-                                        color = if (templateExt == e) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                            }
-                            Spacer(Modifier.width(8.dp))
-                        }
-                        Text("模板类型", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(value = templateContent, onValueChange = { templateContent = it }, label = { Text("模板内容") },
-                        modifier = Modifier.fillMaxWidth().height(200.dp), textStyle = TextStyle(fontSize = 13.sp, fontFamily = FontFamily.Monospace))
-                }
-            },
-            confirmButton = { Button(onClick = { saveTemplate() }) { Text("保存") } },
-            dismissButton = { TextButton(onClick = { showTemplateEdit = false; showTemplates = true }) { Text("取消") } }
+        TemplateEditDialog(
+            editing = templateEdit,
+            name = templateName,
+            content = templateContent,
+            ext = templateExt,
+            onNameChange = { templateName = it },
+            onContentChange = { templateContent = it },
+            onExtChange = { templateExt = it },
+            onSave = { saveTemplate() },
+            onDismiss = { showTemplateEdit = false; showTemplates = true }
         )
     }
 
     // ---------- 保存 命名 ----------
     if (showSaveDialog) {
-        val isDocxSource = govDoc != null && govDoc?.originalDocx != null
-        AlertDialog(
-            onDismissRequest = { showSaveDialog = false },
-            icon = { Icon(Icons.Default.Save, null, tint = MaterialTheme.colorScheme.primary) },
-            title = { Text("保存文件", fontWeight = FontWeight.Bold, fontSize = 17.sp) },
-            text = {
-                Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
-                    OutlinedTextField(value = saveName, onValueChange = { saveName = it }, label = { Text("文件名") }, singleLine = true,
-                        suffix = { Text(if (isDocxSource) ".docx" else ".md", fontSize = 13.sp) }, modifier = Modifier.fillMaxWidth(), textStyle = TextStyle(fontSize = 15.sp))
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        if (isDocxSource) "当前为 Word 文档，编辑后将另存为新的 .docx（原文件无法被覆盖写回）"
-                        else if (originalUri != null) "保持原名将直接写回打开的文件；改名则另存为副本"
-                        else "将保存到「陈律文档」文件夹",
-                        fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            },
-            confirmButton = { Button(onClick = { performSave(saveName) }) { Text("保存") } },
-            dismissButton = { TextButton(onClick = { showSaveDialog = false }) { Text("取消") } }
+        SaveNameDialog(
+            name = saveName,
+            isDocxSource = govDoc != null && govDoc?.originalDocx != null,
+            hasOriginalUri = originalUri != null,
+            onNameChange = { saveName = it },
+            onConfirm = { performSave(it) },
+            onDismiss = { showSaveDialog = false }
         )
     }
 
     // ---------- 源 Markdown 草稿恢复 ----------
     if (showRestore && pendingDraft != null) {
         val d = pendingDraft!!
-        val discard = { DraftStore.clear(context); pendingDraft = null; showRestore = false }
-        AlertDialog(
-            onDismissRequest = discard,
-            icon = { Icon(Icons.Default.Restore, null, tint = MaterialTheme.colorScheme.primary) },
-            title = { Text("发现未保存的草稿", fontWeight = FontWeight.Bold, fontSize = 17.sp) },
-            text = {
-                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(10.dp)) {
-                            Icon(Icons.Default.Description, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text(d.name, fontWeight = FontWeight.Medium, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
-                    }
-                    val firstLine = d.text.lineSequence().firstOrNull { it.isNotBlank() } ?: ""
-                    Text(if (firstLine.length > 60) firstLine.take(60) + "…" else firstLine.ifBlank { "（空草稿）" }, fontSize = 12.sp, lineHeight = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Text("上次编辑内容已在本地自动保存，是否恢复？", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+        MarkdownDraftRestoreDialog(
+            draft = d,
+            onRestore = {
+                tfv = TextFieldValue(it.text, TextRange(it.text.length))
+                fileName = it.name
+                originalUri = null
+                dirty = true
+                autoSaved = false
+                pendingDraft = null
+                showRestore = false
             },
-            confirmButton = { Button(onClick = { tfv = TextFieldValue(d.text, TextRange(d.text.length)); fileName = d.name; originalUri = null; dirty = true; autoSaved = false; pendingDraft = null; showRestore = false }) { Text("恢复草稿") } },
-            dismissButton = { TextButton(onClick = discard) { Text("丢弃") } }
+            onDiscard = { DraftStore.clear(context); pendingDraft = null; showRestore = false }
         )
     }
 
     // ---------- 公文草稿恢复 ----------
     if (showRestoreGov && pendingGovDraft != null) {
-        val g = pendingGovDraft!!
-        val preview = g.blocks.firstOrNull().let { b ->
-            when (b) {
-                is Block.Para -> b.runs.joinToString("") { it.text }
-                is Block.Table -> "表格（${b.rows.size} 行）"
-                null -> ""
-            }
-        }.let { if (it.length > 40) it.take(40) + "…" else it }
-        AlertDialog(
-            onDismissRequest = { showRestoreGov = false },
-            icon = { Icon(Icons.Default.Restore, null, tint = MaterialTheme.colorScheme.primary) },
-            title = { Text("恢复上次未保存的公文草稿？", fontWeight = FontWeight.Bold, fontSize = 17.sp) },
-            text = {
-                Column(Modifier.fillMaxWidth()) {
-                    Text("标题：${g.title.ifBlank { "（未命名）" }}", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                    Spacer(Modifier.height(6.dp))
-                    Text(if (preview.isNotBlank()) preview else "（空草稿）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Spacer(Modifier.height(6.dp))
-                    Text("检测到上次退出前自动保存的公文草稿，可一键恢复继续编辑", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+        GovDraftRestoreDialog(
+            draft = pendingGovDraft!!,
+            onRestore = {
+                commitGov(it)
+                govDirty = true
+                govAutoSaved = false
+                govEditVersion++
+                showRestoreGov = false
+                pendingGovDraft = null
             },
-            confirmButton = { Button(onClick = { commitGov(g); govDirty = true; govAutoSaved = false; govEditVersion++; showRestoreGov = false; pendingGovDraft = null }) { Text("恢复草稿") } },
-            dismissButton = { TextButton(onClick = { GovDocDraftStore.clear(context); govDirty = false; govAutoSaved = false; showRestoreGov = false; pendingGovDraft = null }) { Text("丢弃") } }
+            onDiscard = {
+                GovDocDraftStore.clear(context)
+                govDirty = false
+                govAutoSaved = false
+                showRestoreGov = false
+                pendingGovDraft = null
+            }
         )
     }
 
     // ---------- 就地编辑弹窗 ----------
     if (editing != null) {
-        val t = editing!!
-        val runs = runsOf(t)
-        val groups = remember(t) { groupRuns(runs) }
-        val hasFormat = runs.any { it.bold || it.italic || it.underline }
-        var splitMode by remember(t) { mutableStateOf(false) }
-        var fullText by remember(t) { mutableStateOf(runs.joinToString("") { it.text }) }
-        var groupTexts by remember(t) { mutableStateOf(groups.map { it.text }) }
-        AlertDialog(
-            onDismissRequest = { editing = null },
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (t.row >= 0) "编辑单元格" else "编辑文字", fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.weight(1f))
-                    if (groups.size > 1) {
-                        Text("按字段拆分", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(Modifier.width(4.dp))
-                        Switch(checked = splitMode, onCheckedChange = { splitMode = it }, modifier = Modifier.height(20.dp))
-                    }
-                }
-            },
-            text = {
-                Column(Modifier.verticalScroll(rememberScrollState()).fillMaxWidth()) {
-                    Surface(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
-                        Text("整段内容：${runs.joinToString("") { it.text }}", fontSize = 11.sp, lineHeight = 16.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(10.dp))
-                    }
-                    Column(Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
-                        Row(Modifier.fillMaxWidth().padding(top = 6.dp)) {
-                            FmtChip("全局查找替换", false) { editing = null; findReplaceOpen = true }
-                        }
-                        Text("提示：修改文字后点「保存」即可写入并刷新预览。", fontSize = 10.sp, lineHeight = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
-                    }
-                    if (splitMode) {
-                        groups.forEachIndexed { gi, g ->
-                            if (g.bold || g.italic || g.underline) {
-                                Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    if (g.underline) StyleTag("下划线")
-                                    if (g.bold) StyleTag("粗体")
-                                    if (g.italic) StyleTag("斜体")
-                                }
-                            }
-                            OutlinedTextField(value = groupTexts[gi], onValueChange = { newVal -> groupTexts = groupTexts.toMutableList().also { it[gi] = newVal } },
-                                modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp), singleLine = false, shape = RoundedCornerShape(12.dp), textStyle = TextStyle(fontSize = 14.sp))
-                        }
-                    } else {
-                        if (hasFormat) {
-                            Row(Modifier.fillMaxWidth().padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                if (runs.any { it.underline }) StyleTag("下划线")
-                                if (runs.any { it.bold }) StyleTag("粗体")
-                                if (runs.any { it.italic }) StyleTag("斜体")
-                            }
-                            Text("带格式的字段会保持原样（下划线不丢失）；如需单独改某个字段的长度，打开右上角「按字段拆分」。", fontSize = 11.sp, lineHeight = 16.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))
-                        }
-                        OutlinedTextField(value = fullText, onValueChange = { fullText = it }, modifier = Modifier.fillMaxWidth(), singleLine = false, minLines = 3, shape = RoundedCornerShape(12.dp), textStyle = TextStyle(fontSize = 14.sp))
-                    }
-                }
-            },
-            confirmButton = { Button(onClick = { if (splitMode) applyEditGroups(groupTexts) else applyEditSingle(fullText) }, shape = UI_BTN_RADIUS) { Text("保存") } },
-            dismissButton = { TextButton(onClick = { editing = null }) { Text("取消") } }
+        InPlaceEditDialog(
+            target = editing!!,
+            runs = runsOf(editing!!),
+            onApplySingle = { applyEditSingle(it) },
+            onApplyGroups = { applyEditGroups(it) },
+            onOpenFindReplace = { editing = null; findReplaceOpen = true },
+            onDismiss = { editing = null }
         )
     }
 
+    // ---------- 全局查找替换 ----------
     if (findReplaceOpen) {
-        AlertDialog(
-            onDismissRequest = { findReplaceOpen = false },
-            title = { Text("全局查找替换", fontWeight = FontWeight.Bold, fontSize = 17.sp) },
-            text = {
-                Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
-                    OutlinedTextField(value = findText, onValueChange = { findText = it },
-                        label = { Text("查找") }, singleLine = true, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp))
-                    OutlinedTextField(value = replaceText, onValueChange = { replaceText = it },
-                        label = { Text("替换为") }, singleLine = true, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth())
-                    Text("替换对全文生效（含表格），每个 run 内独立匹配。", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
-                }
+        FindReplaceDialog(
+            findText = findText,
+            replaceText = replaceText,
+            onFindChange = { findText = it },
+            onReplaceChange = { replaceText = it },
+            onReplaceAll = { f, r ->
+                val n = findReplace(f, r)
+                findReplaceOpen = false
+                scope.launch { snackbar.showSnackbar(if (n > 0) "已替换 $n 处" else "未找到：$f") }
             },
-            confirmButton = {
-                Button(onClick = {
-                    val n = findReplace(findText, replaceText)
-                    findReplaceOpen = false
-                    scope.launch { snackbar.showSnackbar(if (n > 0) "已替换 $n 处" else "未找到：$findText") }
-                }) { Text("全部替换") }
-            },
-            dismissButton = { TextButton(onClick = { findReplaceOpen = false }) { Text("取消") } }
+            onDismiss = { findReplaceOpen = false }
         )
     }
 }
@@ -1290,17 +1107,17 @@ private fun PaperPreview(
                         Text("${doc.blocks.size} 个段落 · 点文字可直接修改", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     IconButton(onClick = onToggleSearch) {
-                        Icon(Icons.Default.Search, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.Search, "检索正文", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
                     }
                     IconButton(onClick = onCloseDoc, modifier = Modifier.size(34.dp)) {
-                        Icon(Icons.Default.Close, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Icon(Icons.Default.Close, "关闭文档", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
                 if (searchOpen) {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp).padding(bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = onToggleSearch) { Icon(Icons.Default.ArrowBack, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) }
+                        IconButton(onClick = onToggleSearch) { Icon(Icons.Default.ArrowBack, "退出检索", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) }
                         OutlinedTextField(value = query, onValueChange = onQueryChange, placeholder = { Text("搜索正文 / 表格…", fontSize = 13.sp) }, singleLine = true, modifier = Modifier.weight(1f), textStyle = TextStyle(fontSize = 14.sp),
-                            trailingIcon = if (query.isNotEmpty()) { { IconButton(onClick = { onQueryChange("") }) { Icon(Icons.Default.Close, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp)) } } } else null)
+                            trailingIcon = if (query.isNotEmpty()) { { IconButton(onClick = { onQueryChange("") }) { Icon(Icons.Default.Close, "清空检索词", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp)) } } } else null)
                     }
                 }
             }
@@ -1314,7 +1131,7 @@ private fun PaperPreview(
                     Spacer(Modifier.width(8.dp))
                     Text("本文含 ${fidelityNotes.joinToString("、")}，已按原样保留、暂不可直接编辑", fontSize = 12.sp, lineHeight = 17.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
                     IconButton(onClick = onDismissFidelity, modifier = Modifier.size(30.dp)) {
-                        Icon(Icons.Default.Close, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.Close, "关闭提示", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
                     }
                 }
             }
@@ -1476,31 +1293,6 @@ private fun safeDestroyWebView(wv: WebView?) {
     try { (wv.parent as? ViewGroup)?.removeView(wv) } catch (_: Throwable) {}
     try { wv.stopLoading() } catch (_: Throwable) {}
     try { wv.destroy() } catch (_: Throwable) {}
-}
-
-@Composable
-private fun StyleTag(label: String) {
-    Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(6.dp)) {
-        Text(label, fontSize = 10.sp, color = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
-    }
-}
-
-/** 可点选小标签（如「全局查找替换」入口）：点击回调 [onClick] */
-@Composable
-private fun FmtChip(text: String, active: Boolean, onClick: () -> Unit) {
-    val bg = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-    val fg = if (active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
-    Surface(
-        color = bg,
-        shape = RoundedCornerShape(6.dp),
-        modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClick = onClick)
-    ) {
-        Text(
-            text, fontSize = 12.sp, color = fg,
-            fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-        )
-    }
 }
 
 /**

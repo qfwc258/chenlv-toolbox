@@ -60,7 +60,8 @@ data class PptStyleSheet(
     val bodyFont: String = "微软雅黑",
     val titleFont: String = "微软雅黑",
     // 代码块东亚字体（拉丁槽固定 Consolas 等宽）。
-    val codeFont: String = "Consolas",
+    // 必须是有 CJK 字形的字体：东亚槽若写成 Consolas，中文会回落到查看器默认的衬线体。
+    val codeFont: String = "微软雅黑",
 
     // ── 其他排版（pt）──
     val listIndent: Int = 18,

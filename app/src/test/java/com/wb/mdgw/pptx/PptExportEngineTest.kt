@@ -43,7 +43,7 @@ code line 2
         val theme = PptThemes.fromTone(PptThemes.DEFAULT_TONE)
         val slides = PptLayoutEngine.layout(pag, theme, { SlideLayout.STANDARD })
         val out = FileOutputStream("/tmp/kotlin_test.pptx")
-        PptExportEngine.exportPptx(slides, theme, out)
+        PptExportEngine.exportPptx(slides, theme, PptCssParser.parse(""), out)
         out.close()
         println("PPTX_EXPORTED slides=${slides.size} overflowPages=${pag.overflowPages.size}")
     }

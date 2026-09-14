@@ -25,7 +25,6 @@ class CompositionRenderTest {
     private fun style() = PptCssParser.parse("").also {
         PptLayoutEngine.style = it
         PptLayoutEngine.waveParams = PptWaveParams()
-        PptExportEngine.style = it
     }
 
     private fun slidesFor(markdown: String, comp: SlideComposition?): List<PptLayoutEngine.LaidOutSlide> {
@@ -35,15 +34,14 @@ class CompositionRenderTest {
         return PptLayoutEngine.layout(
             paginated, PptThemes.fromTone(PptThemes.DEFAULT_TONE),
             { _ -> SlideLayout.STANDARD },
-            compOf = if (comp == null) ({ _ -> null }) else ({ _ -> comp }),
-            enableWave = false
+            compOf = if (comp == null) ({ _ -> null }) else ({ _ -> comp })
         )
     }
 
     /** 复刻引擎 frameFor 的期望值（默认样式常量）用于断言文本框边界。 */
     private fun expectedFrame(comp: SlideComposition): Rect {
         val mx = 40; val cTop = 30; val cw = 640; val cBottom = 375; val canvasH = 405
-        val bandW = 144; val bandH = 40
+        val canvasW = 720; val bandW = 144; val bandH = 40
         return when (comp.colorBlock) {
             ColorBlock.NONE, ColorBlock.COVER -> Rect(mx, cTop, cw, cBottom - cTop)
             ColorBlock.LEFT -> {
@@ -57,6 +55,11 @@ class CompositionRenderTest {
             ColorBlock.BOTTOM -> {
                 val bottom = canvasH - bandH - comp.bandGap
                 Rect(mx, cTop, cw, (bottom - cTop).coerceAtLeast(40))
+            }
+            ColorBlock.RIGHT -> {
+                // 文本框右缘 = 右色条左缘 − 间距；左缘仍为页左边距（与引擎 frameFor 一致）
+                val right = canvasW - bandW - comp.bandGap
+                Rect(mx, cTop, (right - mx).coerceAtLeast(40), cBottom - cTop)
             }
         }
     }
@@ -185,8 +188,8 @@ class CompositionRenderTest {
         val r = MdAstParser.parse(MD)
         val paginated = MdAutoPaginator.paginate(r.blocks, autoPaginate = true, r.coverTitle)
         for (layout in SlideLayout.values()) {
-            val direct = PptLayoutEngine.layout(paginated, PptThemes.fromTone(PptThemes.DEFAULT_TONE), { _ -> layout }, enableWave = false)
-            val viaComp = PptLayoutEngine.layout(paginated, PptThemes.fromTone(PptThemes.DEFAULT_TONE), { _ -> SlideLayout.STANDARD }, compOf = { _ -> CompositionResolver.compositionOf(layout) }, enableWave = false)
+            val direct = PptLayoutEngine.layout(paginated, PptThemes.fromTone(PptThemes.DEFAULT_TONE), { _ -> layout })
+            val viaComp = PptLayoutEngine.layout(paginated, PptThemes.fromTone(PptThemes.DEFAULT_TONE), { _ -> SlideLayout.STANDARD }, compOf = { _ -> CompositionResolver.compositionOf(layout) })
             assertEquals("版式 $layout 页数应一致", direct.size, viaComp.size)
             for (i in direct.indices) {
                 val a = direct[i].units; val b = viaComp[i].units

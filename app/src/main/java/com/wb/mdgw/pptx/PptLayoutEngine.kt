@@ -751,12 +751,19 @@ object PptLayoutEngine {
         // 主栏占比(ratio) 或按内容高度智能配比各栏宽度
         val widths = columnWidths(columns, frame.w, gap, colW, ratio)
         val restHasH3 = columns.flatten().any { it is MdBlock.TextBlock && it.type.ordinal >= BlockType.H3.ordinal }
+        // 各栏宽度由 columnWidths 智能配比，通常不等宽，因此 x 必须逐栏累加前序实际宽度；
+        // 旧写法「列宽 × 序号」在不等宽时会把后序列推到内容框之外（右缘溢出页边 / 压住色块）。
+        val frameRight = frame.x + frame.w
+        var cursorX = frame.x
         columns.forEachIndexed { ci, col ->
             val colW_ = widths[ci].coerceAtLeast(80)
-            val cx = frame.x + ci * (colW_ + gap) + if (restHasH3 && ci > 0) LEVEL_INDENT else 0
-            val actualColW = if (restHasH3 && ci > 0) colW_ - LEVEL_INDENT else colW_
-            val (colU, colDeco) = layoutColumn(col, cx, actualColW.coerceAtLeast(80), topStart = topY, availBottom = frame.y + frame.h, alignOverride = align)
+            val indent = if (restHasH3 && ci > 0) LEVEL_INDENT else 0
+            val cx = cursorX + indent
+            // 列宽至少 80 才可读，但绝不允许越过内容框右缘
+            val actualColW = (colW_ - indent).coerceAtLeast(80).coerceAtMost((frameRight - cx).coerceAtLeast(40))
+            val (colU, colDeco) = layoutColumn(col, cx, actualColW, topStart = topY, availBottom = frame.y + frame.h, alignOverride = align)
             units.addAll(colU); bars.addAll(colDeco.bars)
+            cursorX += colW_ + gap
         }
         return units to SlideDeco(bars = bars)
     }

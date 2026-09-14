@@ -27,6 +27,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # 必须为 0（完整历史）：versionCode / versionName 由 `git rev-list --count HEAD`
+          # 推导，浅克隆会让提交数恒为 1，导致版本号与 versionCode 回退。
+          fetch-depth: 0
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -55,6 +59,19 @@ jobs:
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
+
+      # 纯 JVM 单元测试（docx / OOXML / PPTX 引擎回归）。放在打包之前：
+      # 用例失败即中断，不会产出带回归的 Release APK。
+      - name: Run unit tests
+        run: ./gradlew testDebugUnitTest --no-daemon
+
+      - name: Upload test report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-report
+          path: app/build/reports/tests/testDebugUnitTest
+          retention-days: 7
 
       - name: Build Release APK
         run: ./gradlew assembleRelease --no-daemon -PstoreFile=mdgw-release.jks -PstorePassword="${{ secrets.SIGNING_STORE_PASSWORD }}" -PkeyAlias="${{ secrets.SIGNING_KEY_ALIAS }}" -PkeyPassword="${{ secrets.SIGNING_KEY_PASSWORD }}" -PstoreType=PKCS12

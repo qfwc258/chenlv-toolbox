@@ -94,9 +94,10 @@ code line 2
                 else -> SlideLayout.STANDARD
             }
         }
-        val slides = PptLayoutEngine.layout(pag, theme, layoutOf, enableWave = true)
+        val slides = PptLayoutEngine.layout(pag, theme, layoutOf,
+            compOf = { SlideComposition(Structure.VERTICAL, ColorBlock.NONE, VAlign.TOP, HAlign.LEFT, decoration = BottomDecoration.WAVE) })
         val out = FileOutputStream("/tmp/kotlin_toc_ending.pptx")
-        PptExportEngine.exportPptx(slides, theme, out)
+        PptExportEngine.exportPptx(slides, theme, PptCssParser.parse(""), out)
         out.close()
 
         // 把每页布局坐标摘要打到 stdout，便于核查 TOC/结尾页是否有异常

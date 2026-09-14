@@ -100,8 +100,63 @@ object FileUtils {
         return SavedFile(cacheUri, display)
     }
 
+    /**
+     * 大文件版保存（流式）：直接以磁盘文件为输入，避免把整个产物读成 ByteArray
+     * （PDF 盖章等场景产物可达数十 MB，readBytes() 会额外推高一份峰值内存）。
+     */
+    fun saveToDownloads(context: Context, fileName: String, source: File, mimeType: String = DOCX_MIME): SavedFile {
+        val safeName = sanitize(fileName)
+        val cacheUri = writeCacheFromFile(context, safeName, source)
+        val publicPath = tryWritePublicFromFile(context, safeName, source, mimeType)
+        val display = publicPath ?: "已生成（应用缓存），点击下方按钮可直接打开 / 分享"
+        return SavedFile(cacheUri, display)
+    }
+
     /** 生成文件统一存放的目录名（位于系统「下载」下的同名子目录） */
     private const val OUTPUT_DIR = "陈律文档"
+
+    /** 流式拷贝：把 [src] 内容写入 [dst]，全程不把文件整体读进内存。 */
+    private fun copyFile(src: File, dst: File) {
+        src.inputStream().use { input -> dst.outputStream().use { output -> input.copyTo(output) } }
+    }
+
+    private fun tryWritePublicFromFile(context: Context, safeName: String, src: File, mimeType: String): String? {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val values = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, safeName)
+                    put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/" + OUTPUT_DIR)
+                    put(MediaStore.MediaColumns.IS_PENDING, 1)
+                }
+                val resolver = context.contentResolver
+                val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return null
+                resolver.openOutputStream(uri)?.use { out -> src.inputStream().use { it.copyTo(out) } }
+                    ?: return null
+                values.clear()
+                values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                resolver.update(uri, values, null, null)
+                "$OUTPUT_DIR/$safeName"
+            } else {
+                val pub = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                val dir = File(pub, OUTPUT_DIR)
+                if (!(dir.exists() || dir.mkdirs())) return null
+                val f = File(dir, safeName)
+                copyFile(src, f)
+                f.absolutePath
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun writeCacheFromFile(context: Context, fileName: String, src: File): Uri {
+        val dir = File(context.cacheDir, "shared")
+        if (!dir.exists()) dir.mkdirs()
+        val f = File(dir, sanitize(fileName))
+        copyFile(src, f)
+        return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", f)
+    }
 
     /** 公共「下载 / 陈律文档」目录写入（best-effort）：成功返回展示路径，失败返回 null */
     private fun tryWritePublic(context: Context, safeName: String, data: ByteArray, mimeType: String): String? {

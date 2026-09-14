@@ -373,17 +373,18 @@ class DocxInPlaceTest {
     }
 
     /**
-     * 回归：段落内若含有「不含 w:t 的承载型 run」——图片 / 绘图 / 域等
-     * （此处以 w:br run 作等价代理，规避图片二进制与命名空间声明问题）——整段文字编辑时
+     * 回归：段落内若含有「不含 w:t / w:tab / w:br 的承载型 run」——图片 / 绘图 / 域等
+     * （此处注入一个空的 w:drawing run 作等价代理，无需真实图片二进制）——整段文字编辑时
      * 该 run 必须原样保留，绝不可以被写入 w:t（否则会把字塞进图片对象、破坏图片）。
+     * 注意：不能用 w:br 作代理——引擎有意把 w:br / w:tab 视作文字结构（软换行 / 制表位要保留）。
      */
     @Test
     fun wordSourceKeepsDrawingLikeRunWhenParagraphEdited() {
         val base = buildSample()
         val parts = unzip(base)
         val docXml = String(parts["word/document.xml"]!!, java.nio.charset.StandardCharsets.UTF_8)
-        // 在第一段末尾注入一个「无 w:t 的承载型 run」（w:br 作为图片/绘图 run 的等价代理）
-        val injected = docXml.replaceFirst("</w:p>", "<w:r><w:br/></w:r></w:p>")
+        // 在第一段末尾注入一个「无文字节点的承载型 run」（图片 / 绘图 run 的等价代理）
+        val injected = docXml.replaceFirst("</w:p>", "<w:r><w:drawing/></w:r></w:p>")
         assertTrue("注入应生效", injected != docXml)
         val original = repack(
             parts + ("word/document.xml" to injected.toByteArray(java.nio.charset.StandardCharsets.UTF_8))
@@ -397,12 +398,12 @@ class DocxInPlaceTest {
         }
         val result = DocxInPlace.edit(original, newBlocks, edits)
 
-        // 1) 承载型 run（w:br）必须原样保留
+        // 1) 承载型 run（w:drawing）必须原样保留
         val firstP = bodyOf(result).kids().first { it.loc() == "p" }
-        val brRun = firstP.kids().firstOrNull { it.loc() == "r" && it.child("br") != null }
-        assertNotNull("承载型 run(w:br)应被保留、未被删除", brRun)
+        val drawingRun = firstP.kids().firstOrNull { it.loc() == "r" && it.child("drawing") != null }
+        assertNotNull("承载型 run(w:drawing)应被保留、未被删除", drawingRun)
         // 2) 承载型 run 内绝不能被写入 w:t（未被污染成文字 run）
-        assertNull("承载型 run(w:br)内不应被插入 w:t（未把字塞进图片）", brRun!!.child("t"))
+        assertNull("承载型 run(w:drawing)内不应被插入 w:t（未把字塞进图片）", drawingRun!!.child("t"))
         // 3) 实际可编辑文字正确更新
         assertTrue("整段文字应已更新为新标题文字", firstP.textContent.contains("新标题文字"))
     }

@@ -586,6 +586,14 @@ private fun SealSection(
             runCatching { rendererPair.second.delete() }
         }
     }
+    // PDFBox 文档句柄：整段盖章流程复用同一份（此前每翻一页都 PDDocument.load(全量 bytes)，
+    // 大文件上等同于反复整包解析，既慢又推高峰值内存）。离开页面时统一关闭。
+    val pdDocument = remember(pdfBytes) {
+        runCatching { PDDocument.load(pdfBytes) }.getOrNull()
+    }
+    DisposableEffect(pdDocument) {
+        onDispose { runCatching { pdDocument?.close() } }
+    }
     val renderer = rendererPair.first
     val pageCount = renderer.pageCount
 
@@ -659,13 +667,11 @@ private fun SealSection(
         // 读取当前页真实 PDF pt 尺寸（MediaBox）供导出坐标换算与实时反馈。
         // pdfPageW/H 来自 PdfRenderer 渲染像素（与设备 density 相关、不等于 PDF pt），
         // 不能直接作为 PDF 用户空间坐标传给底层盖章，否则 density≠1 时印章会被推到页面外。
-        pdfBytes?.let { bytes ->
+        pdDocument?.let { doc ->
             runCatching {
-                PDDocument.load(bytes).use { doc ->
-                    val mb = doc.getPage(currentPage).mediaBox
-                    pdfPtW = mb.width
-                    pdfPtH = mb.height
-                }
+                val mb = doc.getPage(currentPage).mediaBox
+                pdfPtW = mb.width
+                pdfPtH = mb.height
             }
         }
     }
@@ -690,7 +696,7 @@ private fun SealSection(
                 sealBitmap?.let {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Image(
-                            bitmap = it, contentDescription = null,
+                            bitmap = it, contentDescription = "已选印章预览",
                             modifier = Modifier
                                 .size(48.dp)
                                 .background(Color.White, RoundedCornerShape(6.dp))
@@ -834,7 +840,7 @@ private fun SealSection(
                             .border(1.dp, Color(0xFFBDBDBD), RoundedCornerShape(6.dp))
                     ) {
                         previewBmp?.let {
-                            Image(bitmap = it, contentDescription = null, modifier = Modifier.fillMaxSize())
+                            Image(bitmap = it, contentDescription = "PDF 页面预览", modifier = Modifier.fillMaxSize())
                         }
                         if (sealBitmap != null && initialized) {
                             Box(
@@ -853,7 +859,7 @@ private fun SealSection(
                                         }
                                     }
                             ) {
-                                Image(bitmap = sealBitmap!!, contentDescription = null, modifier = Modifier.fillMaxSize().rotate(sealRotation))
+                                Image(bitmap = sealBitmap!!, contentDescription = "印章位置预览", modifier = Modifier.fillMaxSize().rotate(sealRotation))
                             }
                         }
                     }
@@ -891,31 +897,39 @@ private fun SealSection(
                 scope.launch {
                     val result = runCatching {
                         withContext(Dispatchers.IO) {
-                            val raw = BitmapFactory.decodeFile(sealPath!!)
-                                ?: throw IllegalStateException("印章图片丢失，请重新选择")
-                            // 透明度预乘到印章位图：PNG 自带 alpha，再按滑块衰减，
-                            // 确保「透明度」滑块真实生效（图形状态 alpha 对位图未必生效）。
-                            val alphaBmp = if (alpha < 1f) {
-                                val out = Bitmap.createBitmap(raw.width, raw.height, Bitmap.Config.ARGB_8888)
-                                val cv = android.graphics.Canvas(out)
-                                val pt = android.graphics.Paint().apply { this.alpha = (alpha * 255).toInt() }
-                                cv.drawBitmap(raw, 0f, 0f, pt)
-                                out
-                            } else raw
-                            // 按设定角度（顺时针）旋转，得到外接正方形位图
-                            val bmp = rotateBitmap(alphaBmp, sealRotation)
-                            // 旋转后位图边长可能变大（取对角线），据此放大绘制方框，
-                            // 保证「印章直径」与预览一致（预览为原地旋转，包围盒即印章直径）。
-                            val drawPt = pdfSize * (bmp.width.toFloat() / raw.width.toFloat())
+                            // 临时文件（源副本 / 盖章产物）用完必须删除：此前只删了预览副本，
+                            // src 与 out 会长期滞留在 cacheDir 里吃空间。
                             val out = File(context.cacheDir, "seal_out_${System.currentTimeMillis()}.pdf")
-                            PdfSeal.sealPdfWithBitmap(
-                                srcPdf = srcFile, outPdf = out, pageIndex = currentPage,
-                                pdfCenterX = pdfCx, pdfCenterY = pdfCy,
-                                sealPtSize = drawPt, alpha = 1f, bitmap = bmp,
-                                prepend = sealUnderText
-                            )
-                            val sf = FileUtils.saveToDownloads(context, outName2, out.readBytes(), FileUtils.PDF_MIME)
-                            sf to outName2
+                            try {
+                                val raw = BitmapFactory.decodeFile(sealPath!!)
+                                    ?: throw IllegalStateException("印章图片丢失，请重新选择")
+                                // 透明度预乘到印章位图：PNG 自带 alpha，再按滑块衰减，
+                                // 确保「透明度」滑块真实生效（图形状态 alpha 对位图未必生效）。
+                                val alphaBmp = if (alpha < 1f) {
+                                    val o = Bitmap.createBitmap(raw.width, raw.height, Bitmap.Config.ARGB_8888)
+                                    val cv = android.graphics.Canvas(o)
+                                    val pt = android.graphics.Paint().apply { this.alpha = (alpha * 255).toInt() }
+                                    cv.drawBitmap(raw, 0f, 0f, pt)
+                                    o
+                                } else raw
+                                // 按设定角度（顺时针）旋转，得到外接正方形位图
+                                val bmp = rotateBitmap(alphaBmp, sealRotation)
+                                // 旋转后位图边长可能变大（取对角线），据此放大绘制方框，
+                                // 保证「印章直径」与预览一致（预览为原地旋转，包围盒即印章直径）。
+                                val drawPt = pdfSize * (bmp.width.toFloat() / raw.width.toFloat())
+                                PdfSeal.sealPdfWithBitmap(
+                                    srcPdf = srcFile, outPdf = out, pageIndex = currentPage,
+                                    pdfCenterX = pdfCx, pdfCenterY = pdfCy,
+                                    sealPtSize = drawPt, alpha = 1f, bitmap = bmp,
+                                    prepend = sealUnderText
+                                )
+                                // 流式保存：不再 out.readBytes()，省下一份完整产物的内存
+                                val sf = FileUtils.saveToDownloads(context, outName2, out, FileUtils.PDF_MIME)
+                                sf to outName2
+                            } finally {
+                                runCatching { srcFile.delete() }
+                                runCatching { out.delete() }
+                            }
                         }
                     }
                     if (result.isSuccess) {

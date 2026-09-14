@@ -21,6 +21,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -69,6 +74,43 @@ fun SettingsScreen() {
             SettingsRow(title = "关于", desc = "版本、开发者与联系方式") {
                 TextButton(onClick = { showAbout = true }) {
                     Text("查看", fontSize = 13.sp)
+                }
+            }
+            // 崩溃日志：仅存本机，用户主动导出给开发者排查（不外传）
+            var crashCount by remember { mutableStateOf(CrashLogStore.files(context).size) }
+            SettingsRow(
+                title = "崩溃日志",
+                desc = if (crashCount == 0) "暂无记录（日志仅存本机，不会上传）"
+                else "已记录 $crashCount 条，可导出给开发者排查"
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (crashCount > 0) {
+                        TextButton(onClick = {
+                            val f = CrashLogStore.export(context)
+                            if (f != null) {
+                                runCatching {
+                                    context.startActivity(
+                                        FileUtils.shareIntent(
+                                            FileUtils.writeCache(context, f.name, f.readBytes()),
+                                            "崩溃日志",
+                                            "text/plain"
+                                        )
+                                    )
+                                }.onFailure {
+                                    Toast.makeText(context, "导出失败：${it.message}", Toast.LENGTH_SHORT).show()
+                                }
+                            } else {
+                                Toast.makeText(context, "暂无崩溃日志", Toast.LENGTH_SHORT).show()
+                            }
+                        }) { Text("导出", fontSize = 13.sp) }
+                        TextButton(onClick = {
+                            CrashLogStore.clear(context)
+                            crashCount = 0
+                            Toast.makeText(context, "已清除崩溃日志", Toast.LENGTH_SHORT).show()
+                        }) { Text("清除", fontSize = 13.sp) }
+                    } else {
+                        Text("—", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
             }
         }
@@ -224,6 +266,13 @@ fun SettingsScreen() {
                                         Modifier.border(1.2.dp, Color.Black.copy(alpha = 0.15f), CircleShape)
                                     }
                                 )
+                                // 无障碍：色块没有文字标签，必须显式声明「是什么 + 是否选中」，
+                                // 否则 TalkBack 只会读成「未加标签的按钮」
+                                .semantics(mergeDescendants = true) {
+                                    contentDescription = "主题色 $c"
+                                    role = Role.RadioButton
+                                    selected = isSel
+                                }
                                 .clickable(remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, null) {
                                     toneInput = c
                                     AppSettings.setPptxTone(context, c)
