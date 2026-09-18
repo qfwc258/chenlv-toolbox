@@ -221,15 +221,18 @@ private fun waitForOfdAndInject(view: WebView?, retryCount: Int) {
  *
  * 实现方案：
  * 1. 找到 previewIframe（OFD 阅读器）
- * 2. 设置 iframe 宽度为 100%（手机屏幕宽度）
- * 3. 自动滚动到 func-area（目录/下载/WPS版本）位置，使其显示在顶端
- * 4. 整个页面可上下左右自由滚动
+ * 2. 设置 iframe 原始宽度为 750px（网站设计宽度）
+ * 3. 计算 scale = 手机屏幕宽度 / 750
+ * 4. 用 CSS transform: scale() 缩放 iframe
+ * 5. 自动滚动到 func-area（目录/下载/WPS版本）位置
+ * 6. 整个页面可上下左右自由滚动
  */
 private fun injectReaderOnlyMode(view: WebView) {
     val js = """
         (function() {
             try {
-                // 等待 iframe 加载后调整
+                var DESIGN_WIDTH = 750;
+                
                 function adjustIframe() {
                     var iframe = document.getElementById('previewIframe');
                     if (!iframe) {
@@ -242,12 +245,18 @@ private fun injectReaderOnlyMode(view: WebView) {
                         return;
                     }
                     
-                    // 设置 iframe 宽度为手机屏幕宽度（100%）
-                    iframe.style.width = '100%';
-                    iframe.style.maxWidth = '100%';
+                    // 计算缩放比例
+                    var screenWidth = window.innerWidth;
+                    var scale = screenWidth / DESIGN_WIDTH;
+                    
+                    // 设置 iframe 原始宽度
+                    iframe.style.width = DESIGN_WIDTH + 'px';
+                    iframe.style.border = 'none';
                     iframe.style.display = 'block';
-                    iframe.style.marginLeft = '0';
-                    iframe.style.marginRight = '0';
+                    
+                    // 用 transform 缩放 iframe
+                    iframe.style.transform = 'scale(' + scale + ')';
+                    iframe.style.transformOrigin = 'top left';
                     
                     // 自动滚动到 func-area 位置
                     var funcArea = document.querySelector('.func-area');
@@ -257,7 +266,7 @@ private fun injectReaderOnlyMode(view: WebView) {
                 }
                 
                 // 延迟执行，等待页面渲染
-                setTimeout(adjustIframe, 1000);
+                setTimeout(adjustIframe, 1500);
                 
             } catch(e) {
                 console.error('Adjust OFD error:', e);
