@@ -325,6 +325,28 @@ private fun injectReaderOnlyMode(view: WebView) {
                         funcArea.style.justifyContent = 'space-between';
                     }
                     
+                    // 隐藏其他所有元素，只保留 func-area 和 iframe 所在容器
+                    var allElements = document.body.children;
+                    for (var i = 0; i < allElements.length; i++) {
+                        var el = allElements[i];
+                        // 保留 func-area 和 iframe 的祖先容器
+                        var isAncestorOfIframe = false;
+                        var check = reader;
+                        while (check) {
+                            if (check === el) {
+                                isAncestorOfIframe = true;
+                                break;
+                            }
+                            check = check.parentElement;
+                        }
+                        // 保留 func-area
+                        var isFuncArea = (el === funcArea);
+                        
+                        if (!isAncestorOfIframe && !isFuncArea) {
+                            el.style.display = 'none';
+                        }
+                    }
+                    
                     // 触发 resize 事件
                     window.dispatchEvent(new Event('resize'));
                 }
