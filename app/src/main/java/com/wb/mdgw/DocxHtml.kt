@@ -179,7 +179,7 @@ object DocxHtml {
         // 页码：页脚居中，距底部一定距离
         append(".page-number{position:absolute;bottom:${bPad / 2}px;left:0;right:0;text-align:center;font-size:10pt;color:#666;}")
         // 隐藏的内容源：用于测量高度后分页
-        append(".content-source{display:none;}")
+        append(".content-source{position:absolute;left:-9999px;top:-9999px;width:${pageW}px;visibility:hidden;}")
         // 段落：保留 1.75 行距，首行缩进 2 字符（pt=24pt）；white-space:pre-line 让 w:br
         // 转换来的 \n 真实换行显示，避免内容被合并成一行
         append(".doc-para{margin:0;padding:0;white-space:pre-line;}")
