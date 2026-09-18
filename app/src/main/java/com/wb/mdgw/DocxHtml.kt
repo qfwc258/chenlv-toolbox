@@ -240,7 +240,7 @@ object DocxHtml {
         append("}")
         append("fit();")
         append("});")
-        append("})();</script></head><body>")
+        append("})();</script>")
     }
 
 
