@@ -112,8 +112,11 @@ fun LawDetailScreen(
                             override fun onPageFinished(view: WebView?, url: String?) {
                                 super.onPageFinished(view, url)
                                 isLoading = false
-                                // 开始轮询等待 OFD 加载
-                                waitForOfdAndInject(view, 0)
+                                // 页面加载完成后立即注入缩放 JS
+                                // 延迟 500ms 确保页面基本渲染完成
+                                view?.postDelayed({
+                                    injectReaderOnlyMode(view)
+                                }, 500)
                             }
 
                             override fun shouldOverrideUrlLoading(
@@ -216,84 +219,68 @@ private fun waitForOfdAndInject(view: WebView?, retryCount: Int) {
 /**
  * 注入 JS，调整 OFD 阅读器自适应手机
  *
- * 实现方案：
- * 1. OFD 内容实际宽度固定约 750px（网站设计宽度）
+ * 实现方案（参考法律宝典，但不隐藏任何元素）：
+ * 1. 网站设计宽度固定约 750px
  * 2. 计算缩放比例 = 手机屏幕宽度 / 750
- * 3. 用 document.body.style.zoom 缩放整个页面
- * 4. 自动滚动到 func-area（目录/下载/WPS版本）位置，使其显示在顶端
- * 5. 整个页面可上下左右自由滚动
- * 6. 定期检测 iframe src 变化，切换版本后重新计算缩放
+ * 3. 用 CSS zoom 缩放整个页面
+ * 4. 让内容居中显示
+ * 5. 自动滚动到 func-area（目录/下载/WPS版本）位置，使其显示在顶端
+ * 6. 整个页面可上下左右自由滚动
+ * 7. 定期检测 iframe src 变化，切换版本后重新计算缩放
  */
 private fun injectReaderOnlyMode(view: WebView) {
     val js = """
         (function() {
             try {
-                window.__adjustOfdReader = function() {
-                    try {
-                        // OFD 内容实际宽度（网站设计宽度，固定值）
-                        var OFD_CONTENT_WIDTH = 750;
-                        
-                        // 找到 OFD 阅读器 iframe
-                        var previewIframe = document.getElementById('previewIframe');
-                        if (!previewIframe) {
-                            var iframes = document.querySelectorAll('iframe');
-                            if (iframes.length > 0) previewIframe = iframes[0];
-                        }
-                        
-                        if (!previewIframe) {
-                            if (!window.__ofdRetryCount) window.__ofdRetryCount = 0;
-                            if (window.__ofdRetryCount < 20) {
-                                window.__ofdRetryCount++;
-                                setTimeout(window.__adjustOfdReader, 1000);
-                            }
-                            return;
-                        }
-                        
-                        // 计算缩放比例：让 OFD 内容宽度 = 手机屏幕宽度
-                        var screenWidth = window.innerWidth;
-                        var scale = screenWidth / OFD_CONTENT_WIDTH;
-                        
-                        // 用 zoom 缩放整个页面
-                        document.body.style.zoom = scale;
-                        document.documentElement.style.zoom = scale;
-                        
-                        // 自动滚动到 func-area（目录/下载/WPS版本按钮）位置
-                        // 注意：不固定 func-area，只是初始滚动定位，用户可以自由滚动
-                        var funcArea = document.querySelector('.func-area');
-                        if (funcArea) {
-                            var rect = funcArea.getBoundingClientRect();
-                            var scrollY = window.pageYOffset || document.documentElement.scrollTop;
-                            // 缩放后的位置需要除以 scale，因为 getBoundingClientRect 返回的是缩放后的坐标
-                            var targetY = (scrollY + rect.top) / scale;
-                            window.scrollTo(0, targetY);
-                        }
-                        
-                        // 记录当前 iframe 的 src
-                        var currentSrc = previewIframe.src;
-                        
-                        // 定期检测 iframe src 变化，重新调整缩放
-                        setInterval(function() {
-                            try {
-                                var iframe = document.querySelector('#previewIframe, iframe');
-                                if (iframe && iframe.src !== currentSrc) {
-                                    currentSrc = iframe.src;
-                                    setTimeout(function() {
-                                        var s = window.innerWidth / OFD_CONTENT_WIDTH;
-                                        document.body.style.zoom = s;
-                                        document.documentElement.style.zoom = s;
-                                    }, 2000);
-                                }
-                            } catch(e) {}
-                        }, 2000);
-                        
-                    } catch(e) {
-                        console.error('Adjust OFD error:', e);
-                    }
-                };
+                // 网站设计宽度（固定值）
+                var DESIGN_WIDTH = 750;
                 
-                window.__adjustOfdReader();
+                // 计算缩放比例：让设计宽度 = 手机屏幕宽度
+                var screenWidth = window.innerWidth;
+                var scale = screenWidth / DESIGN_WIDTH;
+                
+                // 用 zoom 缩放整个页面
+                document.documentElement.style.zoom = scale;
+                document.body.style.zoom = scale;
+                
+                // 让内容居中显示
+                document.body.style.marginLeft = 'auto';
+                document.body.style.marginRight = 'auto';
+                document.body.style.width = DESIGN_WIDTH + 'px';
+                
+                // 延迟滚动到 func-area 位置（等待页面布局完成）
+                setTimeout(function() {
+                    var funcArea = document.querySelector('.func-area');
+                    if (funcArea) {
+                        var rect = funcArea.getBoundingClientRect();
+                        var scrollY = window.pageYOffset || document.documentElement.scrollTop;
+                        // getBoundingClientRect 返回缩放后的坐标，需要除以 scale 得到原始坐标
+                        var targetY = (scrollY + rect.top) / scale;
+                        window.scrollTo(0, targetY);
+                    }
+                }, 1500);
+                
+                // 定期检测 iframe src 变化，重新调整缩放
+                var lastIframeSrc = '';
+                setInterval(function() {
+                    try {
+                        var iframe = document.querySelector('#previewIframe, iframe');
+                        if (iframe && iframe.src !== lastIframeSrc) {
+                            lastIframeSrc = iframe.src;
+                            setTimeout(function() {
+                                var s = window.innerWidth / DESIGN_WIDTH;
+                                document.documentElement.style.zoom = s;
+                                document.body.style.zoom = s;
+                                document.body.style.width = DESIGN_WIDTH + 'px';
+                                document.body.style.marginLeft = 'auto';
+                                document.body.style.marginRight = 'auto';
+                            }, 2000);
+                        }
+                    } catch(e) {}
+                }, 2000);
+                
             } catch(e) {
-                console.error('Inject error:', e);
+                console.error('Adjust OFD error:', e);
             }
         })()
     """.trimIndent()
