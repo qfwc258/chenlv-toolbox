@@ -1,11 +1,17 @@
 package com.wb.mdgw.law
 
 import android.annotation.SuppressLint
+import android.app.DownloadManager
+import android.content.Context
+import android.net.Uri
+import android.os.Environment
 import android.view.ViewGroup
+import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.webkit.WebView.HitTestResult
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -118,6 +124,33 @@ fun LawDetailScreen(
                             }
                         }
                         webChromeClient = WebChromeClient()
+
+                        // 下载支持：WebView 默认不提供下载功能，需手动设置 DownloadListener
+                        setDownloadListener { url, userAgent, contentDisposition, mimeType, contentLength ->
+                            try {
+                                val request = DownloadManager.Request(Uri.parse(url))
+                                request.setMimeType(mimeType)
+                                // 添加 Cookie，确保下载请求携带登录态
+                                val cookies = CookieManager.getInstance().getCookie(url)
+                                if (cookies != null) {
+                                    request.addRequestHeader("cookie", cookies)
+                                }
+                                request.addRequestHeader("User-Agent", userAgent)
+                                request.setDescription("正在下载")
+                                request.setTitle(guessFileName(url, contentDisposition))
+                                request.allowScanningByMediaScanner()
+                                request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                                request.setDestinationInExternalPublicDir(
+                                    Environment.DIRECTORY_DOWNLOADS,
+                                    guessFileName(url, contentDisposition)
+                                )
+                                val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                                dm.enqueue(request)
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
+                        }
+
                         loadUrl(law.detailUrl ?: LawConstants.OFFICIAL_URL)
                     }
                 },
@@ -275,4 +308,28 @@ private fun injectReaderOnlyMode(view: WebView) {
     """.trimIndent()
 
     view.evaluateJavascript(js, null)
+}
+
+/**
+ * 从 URL 或 Content-Disposition 中提取文件名
+ */
+private fun guessFileName(url: String?, contentDisposition: String?): String {
+    // 优先从 Content-Disposition 中提取
+    if (!contentDisposition.isNullOrBlank()) {
+        val regex = Regex("filename=\"?([^\";]+)\"?")
+        val match = regex.find(contentDisposition)
+        if (match != null) {
+            return match.groupValues[1]
+        }
+    }
+    // 从 URL 中提取
+    if (!url.isNullOrBlank()) {
+        val cleanUrl = url.split("?")[0]
+        val lastSegment = cleanUrl.substringAfterLast("/")
+        if (lastSegment.isNotBlank() && lastSegment.contains(".")) {
+            return lastSegment
+        }
+    }
+    // 默认文件名
+    return "法规文档_${System.currentTimeMillis()}.docx"
 }
