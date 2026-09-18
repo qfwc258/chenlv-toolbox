@@ -217,56 +217,120 @@ private fun waitForOfdAndInject(view: WebView?, retryCount: Int) {
 }
 
 /**
- * 注入 JS，调整 OFD 阅读器自适应手机
+ * 注入 JS，调整 OFD 阅读器自适应手机（应用模式）
  *
- * 实现方案：
+ * 实现方案（和法律宝典一致）：
  * 1. 找到 previewIframe（OFD 阅读器）
- * 2. 设置 iframe 原始宽度为 1200px
- * 3. 计算 scale = 手机屏幕宽度 / 1200
- * 4. 用 CSS transform: scale() 缩放 iframe
- * 5. 自动滚动到 func-area（目录/下载/WPS版本）位置
- * 6. 整个页面可上下左右自由滚动
+ * 2. 设置 iframe 原始宽度为 750px
+ * 3. 计算 scale = 手机屏幕宽度 / 750
+ * 4. func-area 固定在顶部（position: fixed）
+ * 5. body 和 html 设为 overflow: hidden，整个页面不能滚动
+ * 6. iframe 占满剩余空间，内部自己滚动
  */
 private fun injectReaderOnlyMode(view: WebView) {
     val js = """
         (function() {
             try {
-                var DESIGN_WIDTH = 2000;
+                var originalWidth = 750;
                 
-                function adjustIframe() {
-                    var iframe = document.getElementById('previewIframe');
-                    if (!iframe) {
+                function adjustReader() {
+                    var reader = document.getElementById('previewIframe');
+                    if (!reader) {
                         var iframes = document.querySelectorAll('iframe');
-                        if (iframes.length > 0) iframe = iframes[0];
+                        if (iframes.length > 0) reader = iframes[0];
                     }
                     
-                    if (!iframe) {
-                        setTimeout(adjustIframe, 500);
+                    if (!reader) {
+                        setTimeout(adjustReader, 500);
                         return;
                     }
                     
                     // 计算缩放比例
-                    var screenWidth = window.innerWidth;
-                    var scale = screenWidth / DESIGN_WIDTH;
+                    var scale = window.innerWidth / originalWidth;
                     
-                    // 设置 iframe 原始宽度
-                    iframe.style.width = DESIGN_WIDTH + 'px';
-                    iframe.style.border = 'none';
-                    iframe.style.display = 'block';
+                    // func-area 原始高度约 44px
+                    var funcAreaOriginalHeight = 44;
+                    var funcAreaDisplayHeight = funcAreaOriginalHeight * scale;
+                    
+                    // 找到 iframe 的直接父容器
+                    var iframeParent = reader.parentElement;
+                    
+                    if (iframeParent) {
+                        iframeParent.style.position = 'relative';
+                        iframeParent.style.width = '100%';
+                        iframeParent.style.height = (window.innerHeight - funcAreaDisplayHeight) + 'px';
+                        iframeParent.style.minHeight = (window.innerHeight - funcAreaDisplayHeight) + 'px';
+                        iframeParent.style.overflow = 'hidden';
+                        iframeParent.style.margin = '0';
+                        iframeParent.style.padding = '0';
+                        iframeParent.style.marginTop = funcAreaDisplayHeight + 'px';
+                    }
+                    
+                    // 设置 iframe 原始尺寸
+                    reader.style.width = originalWidth + 'px';
+                    reader.style.height = ((window.innerHeight - funcAreaDisplayHeight) / scale) + 'px';
+                    reader.style.minHeight = ((window.innerHeight - funcAreaDisplayHeight) / scale) + 'px';
+                    reader.style.border = 'none';
+                    reader.style.display = 'block';
+                    reader.style.margin = '0';
+                    reader.style.padding = '0';
                     
                     // 用 transform 缩放 iframe
-                    iframe.style.transform = 'scale(' + scale + ')';
-                    iframe.style.transformOrigin = 'top left';
+                    reader.style.transform = 'scale(' + scale + ')';
+                    reader.style.transformOrigin = 'top left';
                     
-                    // 自动滚动到 func-area 位置
+                    // 确保 iframe 的所有祖先元素也是全屏
+                    var ancestor = reader.parentElement;
+                    while (ancestor && ancestor !== document.body) {
+                        ancestor.style.width = '100%';
+                        ancestor.style.height = '100%';
+                        ancestor.style.minHeight = '100vh';
+                        ancestor.style.margin = '0';
+                        ancestor.style.padding = '0';
+                        ancestor.style.overflow = 'hidden';
+                        ancestor = ancestor.parentElement;
+                    }
+                    
+                    // 设置 body 和 html 为全屏
+                    document.body.style.width = '100%';
+                    document.body.style.height = '100%';
+                    document.body.style.minHeight = '100vh';
+                    document.body.style.overflow = 'hidden';
+                    document.body.style.margin = '0';
+                    document.body.style.padding = '0';
+                    document.documentElement.style.width = '100%';
+                    document.documentElement.style.height = '100%';
+                    document.documentElement.style.overflow = 'hidden';
+                    document.documentElement.style.margin = '0';
+                    document.documentElement.style.padding = '0';
+                    
+                    // func-area 区域与 iframe 同缩放，固定在顶部
                     var funcArea = document.querySelector('.func-area');
                     if (funcArea) {
-                        funcArea.scrollIntoView();
+                        funcArea.style.position = 'fixed';
+                        funcArea.style.top = '0';
+                        funcArea.style.left = '0';
+                        funcArea.style.width = originalWidth + 'px';
+                        funcArea.style.height = funcAreaOriginalHeight + 'px';
+                        funcArea.style.transform = 'scale(' + scale + ')';
+                        funcArea.style.transformOrigin = 'top left';
+                        funcArea.style.zIndex = '1000';
+                        funcArea.style.background = '#fff';
+                        funcArea.style.boxSizing = 'border-box';
+                        funcArea.style.padding = '8px 12px';
+                        funcArea.style.borderBottom = '1px solid #eee';
+                        funcArea.style.margin = '0';
+                        funcArea.style.display = 'flex';
+                        funcArea.style.alignItems = 'center';
+                        funcArea.style.justifyContent = 'space-between';
                     }
+                    
+                    // 触发 resize 事件
+                    window.dispatchEvent(new Event('resize'));
                 }
                 
                 // 延迟执行，等待页面渲染
-                setTimeout(adjustIframe, 1500);
+                setTimeout(adjustReader, 1500);
                 
             } catch(e) {
                 console.error('Adjust OFD error:', e);
