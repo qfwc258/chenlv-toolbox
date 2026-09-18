@@ -595,9 +595,11 @@ internal fun CompositionSelector(
                     // 多栏结构时，栏宽滑动条放在对齐行右侧
                     if (isMultiCol) {
                         Spacer(Modifier.width(8.dp))
-                        ColumnWidthSlider(comp.colRatio) {
-                            onCompositionChange(comp.copy(colRatio = it))
-                        }
+                        ColumnWidthSlider(
+                            colRatio = comp.colRatio,
+                            onRatioChange = { onCompositionChange(comp.copy(colRatio = it)) },
+                            modifier = Modifier.weight(1f)
+                        )
                     }
                 }
             }
@@ -653,13 +655,17 @@ internal fun ToolRow(content: @Composable RowScope.() -> Unit) {
 
 /**
  * 「栏宽」滑动条：主栏占比滑动调节（20~80），null=智能。
- * 放在对齐行右侧，紧凑不占空间。
+ * 放在对齐行右侧，紧凑不占空间。调用处需在 RowScope 中传入 Modifier.weight(1f)。
  */
 @Composable
-internal fun ColumnWidthSlider(colRatio: Int?, onRatioChange: (Int?) -> Unit) {
+internal fun ColumnWidthSlider(
+    colRatio: Int?,
+    onRatioChange: (Int?) -> Unit,
+    modifier: Modifier = Modifier
+) {
     val current = colRatio ?: 50
     Column(
-        modifier = Modifier.weight(1f),
+        modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Row(

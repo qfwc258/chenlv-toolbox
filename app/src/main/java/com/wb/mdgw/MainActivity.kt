@@ -31,6 +31,7 @@ import com.wb.mdgw.shot.ShotScreen
 import com.wb.mdgw.law.Law
 import com.wb.mdgw.law.LawDetailScreen
 import com.wb.mdgw.law.LawSearchScreen
+import com.wb.mdgw.law.ToolsScreen
 
 class MainActivity : ComponentActivity() {
 
@@ -79,7 +80,16 @@ fun MdGwTheme(darkTheme: Boolean = false, content: @Composable () -> Unit) {
     MaterialTheme(colorScheme = colors, content = content)
 }
 
-private enum class DocMode { WORD, PDF, WECHAT, PPTX, LAW, SHOT, SETTINGS }
+private enum class DocMode { WORD, PDF, WECHAT, PPTX, TOOLS, SETTINGS }
+
+/**
+ * 工具 tab 内的子页面
+ */
+private enum class ToolsSubScreen {
+    MAIN,       // 工具主页（入口列表）
+    SCREENSHOT, // 截图排版
+    LAW_SEARCH  // 法律查询
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -92,9 +102,9 @@ fun AppScreen(initialUri: Uri? = null) {
                 val name = FileUtils.displayName(context, initialUri).lowercase()
                 val mime = runCatching { context.contentResolver.getType(initialUri) }.getOrNull()
                 when {
-                    // 长截图：mime 或扩展名识别，直达截图切分 Tab（分享入口 SEND image/*）
-                    mime?.startsWith("image/") == true -> DocMode.SHOT
-                    name.endsWith(".png") || name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".webp") -> DocMode.SHOT
+                    // 长截图：mime 或扩展名识别，直达工具 tab 的截图排版子页（分享入口 SEND image/*）
+                    mime?.startsWith("image/") == true -> DocMode.TOOLS
+                    name.endsWith(".png") || name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".webp") -> DocMode.TOOLS
                     name.endsWith(".pdf") || initialUri.toString().contains("pdf", true) -> DocMode.PDF
                     name.endsWith(".docx") || name.endsWith(".doc") -> DocMode.WORD
                     else -> DocMode.WORD
@@ -103,6 +113,7 @@ fun AppScreen(initialUri: Uri? = null) {
         }
         var mode by remember { mutableStateOf(detected) }
         var selectedLaw by remember { mutableStateOf<Law?>(null) }
+        var toolsSubScreen by remember { mutableStateOf(ToolsSubScreen.MAIN) }
         val snackbar = remember { SnackbarHostState() }
         val darkMode by AppSettings.darkMode.collectAsState()
 
@@ -139,16 +150,13 @@ fun AppScreen(initialUri: Uri? = null) {
                     label = { Text("PPTX", fontSize = 11.sp, maxLines = 1, softWrap = false) }
                 )
                 NavigationBarItem(
-                    selected = mode == DocMode.LAW,
-                    onClick = { mode = DocMode.LAW },
-                    icon = { Icon(Icons.Default.Gavel, contentDescription = null) },
-                    label = { Text("法规", fontSize = 11.sp, maxLines = 1, softWrap = false) }
-                )
-                NavigationBarItem(
-                    selected = mode == DocMode.SHOT,
-                    onClick = { mode = DocMode.SHOT },
-                    icon = { Icon(Icons.Default.Screenshot, contentDescription = null) },
-                    label = { Text("截图", fontSize = 11.sp, maxLines = 1, softWrap = false) }
+                    selected = mode == DocMode.TOOLS,
+                    onClick = {
+                        mode = DocMode.TOOLS
+                        toolsSubScreen = ToolsSubScreen.MAIN
+                    },
+                    icon = { Icon(Icons.Default.Build, contentDescription = null) },
+                    label = { Text("工具", fontSize = 11.sp, maxLines = 1, softWrap = false) }
                 )
                 NavigationBarItem(
                     selected = mode == DocMode.SETTINGS,
@@ -194,22 +202,31 @@ fun AppScreen(initialUri: Uri? = null) {
             ) {
                 MdPptxScreen(snackbar = snackbar)
             }
+            // 工具 tab
             androidx.compose.animation.AnimatedVisibility(
-                visible = mode == DocMode.LAW,
+                visible = mode == DocMode.TOOLS,
                 enter = fadeIn(), exit = fadeOut()
             ) {
-                LawSearchScreen(
-                    onLawClick = { law -> selectedLaw = law }
-                )
-            }
-            androidx.compose.animation.AnimatedVisibility(
-                visible = mode == DocMode.SHOT,
-                enter = fadeIn(), exit = fadeOut()
-            ) {
-                ShotScreen(
-                    snackbar = snackbar,
-                    initialUri = initialUri.takeIf { detected == DocMode.SHOT }
-                )
+                // 工具主页
+                if (toolsSubScreen == ToolsSubScreen.MAIN) {
+                    ToolsScreen(
+                        onOpenScreenshot = { toolsSubScreen = ToolsSubScreen.SCREENSHOT },
+                        onOpenLawSearch = { toolsSubScreen = ToolsSubScreen.LAW_SEARCH }
+                    )
+                }
+                // 截图排版子页
+                if (toolsSubScreen == ToolsSubScreen.SCREENSHOT) {
+                    ShotScreen(
+                        snackbar = snackbar,
+                        initialUri = initialUri.takeIf { detected == DocMode.TOOLS }
+                    )
+                }
+                // 法律查询子页
+                if (toolsSubScreen == ToolsSubScreen.LAW_SEARCH) {
+                    LawSearchScreen(
+                        onLawClick = { law -> selectedLaw = law }
+                    )
+                }
             }
             androidx.compose.animation.AnimatedVisibility(
                 visible = mode == DocMode.SETTINGS,
