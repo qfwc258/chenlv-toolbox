@@ -181,20 +181,19 @@ private fun waitForOfdAndInject(view: WebView?, retryCount: Int) {
 }
 
 /**
- * 注入 JS，隐藏网站多余元素，只显示 OFD 阅读器内容区域
+ * 注入 JS，调整 OFD 阅读器自适应手机
  *
- * 核心逻辑：
- * 1. 找到 id=previewIframe 的 OFD 阅读器 iframe
- * 2. 设置 iframe 原始宽度为 750px，用 CSS transform scale 缩放到手机宽度
- * 3. func-area 工具栏与 iframe 同缩放，固定在顶部
- * 4. 隐藏其他多余元素
- * 5. 定期检测 iframe src 变化（切换 WPS版本/公报原版），重新应用缩放
+ * 原则：不删除任何元素，只调整 iframe 大小
+ * 1. 找到 previewIframe，设置宽度为手机屏幕宽度
+ * 2. func-area（WPS版本/公报原版按钮）sticky 在最顶端
+ * 3. 整个页面可正常滚动，用户可手动移动
+ * 4. 定期检测 iframe src 变化（切换 WPS版本/公报原版），重新调整
  */
 private fun injectReaderOnlyMode(view: WebView) {
     val js = """
         (function() {
             try {
-                window.__tryReaderOnlyMode = function() {
+                window.__adjustOfdReader = function() {
                     try {
                         // 找到 OFD 阅读器 iframe
                         var previewIframe = document.getElementById('previewIframe');
@@ -204,175 +203,63 @@ private fun injectReaderOnlyMode(view: WebView) {
                         }
                         
                         if (!previewIframe) {
-                            if (!window.__readerRetryCount) window.__readerRetryCount = 0;
-                            if (window.__readerRetryCount < 20) {
-                                window.__readerRetryCount++;
-                                setTimeout(window.__tryReaderOnlyMode, 1000);
+                            if (!window.__ofdRetryCount) window.__ofdRetryCount = 0;
+                            if (window.__ofdRetryCount < 20) {
+                                window.__ofdRetryCount++;
+                                setTimeout(window.__adjustOfdReader, 1000);
                             }
                             return;
                         }
                         
-                        // 已经处理过，不重复处理
-                        if (window.__readerOnlyModeApplied) return;
-                        window.__readerOnlyModeApplied = true;
-                        
-                        // 隐藏页面顶部导航、侧边栏等多余元素
-                        var body = document.body;
-                        var children = body.children;
-                        for (var i = 0; i < children.length; i++) {
-                            var child = children[i];
-                            var childClass = child.className || '';
-                            var isFuncArea = typeof childClass === 'string' && childClass.indexOf('func-area') >= 0;
-                            var hasFuncArea = child.querySelector && child.querySelector('.func-area');
-                            
-                            if (isFuncArea || hasFuncArea) {
-                                child.style.display = 'block';
-                                child.style.position = 'relative';
-                                child.style.width = '100%';
-                                child.style.maxWidth = '100%';
-                                child.style.margin = '0';
-                                child.style.padding = '8px 12px';
-                                child.style.boxSizing = 'border-box';
-                                child.style.background = '#fff';
-                                child.style.borderBottom = '1px solid #eee';
-                                child.style.zIndex = '100';
-                            } else {
-                                child.style.display = 'none';
-                            }
-                        }
-                        
-                        // 设置 body 和 html 为全屏
-                        document.documentElement.style.margin = '0';
-                        document.documentElement.style.padding = '0';
-                        document.documentElement.style.overflow = 'hidden';
-                        body.style.margin = '0';
-                        body.style.padding = '0';
-                        body.style.overflow = 'hidden';
-                        body.style.background = '#fff';
-                        
-                        // OFD 内容原始宽度约 700px，设置 750px 让内容拉满手机宽度
-                        var originalWidth = 750;
-                        var scale = window.innerWidth / originalWidth;
-                        
-                        // func-area 原始高度约 44px
-                        var funcAreaOriginalHeight = 44;
-                        var funcAreaDisplayHeight = funcAreaOriginalHeight * scale;
-                        
-                        // 找到 iframe 的直接父容器
-                        var iframeParent = previewIframe.parentElement;
-                        
-                        if (iframeParent) {
-                            iframeParent.style.position = 'relative';
-                            iframeParent.style.width = '100%';
-                            iframeParent.style.height = (window.innerHeight - funcAreaDisplayHeight) + 'px';
-                            iframeParent.style.minHeight = (window.innerHeight - funcAreaDisplayHeight) + 'px';
-                            iframeParent.style.overflow = 'hidden';
-                            iframeParent.style.margin = '0';
-                            iframeParent.style.padding = '0';
-                            iframeParent.style.marginTop = funcAreaDisplayHeight + 'px';
-                        }
-                        
-                        // 设置 iframe 原始尺寸
-                        previewIframe.style.width = originalWidth + 'px';
-                        previewIframe.style.height = ((window.innerHeight - funcAreaDisplayHeight) / scale) + 'px';
-                        previewIframe.style.minHeight = ((window.innerHeight - funcAreaDisplayHeight) / scale) + 'px';
+                        // 设置 iframe 宽度为手机屏幕宽度
+                        var screenWidth = window.innerWidth;
+                        previewIframe.style.width = screenWidth + 'px';
+                        previewIframe.style.maxWidth = screenWidth + 'px';
+                        previewIframe.style.minWidth = screenWidth + 'px';
                         previewIframe.style.border = 'none';
                         previewIframe.style.display = 'block';
-                        previewIframe.style.margin = '0';
-                        previewIframe.style.padding = '0';
+                        previewIframe.style.marginLeft = '0';
+                        previewIframe.style.marginRight = '0';
                         
-                        // 用 CSS transform 缩放 iframe，使其显示宽度=手机宽度
-                        previewIframe.style.transform = 'scale(' + scale + ')';
-                        previewIframe.style.transformOrigin = 'top left';
-                        
-                        // 确保 iframe 的所有祖先元素也是全屏
-                        var ancestor = previewIframe.parentElement;
-                        while (ancestor && ancestor !== document.body) {
-                            ancestor.style.width = '100%';
-                            ancestor.style.height = '100%';
-                            ancestor.style.minHeight = '100vh';
-                            ancestor.style.margin = '0';
-                            ancestor.style.padding = '0';
-                            ancestor.style.overflow = 'hidden';
-                            ancestor = ancestor.parentElement;
-                        }
-                        
-                        // func-area 区域与 iframe 同缩放，固定在顶部
+                        // 让 func-area（WPS版本/公报原版按钮）sticky 在最顶端
                         var funcArea = document.querySelector('.func-area');
                         if (funcArea) {
-                            funcArea.style.position = 'fixed';
+                            funcArea.style.position = 'sticky';
                             funcArea.style.top = '0';
-                            funcArea.style.left = '0';
-                            funcArea.style.width = originalWidth + 'px';
-                            funcArea.style.height = funcAreaOriginalHeight + 'px';
-                            funcArea.style.transform = 'scale(' + scale + ')';
-                            funcArea.style.transformOrigin = 'top left';
-                            funcArea.style.zIndex = '1000';
+                            funcArea.style.zIndex = '100';
                             funcArea.style.background = '#fff';
+                            funcArea.style.width = '100%';
                             funcArea.style.boxSizing = 'border-box';
-                            funcArea.style.padding = '8px 12px';
-                            funcArea.style.borderBottom = '1px solid #eee';
-                            funcArea.style.margin = '0';
-                            funcArea.style.display = 'flex';
-                            funcArea.style.alignItems = 'center';
-                            funcArea.style.justifyContent = 'space-between';
                         }
                         
-                        // 记录当前 iframe 的 src，用于检测变化
-                        var currentIframeSrc = previewIframe.src;
+                        // 记录当前 iframe 的 src
+                        var currentSrc = previewIframe.src;
                         
-                        // 定期检测 iframe src 变化（切换 WPS版本/公报原版后），重新应用缩放
+                        // 定期检测 iframe src 变化，重新调整
                         setInterval(function() {
                             try {
                                 var iframe = document.querySelector('#previewIframe, iframe');
-                                if (iframe && iframe.src !== currentIframeSrc) {
-                                    currentIframeSrc = iframe.src;
-                                    
+                                if (iframe && iframe.src !== currentSrc) {
+                                    currentSrc = iframe.src;
                                     setTimeout(function() {
-                                        try {
-                                            var newIframe = document.querySelector('#previewIframe, iframe');
-                                            if (newIframe) {
-                                                var origWidth = 750;
-                                                var newScale = window.innerWidth / origWidth;
-                                                var fHeight = 44;
-                                                var fArea = document.querySelector('.func-area');
-                                                if (fArea) {
-                                                    fHeight = fArea.offsetHeight || 44;
-                                                }
-                                                
-                                                newIframe.style.width = origWidth + 'px';
-                                                newIframe.style.height = ((window.innerHeight - fHeight) / newScale) + 'px';
-                                                newIframe.style.minHeight = ((window.innerHeight - fHeight) / newScale) + 'px';
-                                                newIframe.style.transform = 'scale(' + newScale + ')';
-                                                newIframe.style.transformOrigin = 'top left';
-                                                newIframe.style.border = 'none';
-                                                newIframe.style.display = 'block';
-                                                newIframe.style.margin = '0';
-                                                newIframe.style.padding = '0';
-                                                
-                                                var iParent = newIframe.parentElement;
-                                                if (iParent) {
-                                                    iParent.style.marginTop = fHeight + 'px';
-                                                    iParent.style.height = (window.innerHeight - fHeight) + 'px';
-                                                    iParent.style.minHeight = (window.innerHeight - fHeight) + 'px';
-                                                }
-                                            }
-                                        } catch(e) {
-                                            console.error('Re-apply scale error:', e);
+                                        var newIframe = document.querySelector('#previewIframe, iframe');
+                                        if (newIframe) {
+                                            var w = window.innerWidth;
+                                            newIframe.style.width = w + 'px';
+                                            newIframe.style.maxWidth = w + 'px';
+                                            newIframe.style.minWidth = w + 'px';
                                         }
                                     }, 1500);
                                 }
-                            } catch(e) {
-                                console.error('Interval check error:', e);
-                            }
+                            } catch(e) {}
                         }, 2000);
                         
                     } catch(e) {
-                        console.error('Reader mode error:', e);
+                        console.error('Adjust OFD error:', e);
                     }
                 };
                 
-                window.__tryReaderOnlyMode();
+                window.__adjustOfdReader();
             } catch(e) {
                 console.error('Inject error:', e);
             }
