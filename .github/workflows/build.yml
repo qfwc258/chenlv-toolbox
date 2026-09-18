@@ -39,10 +39,12 @@ jobs:
           java-version: '17'
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          api-level: 34
-          build-tools: '34.0.0'
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          yes | sdkmanager --licenses || true
+          sdkmanager "platforms;android-34" "build-tools;34.0.0" || true
+          echo "Android SDK setup complete"
 
       - name: Decode signing key
         run: |
