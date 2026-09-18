@@ -183,11 +183,13 @@ private fun waitForOfdAndInject(view: WebView?, retryCount: Int) {
 /**
  * 注入 JS，调整 OFD 阅读器自适应手机
  *
- * 原则：不删除任何元素，只调整 iframe 大小
- * 1. 找到 previewIframe，设置宽度为手机屏幕宽度
- * 2. func-area（WPS版本/公报原版按钮）sticky 在最顶端
- * 3. 整个页面可正常滚动，用户可手动移动
- * 4. 定期检测 iframe src 变化（切换 WPS版本/公报原版），重新调整
+ * 实现方案：
+ * 1. 找到 previewIframe，获取它的实际渲染宽度
+ * 2. 计算缩放比例 = 手机屏幕宽度 / iframe实际宽度
+ * 3. 用 document.body.style.zoom 缩放整个页面
+ * 4. 自动滚动到 func-area（目录/下载/WPS版本）位置，使其显示在顶端
+ * 5. 整个页面可上下左右自由滚动
+ * 6. 定期检测 iframe src 变化，切换版本后重新计算缩放
  */
 private fun injectReaderOnlyMode(view: WebView) {
     val js = """
@@ -211,31 +213,35 @@ private fun injectReaderOnlyMode(view: WebView) {
                             return;
                         }
                         
-                        // 设置 iframe 宽度为手机屏幕宽度
-                        var screenWidth = window.innerWidth;
-                        previewIframe.style.width = screenWidth + 'px';
-                        previewIframe.style.maxWidth = screenWidth + 'px';
-                        previewIframe.style.minWidth = screenWidth + 'px';
-                        previewIframe.style.border = 'none';
-                        previewIframe.style.display = 'block';
-                        previewIframe.style.marginLeft = '0';
-                        previewIframe.style.marginRight = '0';
+                        // 获取 iframe 的实际渲染宽度
+                        var iframeWidth = previewIframe.offsetWidth || previewIframe.getBoundingClientRect().width;
+                        if (iframeWidth < 100) {
+                            // iframe 还没布局好，等一下再试
+                            setTimeout(window.__adjustOfdReader, 500);
+                            return;
+                        }
                         
-                        // 让 func-area（WPS版本/公报原版按钮）sticky 在最顶端
+                        // 计算缩放比例：让 iframe 宽度 = 手机屏幕宽度
+                        var screenWidth = window.innerWidth;
+                        var scale = screenWidth / iframeWidth;
+                        
+                        // 用 zoom 缩放整个页面
+                        document.body.style.zoom = scale;
+                        document.documentElement.style.zoom = scale;
+                        
+                        // 自动滚动到 func-area（目录/下载/WPS版本按钮）位置
                         var funcArea = document.querySelector('.func-area');
                         if (funcArea) {
-                            funcArea.style.position = 'sticky';
-                            funcArea.style.top = '0';
-                            funcArea.style.zIndex = '100';
-                            funcArea.style.background = '#fff';
-                            funcArea.style.width = '100%';
-                            funcArea.style.boxSizing = 'border-box';
+                            var rect = funcArea.getBoundingClientRect();
+                            var scrollY = window.pageYOffset || document.documentElement.scrollTop;
+                            var targetY = scrollY + rect.top;
+                            window.scrollTo(0, targetY);
                         }
                         
                         // 记录当前 iframe 的 src
                         var currentSrc = previewIframe.src;
                         
-                        // 定期检测 iframe src 变化，重新调整
+                        // 定期检测 iframe src 变化，重新调整缩放
                         setInterval(function() {
                             try {
                                 var iframe = document.querySelector('#previewIframe, iframe');
@@ -244,12 +250,14 @@ private fun injectReaderOnlyMode(view: WebView) {
                                     setTimeout(function() {
                                         var newIframe = document.querySelector('#previewIframe, iframe');
                                         if (newIframe) {
-                                            var w = window.innerWidth;
-                                            newIframe.style.width = w + 'px';
-                                            newIframe.style.maxWidth = w + 'px';
-                                            newIframe.style.minWidth = w + 'px';
+                                            var w = newIframe.offsetWidth || newIframe.getBoundingClientRect().width;
+                                            if (w > 100) {
+                                                var s = window.innerWidth / w;
+                                                document.body.style.zoom = s;
+                                                document.documentElement.style.zoom = s;
+                                            }
                                         }
-                                    }, 1500);
+                                    }, 2000);
                                 }
                             } catch(e) {}
                         }, 2000);
