@@ -135,8 +135,8 @@ object DocxHtml {
         }
 
         return buildString {
-            append(htmlHead(page))
-            append("<div class='page'>")
+            append(htmlHead(page, showPageNumber = doc.pageNumber))
+            append("<div class='content-source'>")
             append(bodyHtml)
             append("</div>")
             append("</body></html>")
@@ -154,7 +154,7 @@ object DocxHtml {
      *   手机上显示的就是真实打印比例（不会因 page 单独缩窄而让字看起来偏大）；
      *   大屏 zoom=1，按真实 A4 居中显示。双指仍可缩放看细节。
      */
-    private fun htmlHead(page: PageSetup): String = buildString {
+    private fun htmlHead(page: PageSetup, showPageNumber: Boolean = false): String = buildString {
         // 页宽 px / 页高 px（cm→px 按 CSS 96dpi；纸张按物理尺寸渲染）
         val pageW = (page.widthCm / 2.54 * 96.0).toInt()
         val pageH = (page.heightCm / 2.54 * 96.0).toInt()
@@ -171,11 +171,15 @@ object DocxHtml {
         append("body{background:#E8E8E8;font-family:'Source Han Serif SC','Noto Serif CJK SC','宋体',SimSun,serif;")
         append("-webkit-text-size-adjust:100%;}")
         // 纸页：物理尺寸渲染，min-height=页高；margin auto 居中（zoom 后宽度=视口宽时居中）
-        append(".page{background:white;width:${pageW}px;min-height:${pageH}px;margin:0 auto;")
+        append(".page{background:white;width:${pageW}px;min-height:${pageH}px;margin:0 auto 16px auto;")
         append("padding:${tPad}px ${rPad}px ${bPad}px ${lPad}px;")
         append("box-shadow:0 4px 20px rgba(0,0,0,0.18);font-family:'宋体',SimSun,'Source Han Serif SC',serif;")
-        append("line-height:1.75;font-size:12pt;color:#000;")
+        append("line-height:1.75;font-size:12pt;color:#000;position:relative;")
         append("text-align:justify;text-justify:inter-ideograph;}")
+        // 页码：页脚居中，距底部一定距离
+        append(".page-number{position:absolute;bottom:${bPad / 2}px;left:0;right:0;text-align:center;font-size:10pt;color:#666;}")
+        // 隐藏的内容源：用于测量高度后分页
+        append(".content-source{display:none;}")
         // 段落：保留 1.75 行距，首行缩进 2 字符（pt=24pt）；white-space:pre-line 让 w:br
         // 转换来的 \n 真实换行显示，避免内容被合并成一行
         append(".doc-para{margin:0;padding:0;white-space:pre-line;}")
@@ -196,10 +200,46 @@ object DocxHtml {
         append("</style></head><body><script>")
         // 整页等比缩放到视口宽：字号与纸页同比例缩放，还原真实打印比例
         append("(function(){var pw=${pageW};function fit(){var w=window.visualViewport?window.visualViewport.width:window.innerWidth;")
-        append("var z=w/pw;if(z>1)z=1;var p=document.querySelector('.page');if(p)p.style.zoom=z;}")
+        append("var z=w/pw;if(z>1)z=1;var pages=document.querySelectorAll('.page');")
+        append("for(var i=0;i<pages.length;i++)pages[i].style.zoom=z;}")
         append("window.addEventListener?addEventListener('load',fit):0;")
         append("window.addEventListener('resize',fit);")
         append("window.addEventListener('orientationchange',fit);")
+        // 分页逻辑：页面加载完成后，测量内容高度，按页高分割
+        append("window.addEventListener('load',function(){")
+        append("var source=document.querySelector('.content-source');")
+        append("if(!source)return;")
+        append("var pageH=${pageH};var tPad=${tPad};var bPad=${bPad};")
+        append("var contentH=pageH-tPad-bPad-30;") // 30px 留给页码
+        append("var children=[];")
+        append("for(var i=0;i<source.children.length;i++)children.push(source.children[i]);")
+        append("if(children.length===0)return;")
+        append("var pages=[];var currentPage=[];var currentH=0;")
+        append("for(var i=0;i<children.length;i++){")
+        append("  var el=children[i];")
+        append("  var h=el.offsetHeight||el.getBoundingClientRect().height||20;")
+        append("  if(currentH+h>contentH && currentPage.length>0){")
+        append("    pages.push(currentPage);currentPage=[];currentH=0;")
+        append("  }")
+        append("  currentPage.push(el);currentH+=h;")
+        append("}")
+        append("if(currentPage.length>0)pages.push(currentPage);")
+        append("source.remove();")
+        append("var body=document.body;")
+        append("for(var p=0;p<pages.length;p++){")
+        append("  var pageDiv=document.createElement('div');")
+        append("  pageDiv.className='page';")
+        append("  for(var j=0;j<pages[p].length;j++)pageDiv.appendChild(pages[p][j]);")
+        if (showPageNumber) {
+            append("  var numDiv=document.createElement('div');")
+            append("  numDiv.className='page-number';")
+            append("  numDiv.textContent=(p+1)+' / '+pages.length;")
+            append("  pageDiv.appendChild(numDiv);")
+        }
+        append("  body.appendChild(pageDiv);")
+        append("}")
+        append("fit();")
+        append("});")
         append("})();</script></head><body>")
     }
 

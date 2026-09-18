@@ -575,7 +575,11 @@ internal fun CompositionSelector(
                 }
             }
             AxisSection("对齐") {
-                ToolRow {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
                     AlignmentCell("上左", comp.valign == VAlign.TOP && comp.halign == HAlign.LEFT) {
                         onCompositionChange(comp.copy(valign = VAlign.TOP, halign = HAlign.LEFT))
                     }
@@ -588,12 +592,12 @@ internal fun CompositionSelector(
                     AlignmentCell("中中", comp.valign == VAlign.CENTER && comp.halign == HAlign.CENTER) {
                         onCompositionChange(comp.copy(valign = VAlign.CENTER, halign = HAlign.CENTER))
                     }
-                }
-            }
-            if (isMultiCol) {
-                AxisSection("栏宽") {
-                    ColumnWidthBar(comp.colRatio) {
-                        onCompositionChange(comp.copy(colRatio = it))
+                    // 多栏结构时，栏宽直接输入数值，放在对齐行右侧
+                    if (isMultiCol) {
+                        Spacer(Modifier.weight(1f))
+                        ColumnWidthInput(comp.colRatio) {
+                            onCompositionChange(comp.copy(colRatio = it))
+                        }
                     }
                 }
             }
@@ -648,34 +652,57 @@ internal fun ToolRow(content: @Composable RowScope.() -> Unit) {
 }
 
 /**
- * 「栏宽」轴：主栏占比滑块 + 「智能」复位。
- * - 滑块拖动 → 手动比例（非 null）；点「智能」→ 回到按内容自动配比（null，默认）。
+ * 「栏宽」输入框：主栏占比直接输入数值（20~80），null=智能。
+ * 放在对齐行右侧，紧凑不占空间。
  */
 @Composable
-internal fun ColumnWidthBar(colRatio: Int?, onRatioChange: (Int?) -> Unit) {
-    val current = colRatio ?: 50   // null(智能) 时用 50 作为滑块位置占位
-    Column(Modifier.fillMaxWidth()) {
-        Row(
-            Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Pill(if (colRatio == null) "智能" else "手动", colRatio == null, compact = true) {
-                onRatioChange(null)
-            }
-            Text(
-                if (colRatio == null) "按内容分栏" else "主栏 ${colRatio}%",
+internal fun ColumnWidthInput(colRatio: Int?, onRatioChange: (Int?) -> Unit) {
+    var text by remember(colRatio) {
+        mutableStateOf(colRatio?.toString() ?: "")
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(
+            "栏宽",
+            fontSize = 10.sp,
+            color = MaterialTheme.colorScheme.outline,
+            maxLines = 1
+        )
+        TextField(
+            value = text,
+            onValueChange = { newText ->
+                val filtered = newText.filter { it.isDigit() }.take(2)
+                text = filtered
+                val v = filtered.toIntOrNull()
+                if (v != null && v in 20..80) {
+                    onRatioChange(v)
+                } else if (filtered.isEmpty()) {
+                    onRatioChange(null)
+                }
+            },
+            placeholder = { Text("智能", fontSize = 10.sp, color = Color.Gray) },
+            suffix = { Text("%", fontSize = 10.sp, color = MaterialTheme.colorScheme.outline) },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            singleLine = true,
+            textStyle = LocalTextStyle.current.copy(
                 fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.weight(1f)
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurface
+            ),
+            modifier = Modifier.width(64.dp).height(32.dp),
+            colors = TextFieldDefaults.colors(
+                unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                focusedContainerColor = MaterialTheme.colorScheme.surface,
+                unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                cursorColor = MaterialTheme.colorScheme.primary,
+                focusedIndicatorColor = MaterialTheme.colorScheme.primary,
+                unfocusedIndicatorColor = MaterialTheme.colorScheme.outlineVariant,
+                unfocusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                focusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant
             )
-        }
-        Slider(
-            value = current.toFloat(),
-            onValueChange = { onRatioChange(it.roundToInt()) },
-            valueRange = 20f..80f,
-            steps = 11,
-            modifier = Modifier.fillMaxWidth().height(28.dp)
         )
     }
 }
