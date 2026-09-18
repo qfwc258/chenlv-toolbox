@@ -217,147 +217,358 @@ private fun waitForOfdAndInject(view: WebView?, retryCount: Int) {
 }
 
 /**
- * 注入 JS，调整 OFD 阅读器自适应手机（应用模式）
- *
- * 实现方案（和法律宝典一致）：
- * 1. 找到 previewIframe（OFD 阅读器）
- * 2. 设置 iframe 原始宽度为 750px
- * 3. 计算 scale = 手机屏幕宽度 / 750
- * 4. func-area 固定在顶部（position: fixed）
- * 5. body 和 html 设为 overflow: hidden，整个页面不能滚动
- * 6. iframe 占满剩余空间，内部自己滚动
+ * 注入 JS，调整 OFD 阅读器自适应手机（完整移植自法律宝典）
  */
 private fun injectReaderOnlyMode(view: WebView) {
     val js = """
         (function() {
             try {
-                var originalWidth = 750;
-                
-                function adjustReader() {
-                    var reader = document.getElementById('previewIframe');
-                    if (!reader) {
-                        var iframes = document.querySelectorAll('iframe');
-                        if (iframes.length > 0) reader = iframes[0];
-                    }
-                    
-                    if (!reader) {
-                        setTimeout(adjustReader, 500);
-                        return;
-                    }
-                    
-                    // 计算缩放比例
-                    var scale = window.innerWidth / originalWidth;
-                    
-                    // func-area 原始高度约 44px
-                    var funcAreaOriginalHeight = 44;
-                    var funcAreaDisplayHeight = funcAreaOriginalHeight * scale;
-                    
-                    // 找到 iframe 的直接父容器
-                    var iframeParent = reader.parentElement;
-                    
-                    if (iframeParent) {
-                        iframeParent.style.position = 'relative';
-                        iframeParent.style.width = '100%';
-                        iframeParent.style.height = (window.innerHeight - funcAreaDisplayHeight) + 'px';
-                        iframeParent.style.minHeight = (window.innerHeight - funcAreaDisplayHeight) + 'px';
-                        iframeParent.style.overflow = 'hidden';
-                        iframeParent.style.margin = '0';
-                        iframeParent.style.padding = '0';
-                        iframeParent.style.marginTop = funcAreaDisplayHeight + 'px';
-                    }
-                    
-                    // 设置 iframe 原始尺寸
-                    reader.style.width = originalWidth + 'px';
-                    reader.style.height = ((window.innerHeight - funcAreaDisplayHeight) / scale) + 'px';
-                    reader.style.minHeight = ((window.innerHeight - funcAreaDisplayHeight) / scale) + 'px';
-                    reader.style.border = 'none';
-                    reader.style.display = 'block';
-                    reader.style.margin = '0';
-                    reader.style.padding = '0';
-                    
-                    // 用 transform 缩放 iframe
-                    reader.style.transform = 'scale(' + scale + ')';
-                    reader.style.transformOrigin = 'top left';
-                    
-                    // 确保 iframe 的所有祖先元素也是全屏
-                    var ancestor = reader.parentElement;
-                    while (ancestor && ancestor !== document.body) {
-                        ancestor.style.width = '100%';
-                        ancestor.style.height = '100%';
-                        ancestor.style.minHeight = '100vh';
-                        ancestor.style.margin = '0';
-                        ancestor.style.padding = '0';
-                        ancestor.style.overflow = 'hidden';
-                        ancestor = ancestor.parentElement;
-                    }
-                    
-                    // 设置 body 和 html 为全屏
-                    document.body.style.width = '100%';
-                    document.body.style.height = '100%';
-                    document.body.style.minHeight = '100vh';
-                    document.body.style.overflow = 'hidden';
-                    document.body.style.margin = '0';
-                    document.body.style.padding = '0';
-                    document.documentElement.style.width = '100%';
-                    document.documentElement.style.height = '100%';
-                    document.documentElement.style.overflow = 'hidden';
-                    document.documentElement.style.margin = '0';
-                    document.documentElement.style.padding = '0';
-                    
-                    // func-area 区域与 iframe 同缩放，固定在顶部
-                    var funcArea = document.querySelector('.func-area');
-                    if (funcArea) {
-                        funcArea.style.position = 'fixed';
-                        funcArea.style.top = '0';
-                        funcArea.style.left = '0';
-                        funcArea.style.width = originalWidth + 'px';
-                        funcArea.style.height = funcAreaOriginalHeight + 'px';
-                        funcArea.style.transform = 'scale(' + scale + ')';
-                        funcArea.style.transformOrigin = 'top left';
-                        funcArea.style.zIndex = '1000';
-                        funcArea.style.background = '#fff';
-                        funcArea.style.boxSizing = 'border-box';
-                        funcArea.style.padding = '8px 12px';
-                        funcArea.style.borderBottom = '1px solid #eee';
-                        funcArea.style.margin = '0';
-                        funcArea.style.display = 'flex';
-                        funcArea.style.alignItems = 'center';
-                        funcArea.style.justifyContent = 'space-between';
-                    }
-                    
-                    // 隐藏其他所有元素，只保留 func-area 和 iframe 所在容器
-                    var allElements = document.body.children;
-                    for (var i = 0; i < allElements.length; i++) {
-                        var el = allElements[i];
-                        // 保留 func-area 和 iframe 的祖先容器
-                        var isAncestorOfIframe = false;
-                        var check = reader;
-                        while (check) {
-                            if (check === el) {
-                                isAncestorOfIframe = true;
-                                break;
-                            }
-                            check = check.parentElement;
-                        }
-                        // 保留 func-area
-                        var isFuncArea = (el === funcArea);
+                window.__tryReaderOnlyMode = function() {
+                    try {
+                        var reader = null;
+                        var readerType = '';
                         
-                        if (!isAncestorOfIframe && !isFuncArea) {
-                            el.style.display = 'none';
+                        // 0. 优先通过 id 找到 OFD 阅读器 iframe（已知 id 为 previewIframe）
+                        var previewIframe = document.getElementById('previewIframe');
+                        if (previewIframe) {
+                            reader = previewIframe;
+                            readerType = 'previewIframe';
                         }
+                        
+                        // 1. 优先找 iframe（WPS 在线预览通常是 iframe）
+                        if (!reader) {
+                            var iframes = document.querySelectorAll('iframe');
+                            if (iframes.length > 0) {
+                                var maxArea = 0;
+                                for (var i = 0; i < iframes.length; i++) {
+                                    var area = iframes[i].offsetWidth * iframes[i].offsetHeight;
+                                    if (area > maxArea && area > 5000) {
+                                        maxArea = area;
+                                        reader = iframes[i];
+                                        readerType = 'iframe';
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // 2. 其次找 canvas（OFD 阅读器通常用 canvas）
+                        if (!reader) {
+                            var canvases = document.querySelectorAll('canvas');
+                            if (canvases.length > 0) {
+                                var maxArea2 = 0;
+                                for (var j = 0; j < canvases.length; j++) {
+                                    var area2 = canvases[j].offsetWidth * canvases[j].offsetHeight;
+                                    if (area2 > maxArea2 && area2 > 5000) {
+                                        maxArea2 = area2;
+                                        reader = canvases[j];
+                                        readerType = 'canvas';
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // 3. 找包含法规特征文字的最大元素
+                        if (!reader) {
+                            var allElements = document.querySelectorAll('div, section, article');
+                            var maxArea3 = 0;
+                            for (var k = 0; k < allElements.length; k++) {
+                                var el = allElements[k];
+                                var area3 = el.offsetWidth * el.offsetHeight;
+                                var text = el.textContent || '';
+                                var hasLawFeature = /第[一二三四五六七八九十百千0-9]+[条章节篇编]/.test(text) || 
+                                                    text.indexOf('目录') >= 0 || 
+                                                    /\d+\s*\/\s*\d+/.test(text);
+                                if (area3 > maxArea3 && area3 > window.innerWidth * window.innerHeight * 0.15 && hasLawFeature) {
+                                    maxArea3 = area3;
+                                    reader = el;
+                                    readerType = 'law-text';
+                                }
+                            }
+                        }
+                        
+                        // 4. 最后找页面中面积最大的 div
+                        if (!reader) {
+                            var allDivs = document.querySelectorAll('div');
+                            var maxArea4 = 0;
+                            for (var l = 0; l < allDivs.length; l++) {
+                                var el2 = allDivs[l];
+                                var area4 = el2.offsetWidth * el2.offsetHeight;
+                                if (area4 > maxArea4 && area4 > window.innerWidth * window.innerHeight * 0.3) {
+                                    maxArea4 = area4;
+                                    reader = el2;
+                                    readerType = 'largest-div';
+                                }
+                            }
+                        }
+                        
+                        if (!reader) {
+                            if (!window.__readerRetryCount) window.__readerRetryCount = 0;
+                            if (window.__readerRetryCount < 20) {
+                                window.__readerRetryCount++;
+                                setTimeout(window.__tryReaderOnlyMode, 1000);
+                            }
+                            return;
+                        }
+                        
+                        if (window.__readerOnlyModeApplied) return;
+                        window.__readerOnlyModeApplied = true;
+                        
+                        // 找到从 body 到 reader 的路径
+                        var path = [];
+                        var current = reader;
+                        while (current && current !== document.body) {
+                            path.unshift(current);
+                            current = current.parentElement;
+                        }
+                        
+                        // 只保留路径上的元素和 func-area，隐藏其他
+                        function keepOnlyPath(parent, pathIndex) {
+                            if (pathIndex >= path.length) return;
+                            var target = path[pathIndex];
+                            var children = parent.children;
+                            for (var i = 0; i < children.length; i++) {
+                                var child = children[i];
+                                if (child === target) {
+                                    keepOnlyPath(child, pathIndex + 1);
+                                } else {
+                                    var childClass = child.className || '';
+                                    var isFuncArea = typeof childClass === 'string' && childClass.indexOf('func-area') >= 0;
+                                    var hasFuncArea = child.querySelector && child.querySelector('.func-area');
+                                    
+                                    if (isFuncArea || hasFuncArea) {
+                                        child.style.display = 'block';
+                                        child.style.position = 'relative';
+                                        child.style.width = '100%';
+                                        child.style.maxWidth = '100%';
+                                        child.style.margin = '0';
+                                        child.style.padding = '8px 12px';
+                                        child.style.boxSizing = 'border-box';
+                                        child.style.background = '#fff';
+                                        child.style.borderBottom = '1px solid #eee';
+                                        child.style.zIndex = '100';
+                                    } else {
+                                        child.style.display = 'none';
+                                    }
+                                }
+                            }
+                        }
+                        keepOnlyPath(document.body, 0);
+                        
+                        document.documentElement.style.margin = '0';
+                        document.documentElement.style.padding = '0';
+                        document.documentElement.style.overflow = 'hidden';
+                        document.body.style.margin = '0';
+                        document.body.style.padding = '0';
+                        document.body.style.overflow = 'hidden';
+                        document.body.style.background = '#fff';
+                        
+                        for (var m = 0; m < path.length; m++) {
+                            var el = path[m];
+                            el.style.width = '100%';
+                            el.style.maxWidth = '100%';
+                            el.style.margin = '0';
+                            el.style.padding = '0';
+                            el.style.boxSizing = 'border-box';
+                            el.style.overflow = 'auto';
+                        }
+                        
+                        reader.style.width = '100%';
+                        reader.style.height = '100vh';
+                        reader.style.maxWidth = '100%';
+                        reader.style.display = 'block';
+                        reader.style.border = 'none';
+                        
+                        setTimeout(function() {
+                            try {
+                                if (reader.tagName === 'IFRAME') {
+                                    var originalWidth = 750;
+                                    var scale = window.innerWidth / originalWidth;
+                                    
+                                    var iframeParent = reader.parentElement;
+                                    var funcAreaOriginalHeight = 44;
+                                    var funcAreaDisplayHeight = funcAreaOriginalHeight * scale;
+                                    
+                                    if (iframeParent) {
+                                        iframeParent.style.position = 'relative';
+                                        iframeParent.style.width = '100%';
+                                        iframeParent.style.height = (window.innerHeight - funcAreaDisplayHeight) + 'px';
+                                        iframeParent.style.minHeight = (window.innerHeight - funcAreaDisplayHeight) + 'px';
+                                        iframeParent.style.overflow = 'hidden';
+                                        iframeParent.style.margin = '0';
+                                        iframeParent.style.padding = '0';
+                                        iframeParent.style.marginTop = funcAreaDisplayHeight + 'px';
+                                    }
+                                    
+                                    reader.style.width = originalWidth + 'px';
+                                    reader.style.height = ((window.innerHeight - funcAreaDisplayHeight) / scale) + 'px';
+                                    reader.style.minHeight = ((window.innerHeight - funcAreaDisplayHeight) / scale) + 'px';
+                                    reader.style.border = 'none';
+                                    reader.style.display = 'block';
+                                    reader.style.margin = '0';
+                                    reader.style.padding = '0';
+                                    reader.style.transform = 'scale(' + scale + ')';
+                                    reader.style.transformOrigin = 'top left';
+                                    
+                                    var ancestor = reader.parentElement;
+                                    while (ancestor && ancestor !== document.body) {
+                                        ancestor.style.width = '100%';
+                                        ancestor.style.height = '100%';
+                                        ancestor.style.minHeight = '100vh';
+                                        ancestor.style.margin = '0';
+                                        ancestor.style.padding = '0';
+                                        ancestor.style.overflow = 'hidden';
+                                        ancestor = ancestor.parentElement;
+                                    }
+                                    
+                                    document.body.style.width = '100%';
+                                    document.body.style.height = '100%';
+                                    document.body.style.minHeight = '100vh';
+                                    document.body.style.overflow = 'hidden';
+                                    document.body.style.margin = '0';
+                                    document.body.style.padding = '0';
+                                    document.documentElement.style.width = '100%';
+                                    document.documentElement.style.height = '100%';
+                                    document.documentElement.style.overflow = 'hidden';
+                                    document.documentElement.style.margin = '0';
+                                    document.documentElement.style.padding = '0';
+                                    
+                                    var funcArea = document.querySelector('.func-area');
+                                    if (funcArea) {
+                                        funcArea.style.position = 'fixed';
+                                        funcArea.style.top = '0';
+                                        funcArea.style.left = '0';
+                                        funcArea.style.width = originalWidth + 'px';
+                                        funcArea.style.height = funcAreaOriginalHeight + 'px';
+                                        funcArea.style.transform = 'scale(' + scale + ')';
+                                        funcArea.style.transformOrigin = 'top left';
+                                        funcArea.style.zIndex = '1000';
+                                        funcArea.style.background = '#fff';
+                                        funcArea.style.boxSizing = 'border-box';
+                                        funcArea.style.padding = '8px 12px';
+                                        funcArea.style.borderBottom = '1px solid #eee';
+                                        funcArea.style.margin = '0';
+                                        funcArea.style.display = 'flex';
+                                        funcArea.style.alignItems = 'center';
+                                        funcArea.style.justifyContent = 'space-between';
+                                    }
+                                    
+                                    var currentIframeSrc = reader.src;
+                                    
+                                    setInterval(function() {
+                                        try {
+                                            // 确保下载弹出框可见
+                                            var popups = document.querySelectorAll('.el-tooltip__popper, [class*="dropdown"], [class*="popover"], [class*="el-popper"]');
+                                            for (var i = 0; i < popups.length; i++) {
+                                                var popup = popups[i];
+                                                var popupText = (popup.textContent || '').trim();
+                                                if (popupText.indexOf('下载') >= 0 || popupText.indexOf('WPS') >= 0 || popupText.indexOf('公报') >= 0) {
+                                                    popup.style.display = 'block';
+                                                    popup.style.visibility = 'visible';
+                                                    popup.style.opacity = '1';
+                                                    popup.style.zIndex = '9999';
+                                                }
+                                            }
+                                            
+                                            // 检测 iframe src 变化，重新缩放
+                                            var iframe = document.querySelector('#previewIframe, iframe');
+                                            if (iframe && iframe.src !== currentIframeSrc) {
+                                                currentIframeSrc = iframe.src;
+                                                setTimeout(function() {
+                                                    try {
+                                                        var newIframe = document.querySelector('#previewIframe, iframe');
+                                                        if (newIframe) {
+                                                            var origWidth = 750;
+                                                            var newScale = window.innerWidth / origWidth;
+                                                            var fHeight = 44;
+                                                            var fArea = document.querySelector('.func-area');
+                                                            if (fArea) fHeight = fArea.offsetHeight || 44;
+                                                            
+                                                            newIframe.style.width = origWidth + 'px';
+                                                            newIframe.style.height = ((window.innerHeight - fHeight) / newScale) + 'px';
+                                                            newIframe.style.minHeight = ((window.innerHeight - fHeight) / newScale) + 'px';
+                                                            newIframe.style.transform = 'scale(' + newScale + ')';
+                                                            newIframe.style.transformOrigin = 'top left';
+                                                            
+                                                            var iParent = newIframe.parentElement;
+                                                            if (iParent) {
+                                                                iParent.style.marginTop = fHeight + 'px';
+                                                                iParent.style.height = (window.innerHeight - fHeight) + 'px';
+                                                                iParent.style.minHeight = (window.innerHeight - fHeight) + 'px';
+                                                            }
+                                                        }
+                                                    } catch(e) {}
+                                                }, 1000);
+                                            }
+                                            
+                                            // 确保下载按钮可点击
+                                            var downloadBtn = document.querySelector('.download, [class*="download"]');
+                                            if (downloadBtn) {
+                                                downloadBtn.style.display = '';
+                                                downloadBtn.style.visibility = 'visible';
+                                                downloadBtn.style.opacity = '1';
+                                                downloadBtn.style.pointerEvents = 'auto';
+                                                downloadBtn.style.cursor = 'pointer';
+                                            }
+                                        } catch(e) {}
+                                    }, 500);
+                                } else {
+                                    // 非 iframe 情况：遍历内部元素缩放
+                                    var allElements = reader.querySelectorAll('*');
+                                    for (var i = 0; i < allElements.length; i++) {
+                                        var el = allElements[i];
+                                        if (el.offsetWidth > window.innerWidth && el.offsetHeight > 50) {
+                                            var scale = (window.innerWidth - 10) / el.offsetWidth;
+                                            el.style.transform = 'scale(' + scale + ')';
+                                            el.style.transformOrigin = 'top center';
+                                            el.style.margin = '0 auto';
+                                            el.style.display = 'block';
+                                            var scaledHeight = el.offsetHeight * scale;
+                                            if (!el.nextElementSibling || !el.nextElementSibling.classList.contains('scale-placeholder')) {
+                                                var placeholder = document.createElement('div');
+                                                placeholder.className = 'scale-placeholder';
+                                                placeholder.style.height = scaledHeight + 'px';
+                                                placeholder.style.width = '100%';
+                                                placeholder.style.pointerEvents = 'none';
+                                                el.parentNode.insertBefore(placeholder, el.nextSibling);
+                                            } else {
+                                                el.nextElementSibling.style.height = scaledHeight + 'px';
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                reader.style.overflow = 'auto';
+                                reader.style.webkitOverflowScrolling = 'touch';
+                                window.dispatchEvent(new Event('resize'));
+                                
+                            } catch(e) {
+                                console.log('adapt mobile width error:', e);
+                            }
+                        }, 2000);
+                        
+                        var viewport = document.querySelector('meta[name="viewport"]');
+                        if (!viewport) {
+                            viewport = document.createElement('meta');
+                            viewport.setAttribute('name', 'viewport');
+                            document.head.appendChild(viewport);
+                        }
+                        viewport.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=3.0, user-scalable=yes');
+                        
+                        setTimeout(function() {
+                            window.dispatchEvent(new Event('resize'));
+                        }, 500);
+                        
+                    } catch(e) {
+                        console.log('readerOnlyMode error:', e);
                     }
-                    
-                    // 触发 resize 事件
-                    window.dispatchEvent(new Event('resize'));
-                }
+                };
                 
-                // 延迟执行，等待页面渲染
-                setTimeout(adjustReader, 1500);
+                window.__tryReaderOnlyMode();
                 
             } catch(e) {
-                console.error('Adjust OFD error:', e);
+                console.log('injectReaderOnlyMode error:', e);
             }
-        })()
+        })();
     """.trimIndent()
 
     view.evaluateJavascript(js, null)
