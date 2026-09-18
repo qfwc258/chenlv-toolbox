@@ -233,7 +233,7 @@ object DocxHtml {
         if (showPageNumber) {
             append("  var numDiv=document.createElement('div');")
             append("  numDiv.className='page-number';")
-            append("  numDiv.textContent=(p+1)+' / '+pages.length;")
+            append("  numDiv.textContent=(p+1);")
             append("  pageDiv.appendChild(numDiv);")
         }
         append("  body.appendChild(pageDiv);")
