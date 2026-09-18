@@ -28,6 +28,9 @@ import com.wb.mdgw.BuildConfig
 import com.wb.mdgw.wechat.WeChatScreen
 import com.wb.mdgw.pptx.MdPptxScreen
 import com.wb.mdgw.shot.ShotScreen
+import com.wb.mdgw.law.Law
+import com.wb.mdgw.law.LawDetailScreen
+import com.wb.mdgw.law.LawSearchScreen
 
 class MainActivity : ComponentActivity() {
 
@@ -76,7 +79,7 @@ fun MdGwTheme(darkTheme: Boolean = false, content: @Composable () -> Unit) {
     MaterialTheme(colorScheme = colors, content = content)
 }
 
-private enum class DocMode { WORD, PDF, WECHAT, PPTX, SHOT, SETTINGS }
+private enum class DocMode { WORD, PDF, WECHAT, PPTX, LAW, SHOT, SETTINGS }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -99,6 +102,7 @@ fun AppScreen(initialUri: Uri? = null) {
             } else DocMode.WORD
         }
         var mode by remember { mutableStateOf(detected) }
+        var selectedLaw by remember { mutableStateOf<Law?>(null) }
         val snackbar = remember { SnackbarHostState() }
         val darkMode by AppSettings.darkMode.collectAsState()
 
@@ -133,6 +137,12 @@ fun AppScreen(initialUri: Uri? = null) {
                     onClick = { mode = DocMode.PPTX },
                     icon = { Icon(Icons.Default.Slideshow, contentDescription = null) },
                     label = { Text("PPTX", fontSize = 11.sp, maxLines = 1, softWrap = false) }
+                )
+                NavigationBarItem(
+                    selected = mode == DocMode.LAW,
+                    onClick = { mode = DocMode.LAW },
+                    icon = { Icon(Icons.Default.Gavel, contentDescription = null) },
+                    label = { Text("法规", fontSize = 11.sp, maxLines = 1, softWrap = false) }
                 )
                 NavigationBarItem(
                     selected = mode == DocMode.SHOT,
@@ -185,6 +195,14 @@ fun AppScreen(initialUri: Uri? = null) {
                 MdPptxScreen(snackbar = snackbar)
             }
             androidx.compose.animation.AnimatedVisibility(
+                visible = mode == DocMode.LAW,
+                enter = fadeIn(), exit = fadeOut()
+            ) {
+                LawSearchScreen(
+                    onLawClick = { law -> selectedLaw = law }
+                )
+            }
+            androidx.compose.animation.AnimatedVisibility(
                 visible = mode == DocMode.SHOT,
                 enter = fadeIn(), exit = fadeOut()
             ) {
@@ -198,6 +216,18 @@ fun AppScreen(initialUri: Uri? = null) {
                 enter = fadeIn(), exit = fadeOut()
             ) {
                 SettingsScreen()
+            }
+            // 法规详情页（覆盖层）
+            if (selectedLaw != null) {
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = true,
+                    enter = fadeIn(), exit = fadeOut()
+                ) {
+                    LawDetailScreen(
+                        law = selectedLaw!!,
+                        onBack = { selectedLaw = null }
+                    )
+                }
             }
         }
     }

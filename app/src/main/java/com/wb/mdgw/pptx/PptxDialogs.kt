@@ -592,10 +592,10 @@ internal fun CompositionSelector(
                     AlignmentCell("中中", comp.valign == VAlign.CENTER && comp.halign == HAlign.CENTER) {
                         onCompositionChange(comp.copy(valign = VAlign.CENTER, halign = HAlign.CENTER))
                     }
-                    // 多栏结构时，栏宽直接输入数值，放在对齐行右侧
+                    // 多栏结构时，栏宽滑动条放在对齐行右侧
                     if (isMultiCol) {
-                        Spacer(Modifier.weight(1f))
-                        ColumnWidthInput(comp.colRatio) {
+                        Spacer(Modifier.width(8.dp))
+                        ColumnWidthSlider(comp.colRatio) {
                             onCompositionChange(comp.copy(colRatio = it))
                         }
                     }
@@ -652,57 +652,41 @@ internal fun ToolRow(content: @Composable RowScope.() -> Unit) {
 }
 
 /**
- * 「栏宽」输入框：主栏占比直接输入数值（20~80），null=智能。
+ * 「栏宽」滑动条：主栏占比滑动调节（20~80），null=智能。
  * 放在对齐行右侧，紧凑不占空间。
  */
 @Composable
-internal fun ColumnWidthInput(colRatio: Int?, onRatioChange: (Int?) -> Unit) {
-    var text by remember(colRatio) {
-        mutableStateOf(colRatio?.toString() ?: "")
-    }
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
+internal fun ColumnWidthSlider(colRatio: Int?, onRatioChange: (Int?) -> Unit) {
+    val current = colRatio ?: 50
+    Column(
+        modifier = Modifier.weight(1f),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(
-            "栏宽",
-            fontSize = 10.sp,
-            color = MaterialTheme.colorScheme.outline,
-            maxLines = 1
-        )
-        TextField(
-            value = text,
-            onValueChange = { newText ->
-                val filtered = newText.filter { it.isDigit() }.take(2)
-                text = filtered
-                val v = filtered.toIntOrNull()
-                if (v != null && v in 20..80) {
-                    onRatioChange(v)
-                } else if (filtered.isEmpty()) {
-                    onRatioChange(null)
-                }
-            },
-            placeholder = { Text("智能", fontSize = 10.sp, color = Color.Gray) },
-            suffix = { Text("%", fontSize = 10.sp, color = MaterialTheme.colorScheme.outline) },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            singleLine = true,
-            textStyle = LocalTextStyle.current.copy(
-                fontSize = 11.sp,
-                textAlign = TextAlign.Center,
-                color = MaterialTheme.colorScheme.onSurface
-            ),
-            modifier = Modifier.width(64.dp).height(32.dp),
-            colors = TextFieldDefaults.colors(
-                unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                focusedContainerColor = MaterialTheme.colorScheme.surface,
-                unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                cursorColor = MaterialTheme.colorScheme.primary,
-                focusedIndicatorColor = MaterialTheme.colorScheme.primary,
-                unfocusedIndicatorColor = MaterialTheme.colorScheme.outlineVariant,
-                unfocusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                focusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(
+                if (colRatio == null) "智能" else "${colRatio}%",
+                fontSize = 9.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1
             )
+            if (colRatio != null) {
+                Text(
+                    "✕",
+                    fontSize = 9.sp,
+                    color = MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.clickable { onRatioChange(null) }
+                )
+            }
+        }
+        Slider(
+            value = current.toFloat(),
+            onValueChange = { onRatioChange(it.roundToInt()) },
+            valueRange = 20f..80f,
+            steps = 11,
+            modifier = Modifier.fillMaxWidth().height(20.dp)
         )
     }
 }
