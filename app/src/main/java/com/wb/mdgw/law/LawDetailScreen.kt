@@ -231,7 +231,7 @@ private fun injectReaderOnlyMode(view: WebView) {
     val js = """
         (function() {
             try {
-                var DESIGN_WIDTH = 1200;
+                var DESIGN_WIDTH = 2000;
                 
                 function adjustIframe() {
                     var iframe = document.getElementById('previewIframe');
