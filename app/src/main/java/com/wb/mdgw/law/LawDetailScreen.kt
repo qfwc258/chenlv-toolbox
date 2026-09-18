@@ -220,32 +220,44 @@ private fun waitForOfdAndInject(view: WebView?, retryCount: Int) {
  * 注入 JS，调整 OFD 阅读器自适应手机
  *
  * 实现方案：
- * 1. 设置 viewport meta 标签：width=750（网站设计宽度），user-scalable=yes
- * 2. 浏览器自动缩放，让 750px 宽度适配手机屏幕
+ * 1. 找到 previewIframe（OFD 阅读器）
+ * 2. 设置 iframe 宽度为 100%（手机屏幕宽度）
  * 3. 自动滚动到 func-area（目录/下载/WPS版本）位置，使其显示在顶端
- * 4. 整个页面可上下左右自由滚动、缩放
+ * 4. 整个页面可上下左右自由滚动
  */
 private fun injectReaderOnlyMode(view: WebView) {
     val js = """
         (function() {
             try {
-                // 设置 viewport：宽度为网站设计宽度 750px，允许用户缩放
-                var viewport = document.querySelector('meta[name="viewport"]');
-                if (!viewport) {
-                    viewport = document.createElement('meta');
-                    viewport.setAttribute('name', 'viewport');
-                    document.head.appendChild(viewport);
-                }
-                // width=750 表示让浏览器认为屏幕宽度是 750px，自动缩放到实际手机宽度
-                viewport.setAttribute('content', 'width=750, user-scalable=yes, initial-scale=1.0');
-                
-                // 延迟滚动到 func-area 位置（等待页面布局完成）
-                setTimeout(function() {
+                // 等待 iframe 加载后调整
+                function adjustIframe() {
+                    var iframe = document.getElementById('previewIframe');
+                    if (!iframe) {
+                        var iframes = document.querySelectorAll('iframe');
+                        if (iframes.length > 0) iframe = iframes[0];
+                    }
+                    
+                    if (!iframe) {
+                        setTimeout(adjustIframe, 500);
+                        return;
+                    }
+                    
+                    // 设置 iframe 宽度为手机屏幕宽度（100%）
+                    iframe.style.width = '100%';
+                    iframe.style.maxWidth = '100%';
+                    iframe.style.display = 'block';
+                    iframe.style.marginLeft = '0';
+                    iframe.style.marginRight = '0';
+                    
+                    // 自动滚动到 func-area 位置
                     var funcArea = document.querySelector('.func-area');
                     if (funcArea) {
                         funcArea.scrollIntoView();
                     }
-                }, 2000);
+                }
+                
+                // 延迟执行，等待页面渲染
+                setTimeout(adjustIframe, 1000);
                 
             } catch(e) {
                 console.error('Adjust OFD error:', e);
