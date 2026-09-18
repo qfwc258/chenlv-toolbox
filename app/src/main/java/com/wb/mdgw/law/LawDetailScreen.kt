@@ -219,64 +219,32 @@ private fun waitForOfdAndInject(view: WebView?, retryCount: Int) {
 /**
  * 注入 JS，调整 OFD 阅读器自适应手机
  *
- * 实现方案（参考法律宝典，但不隐藏任何元素）：
- * 1. 网站设计宽度固定约 750px
- * 2. 计算缩放比例 = 手机屏幕宽度 / 750
- * 3. 用 CSS zoom 缩放整个页面
- * 4. 让内容居中显示
- * 5. 自动滚动到 func-area（目录/下载/WPS版本）位置，使其显示在顶端
- * 6. 整个页面可上下左右自由滚动
- * 7. 定期检测 iframe src 变化，切换版本后重新计算缩放
+ * 实现方案：
+ * 1. 设置 viewport meta 标签：width=750（网站设计宽度），user-scalable=yes
+ * 2. 浏览器自动缩放，让 750px 宽度适配手机屏幕
+ * 3. 自动滚动到 func-area（目录/下载/WPS版本）位置，使其显示在顶端
+ * 4. 整个页面可上下左右自由滚动、缩放
  */
 private fun injectReaderOnlyMode(view: WebView) {
     val js = """
         (function() {
             try {
-                // 网站设计宽度（固定值）
-                var DESIGN_WIDTH = 750;
-                
-                // 计算缩放比例：让设计宽度 = 手机屏幕宽度
-                var screenWidth = window.innerWidth;
-                var scale = screenWidth / DESIGN_WIDTH;
-                
-                // 用 zoom 缩放整个页面
-                document.documentElement.style.zoom = scale;
-                document.body.style.zoom = scale;
-                
-                // 让内容居中显示
-                document.body.style.marginLeft = 'auto';
-                document.body.style.marginRight = 'auto';
-                document.body.style.width = DESIGN_WIDTH + 'px';
+                // 设置 viewport：宽度为网站设计宽度 750px，允许用户缩放
+                var viewport = document.querySelector('meta[name="viewport"]');
+                if (!viewport) {
+                    viewport = document.createElement('meta');
+                    viewport.setAttribute('name', 'viewport');
+                    document.head.appendChild(viewport);
+                }
+                // width=750 表示让浏览器认为屏幕宽度是 750px，自动缩放到实际手机宽度
+                viewport.setAttribute('content', 'width=750, user-scalable=yes, initial-scale=1.0');
                 
                 // 延迟滚动到 func-area 位置（等待页面布局完成）
                 setTimeout(function() {
                     var funcArea = document.querySelector('.func-area');
                     if (funcArea) {
-                        var rect = funcArea.getBoundingClientRect();
-                        var scrollY = window.pageYOffset || document.documentElement.scrollTop;
-                        // getBoundingClientRect 返回缩放后的坐标，需要除以 scale 得到原始坐标
-                        var targetY = (scrollY + rect.top) / scale;
-                        window.scrollTo(0, targetY);
+                        funcArea.scrollIntoView();
                     }
-                }, 1500);
-                
-                // 定期检测 iframe src 变化，重新调整缩放
-                var lastIframeSrc = '';
-                setInterval(function() {
-                    try {
-                        var iframe = document.querySelector('#previewIframe, iframe');
-                        if (iframe && iframe.src !== lastIframeSrc) {
-                            lastIframeSrc = iframe.src;
-                            setTimeout(function() {
-                                var s = window.innerWidth / DESIGN_WIDTH;
-                                document.documentElement.style.zoom = s;
-                                document.body.style.zoom = s;
-                                document.body.style.width = DESIGN_WIDTH + 'px';
-                                document.body.style.marginLeft = 'auto';
-                                document.body.style.marginRight = 'auto';
-                            }, 2000);
-                        }
-                    } catch(e) {}
                 }, 2000);
                 
             } catch(e) {
