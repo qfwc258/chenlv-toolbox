@@ -217,8 +217,8 @@ private fun waitForOfdAndInject(view: WebView?, retryCount: Int) {
  * 注入 JS，调整 OFD 阅读器自适应手机
  *
  * 实现方案：
- * 1. 找到 previewIframe，获取它的实际渲染宽度
- * 2. 计算缩放比例 = 手机屏幕宽度 / iframe实际宽度
+ * 1. OFD 内容实际宽度固定约 750px（网站设计宽度）
+ * 2. 计算缩放比例 = 手机屏幕宽度 / 750
  * 3. 用 document.body.style.zoom 缩放整个页面
  * 4. 自动滚动到 func-area（目录/下载/WPS版本）位置，使其显示在顶端
  * 5. 整个页面可上下左右自由滚动
@@ -230,6 +230,9 @@ private fun injectReaderOnlyMode(view: WebView) {
             try {
                 window.__adjustOfdReader = function() {
                     try {
+                        // OFD 内容实际宽度（网站设计宽度，固定值）
+                        var OFD_CONTENT_WIDTH = 750;
+                        
                         // 找到 OFD 阅读器 iframe
                         var previewIframe = document.getElementById('previewIframe');
                         if (!previewIframe) {
@@ -246,28 +249,22 @@ private fun injectReaderOnlyMode(view: WebView) {
                             return;
                         }
                         
-                        // 获取 iframe 的实际渲染宽度
-                        var iframeWidth = previewIframe.offsetWidth || previewIframe.getBoundingClientRect().width;
-                        if (iframeWidth < 100) {
-                            // iframe 还没布局好，等一下再试
-                            setTimeout(window.__adjustOfdReader, 500);
-                            return;
-                        }
-                        
-                        // 计算缩放比例：让 iframe 宽度 = 手机屏幕宽度
+                        // 计算缩放比例：让 OFD 内容宽度 = 手机屏幕宽度
                         var screenWidth = window.innerWidth;
-                        var scale = screenWidth / iframeWidth;
+                        var scale = screenWidth / OFD_CONTENT_WIDTH;
                         
                         // 用 zoom 缩放整个页面
                         document.body.style.zoom = scale;
                         document.documentElement.style.zoom = scale;
                         
                         // 自动滚动到 func-area（目录/下载/WPS版本按钮）位置
+                        // 注意：不固定 func-area，只是初始滚动定位，用户可以自由滚动
                         var funcArea = document.querySelector('.func-area');
                         if (funcArea) {
                             var rect = funcArea.getBoundingClientRect();
                             var scrollY = window.pageYOffset || document.documentElement.scrollTop;
-                            var targetY = scrollY + rect.top;
+                            // 缩放后的位置需要除以 scale，因为 getBoundingClientRect 返回的是缩放后的坐标
+                            var targetY = (scrollY + rect.top) / scale;
                             window.scrollTo(0, targetY);
                         }
                         
@@ -281,15 +278,9 @@ private fun injectReaderOnlyMode(view: WebView) {
                                 if (iframe && iframe.src !== currentSrc) {
                                     currentSrc = iframe.src;
                                     setTimeout(function() {
-                                        var newIframe = document.querySelector('#previewIframe, iframe');
-                                        if (newIframe) {
-                                            var w = newIframe.offsetWidth || newIframe.getBoundingClientRect().width;
-                                            if (w > 100) {
-                                                var s = window.innerWidth / w;
-                                                document.body.style.zoom = s;
-                                                document.documentElement.style.zoom = s;
-                                            }
-                                        }
+                                        var s = window.innerWidth / OFD_CONTENT_WIDTH;
+                                        document.body.style.zoom = s;
+                                        document.documentElement.style.zoom = s;
                                     }, 2000);
                                 }
                             } catch(e) {}
