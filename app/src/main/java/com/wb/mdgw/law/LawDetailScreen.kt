@@ -385,7 +385,13 @@ private fun injectReaderOnlyMode(view: WebView) {
                                     var scale = window.innerWidth / originalWidth;
                                     
                                     var iframeParent = reader.parentElement;
-                                    var funcAreaOriginalHeight = 44;
+                                    
+                                    // 自动检测 func-area 实际高度，默认可更小
+                                    var funcAreaOriginalHeight = 36;
+                                    var funcAreaEl = document.querySelector('.func-area');
+                                    if (funcAreaEl) {
+                                        funcAreaOriginalHeight = funcAreaEl.offsetHeight || 36;
+                                    }
                                     var funcAreaDisplayHeight = funcAreaOriginalHeight * scale;
                                     
                                     if (iframeParent) {
@@ -438,13 +444,14 @@ private fun injectReaderOnlyMode(view: WebView) {
                                         funcArea.style.top = '0';
                                         funcArea.style.left = '0';
                                         funcArea.style.width = originalWidth + 'px';
-                                        funcArea.style.height = funcAreaOriginalHeight + 'px';
+                                        funcArea.style.height = 'auto';
+                                        funcArea.style.minHeight = funcAreaOriginalHeight + 'px';
                                         funcArea.style.transform = 'scale(' + scale + ')';
                                         funcArea.style.transformOrigin = 'top left';
                                         funcArea.style.zIndex = '1000';
                                         funcArea.style.background = '#fff';
                                         funcArea.style.boxSizing = 'border-box';
-                                        funcArea.style.padding = '8px 12px';
+                                        funcArea.style.padding = '4px 12px';
                                         funcArea.style.borderBottom = '1px solid #eee';
                                         funcArea.style.margin = '0';
                                         funcArea.style.display = 'flex';
