@@ -221,8 +221,8 @@ private fun waitForOfdAndInject(view: WebView?, retryCount: Int) {
  *
  * 实现方案：
  * 1. 找到 previewIframe（OFD 阅读器）
- * 2. 设置 iframe 原始宽度为 750px（网站设计宽度）
- * 3. 计算 scale = 手机屏幕宽度 / 750
+ * 2. 设置 iframe 原始宽度为 1200px
+ * 3. 计算 scale = 手机屏幕宽度 / 1200
  * 4. 用 CSS transform: scale() 缩放 iframe
  * 5. 自动滚动到 func-area（目录/下载/WPS版本）位置
  * 6. 整个页面可上下左右自由滚动
@@ -231,7 +231,7 @@ private fun injectReaderOnlyMode(view: WebView) {
     val js = """
         (function() {
             try {
-                var DESIGN_WIDTH = 750;
+                var DESIGN_WIDTH = 1200;
                 
                 function adjustIframe() {
                     var iframe = document.getElementById('previewIframe');
