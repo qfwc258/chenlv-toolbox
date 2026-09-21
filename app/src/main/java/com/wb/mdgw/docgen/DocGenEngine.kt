@@ -25,8 +25,11 @@ data class GenOutput(
 /**
  * 文书批量生成引擎（对应 PC 端 generate_data()）。
  *
- * 流程：读取已导入模板 → 按文书类型 code 粗筛文件名 → docx 走 [DocxTemplateFiller]
+ * 流程：扫描模板目录 → 按文书类型 code 粗筛文件名 → docx 走 [DocxTemplateFiller]
  * 占位符替换、pdf 原样复制 → 保存到「下载 / 陈律文档 / 案件_<编号> /」→ 打包 zip 供分享。
+ *
+ * 替换规则：先铺内置默认字段全集（用户未填 / 已删除的标准字段置空，由 filler 按占位符
+ * 长度留白，保证模板里不残留占位符），再用用户当前填写 / 新增的字段值覆盖。
  */
 object DocGenEngine {
 
@@ -41,18 +44,23 @@ object DocGenEngine {
     /**
      * 执行批量生成。
      *
-     * @param caseNumber   案件编号（决定输出子目录 案件_<编号>，空则回退为 1）
+     * @param caseNumber   案件编号（决定输出子目录 案件_<编号>，可含中文；空则回退为 1）
      * @param selectedTypes 选中的文书类型 code 集合；**空集合表示全部**（对应 PC 的 lx=0）
+     * @param templates    从模板目录扫描得到的文件列表
      */
     fun generate(
         context: Context,
         caseNumber: String,
         selectedTypes: Set<String>,
-        fieldDoc: FieldDoc
+        fieldDoc: FieldDoc,
+        templates: List<DocTemplateFile>
     ): GenOutput {
-        val rules = fieldDoc.toMap()
-        val templates = DocTemplateStore.loadMeta(context)
-        val caseDir = DIR_PREFIX + (caseNumber.trim().ifBlank { "1" })
+        // 1) 默认字段全集补空；2) 用户值覆盖
+        val rules = LinkedHashMap<String, String>()
+        DefaultFields.keys(context).forEach { rules[it] = "" }
+        fieldDoc.toMap().forEach { (k, v) -> rules[k] = v }
+
+        val caseDir = DIR_PREFIX + sanitizeFileName(caseNumber.trim().ifBlank { "1" })
 
         val results = mutableListOf<GenResult>()
         data class Out(val name: String, val bytes: ByteArray, val mime: String)
@@ -61,8 +69,8 @@ object DocGenEngine {
         for (template in templates) {
             if (!matchesType(template.fileName, selectedTypes)) continue
             try {
-                val bytes = DocTemplateStore.readBytes(context, template)
-                    ?: throw IllegalStateException("模板文件已丢失，请重新导入")
+                val bytes = template.readBytes()
+                    ?: throw IllegalStateException("模板文件读取失败，请检查目录权限")
 
                 val outBytes = when {
                     template.isPdf -> bytes // PDF 原样复制

@@ -33,6 +33,7 @@ object FieldLabels {
         // 授权
         "wtxm" to "委托项目",
         "quanx" to "授权权限",
+        "lsf" to "律师费",
         // 调证
         "cbdw" to "查证单位",
         "bdqxx" to "被调取信息",
@@ -70,7 +71,7 @@ object FieldLabels {
 
     /** 内容型字段（值可能是大段文字），表单用多行输入框 */
     private val LONG_BASE: Set<String> = setOf(
-        "quanx", "ajqk", "ssqq", "basl", "gcnr",
+        "quanx", "lsf", "ajqk", "ssqq", "basl", "gcnr",
         "yjnr", "dltg", "cbxj", "ljsm", "bljg"
     )
 

@@ -1,11 +1,11 @@
 --委托授权--
-leib::
-anyou::
-weitr::
-bianh::
-badw::
-jied::
-zprq::
+leib::民事
+anyou::劳务合同纠纷
+weitr::周
+bianh::(2026)湘援0124民1号
+badw::宁乡市人民法院
+jied::一审
+zprq::2026年1月1日
 --委托人--
 wtrsfz::
 wtrdh::
@@ -20,6 +20,9 @@ dlrsfz::
 --授权--
 wtxm::
 quanx::
+sq1::A
+sq2::一般
+lsf::本合同签订之日一次性支付律师费人民币10000元。无论案件后续以调解、和解、撤诉或其他方式终结，均不得拒付或少付上述律师费。
 
 --调证--
 cbdw::
@@ -93,7 +96,7 @@ ktdd::
 anhao::
 jarq::
 gdrq::
-dfdsr::
+dfdsr::xx公司
 #承办小结
 cbxj::
 #阅卷说明

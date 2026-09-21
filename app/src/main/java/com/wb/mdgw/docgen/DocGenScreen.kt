@@ -1,12 +1,16 @@
 package com.wb.mdgw.docgen
 
 import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,15 +23,18 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -47,6 +54,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,6 +69,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.wb.mdgw.FileUtils
+import com.wb.mdgw.SettingsStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -93,7 +102,9 @@ fun DocGenScreen(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
 
-    var templates by remember { mutableStateOf(DocTemplateStore.loadMeta(context)) }
+    var templateDir by remember { mutableStateOf(SettingsStore.docgenTemplateDir(context)) }
+    var hasAccess by remember { mutableStateOf(DocTemplateDir.hasAccess(context)) }
+    var templates by remember { mutableStateOf(emptyList<DocTemplateFile>()) }
     var lines by remember { mutableStateOf(FieldRuleStore.loadOrDefault(context).lines) }
     var caseNumber by remember { mutableStateOf("1") }
     var selectedTypes by remember { mutableStateOf(emptySet<String>()) } // 空 = 全部
@@ -101,6 +112,14 @@ fun DocGenScreen(onBack: () -> Unit) {
     var collapsed by remember { mutableStateOf(emptySet<String>()) }
     var busy by remember { mutableStateOf(false) }
     var output by remember { mutableStateOf<GenOutput?>(null) }
+    var showAddDialog by remember { mutableStateOf(false) }
+
+    fun rescan() {
+        hasAccess = DocTemplateDir.hasAccess(context)
+        templates = if (hasAccess) DocTemplateDir.scan(templateDir) else emptyList()
+    }
+
+    LaunchedEffect(Unit) { rescan() }
 
     fun persistLines(newLines: List<RuleLine>) {
         lines = newLines
@@ -113,19 +132,37 @@ fun DocGenScreen(onBack: () -> Unit) {
         persistLines(newLines)
     }
 
-    // 导入模板（多选）
-    val templatePicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenMultipleDocuments()
-    ) { uris ->
-        if (uris.isNotEmpty()) scope.launch {
-            val ok = withContext(Dispatchers.IO) {
-                uris.count { DocTemplateStore.import(context, it) != null }
+    fun deleteField(index: Int) {
+        val newLines = lines.toMutableList()
+        newLines.removeAt(index)
+        persistLines(newLines)
+    }
+
+    fun addField(key: String, value: String) {
+        val defaults = DefaultFields.lines(context)
+        persistLines(DefaultFields.insertField(lines, key, value, defaults))
+    }
+
+    // Android 11+：跳「所有文件访问」设置页，返回后重扫
+    val manageStorageLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { rescan() }
+
+    // Android 10 及以下：申请读存储权限
+    val readPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { rescan() }
+
+    fun requestStorageAccess() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                data = Uri.parse("package:" + context.packageName)
             }
-            templates = DocTemplateStore.loadMeta(context)
-            val skipped = uris.size - ok
-            snackbar.showSnackbar(
-                if (skipped == 0) "已导入 $ok 个模板" else "导入 $ok 个，跳过 $skipped 个（仅支持 docx/pdf）"
-            )
+            runCatching { manageStorageLauncher.launch(intent) }.onFailure {
+                manageStorageLauncher.launch(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+            }
+        } else {
+            readPermLauncher.launch(android.Manifest.permission.READ_EXTERNAL_STORAGE)
         }
     }
 
@@ -161,14 +198,19 @@ fun DocGenScreen(onBack: () -> Unit) {
     }
 
     fun doGenerate() {
-        if (templates.isEmpty()) {
-            scope.launch { snackbar.showSnackbar("请先导入文书模板（docx/pdf）") }
+        if (!hasAccess) {
+            scope.launch { snackbar.showSnackbar("请先授予存储权限以读取模板目录") }
+            return
+        }
+        val tpl = DocTemplateDir.scan(templateDir)
+        if (tpl.isEmpty()) {
+            scope.launch { snackbar.showSnackbar("模板目录为空或不存在：$templateDir") }
             return
         }
         scope.launch {
             busy = true
             val out = withContext(Dispatchers.IO) {
-                DocGenEngine.generate(context, caseNumber, selectedTypes, FieldDoc(lines))
+                DocGenEngine.generate(context, caseNumber, selectedTypes, FieldDoc(lines), tpl)
             }
             busy = false
             if (out.results.isEmpty()) {
@@ -224,7 +266,7 @@ fun DocGenScreen(onBack: () -> Unit) {
                 .padding(horizontal = 12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // ---------- 模板管理 ----------
+            // ---------- 模板目录 ----------
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
@@ -234,31 +276,54 @@ fun DocGenScreen(onBack: () -> Unit) {
                     Column(Modifier.padding(14.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("文书模板", fontWeight = FontWeight.SemiBold, fontSize = 15.sp, modifier = Modifier.weight(1f))
-                            Button(onClick = {
-                                templatePicker.launch(
-                                    arrayOf(
-                                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                                        "application/pdf"
-                                    )
-                                )
+                            OutlinedButton(onClick = {
+                                SettingsStore.saveDocgenTemplateDir(context, templateDir)
+                                rescan()
                             }) {
-                                Icon(Icons.Default.FileUpload, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.size(4.dp))
-                                Text("导入模板")
+                                Text("重新扫描", fontSize = 12.sp)
                             }
                         }
                         Spacer(Modifier.height(6.dp))
+                        OutlinedTextField(
+                            value = templateDir,
+                            onValueChange = { templateDir = it },
+                            label = { Text("模板目录路径") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp)
+                        )
+                        Spacer(Modifier.height(4.dp))
                         Text(
-                            "选择 docx / pdf 模板，可多选；docx 会按下方规则替换占位符，pdf 原样复制。",
+                            "默认 /sdcard/pylaw/mb，把 docx/pdf 模板放进该目录；docx 按规则替换占位符，pdf 原样复制。",
                             fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        if (templates.isEmpty()) {
+
+                        if (!hasAccess) {
+                            Spacer(Modifier.height(10.dp))
+                            Button(onClick = { requestStorageAccess() }, modifier = Modifier.fillMaxWidth()) {
+                                Icon(Icons.Default.Folder, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.size(6.dp))
+                                Text("授予存储权限（所有文件访问）")
+                            }
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "需授权后才能读取 /sdcard 下的模板目录。",
+                                fontSize = 11.sp, color = MaterialTheme.colorScheme.error
+                            )
+                        } else if (templates.isEmpty()) {
                             Spacer(Modifier.height(8.dp))
-                            Text("尚未导入模板", fontSize = 13.sp, color = MaterialTheme.colorScheme.outline)
+                            Text(
+                                "目录为空或不存在：$templateDir（修改路径后点「重新扫描」）",
+                                fontSize = 12.sp, color = MaterialTheme.colorScheme.outline
+                            )
                         } else {
+                            Spacer(Modifier.height(8.dp))
+                            Text("已扫描到 ${templates.size} 个模板：", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
                             templates.forEach { t ->
                                 Row(
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Icon(
@@ -274,15 +339,6 @@ fun DocGenScreen(onBack: () -> Unit) {
                                         overflow = TextOverflow.Ellipsis,
                                         modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
                                     )
-                                    IconButton(
-                                        onClick = {
-                                            DocTemplateStore.delete(context, t.id)
-                                            templates = DocTemplateStore.loadMeta(context)
-                                        },
-                                        modifier = Modifier.size(30.dp)
-                                    ) {
-                                        Icon(Icons.Default.Delete, contentDescription = "删除", modifier = Modifier.size(18.dp))
-                                    }
                                 }
                             }
                         }
@@ -298,10 +354,13 @@ fun DocGenScreen(onBack: () -> Unit) {
                         Spacer(Modifier.height(10.dp))
                         OutlinedTextField(
                             value = caseNumber,
-                            onValueChange = { caseNumber = it.filter { c -> c.isDigit() || c == '-' } },
-                            label = { Text("案件编号") },
+                            onValueChange = { v ->
+                                // 允许中文 / 字母 / 数字，仅过滤文件系统非法字符
+                                caseNumber = v.replace(Regex("[<>:\"/\\\\|?*]"), "")
+                            },
+                            label = { Text("案件编号（可含中文）") },
                             singleLine = true,
-                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number),
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Text),
                             modifier = Modifier.fillMaxWidth()
                         )
                         Spacer(Modifier.height(10.dp))
@@ -335,6 +394,10 @@ fun DocGenScreen(onBack: () -> Unit) {
                     Column(Modifier.padding(14.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("替换字段", fontWeight = FontWeight.SemiBold, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                            OutlinedButton(onClick = { showAddDialog = true }) {
+                                Icon(Icons.Default.Add, null, Modifier.size(16.dp)); Spacer(Modifier.size(2.dp)); Text("添加", fontSize = 12.sp)
+                            }
+                            Spacer(Modifier.size(6.dp))
                             OutlinedButton(onClick = {
                                 ruleImporter.launch(arrayOf("text/plain", "text/*", "*/*"))
                             }) { Icon(Icons.Default.FileUpload, null, Modifier.size(16.dp)); Spacer(Modifier.size(2.dp)); Text("导入", fontSize = 12.sp) }
@@ -353,10 +416,20 @@ fun DocGenScreen(onBack: () -> Unit) {
                             singleLine = true,
                             shape = RoundedCornerShape(12.dp)
                         )
-                        Spacer(Modifier.height(6.dp))
-                        TextButton(onClick = {
-                            persistLines(lines.map { if (it.isField) it.copy(value = "") else it })
-                        }) { Text("一键清空所有填写值（保留字段结构）", fontSize = 12.sp) }
+                        Spacer(Modifier.height(2.dp))
+                        Row {
+                            TextButton(onClick = {
+                                persistLines(lines.map { if (it.isField) it.copy(value = "") else it })
+                            }, modifier = Modifier.weight(1f)) { Text("清空所有值", fontSize = 12.sp) }
+                            TextButton(onClick = {
+                                scope.launch {
+                                    val doc = withContext(Dispatchers.IO) { FieldRuleStore.resetOrDefault(context) }
+                                    lines = doc.lines
+                                    collapsed = emptySet()
+                                    snackbar.showSnackbar("已重置为默认结构")
+                                }
+                            }, modifier = Modifier.weight(1f)) { Text("重置为默认结构", fontSize = 12.sp) }
+                        }
                     }
                 }
             }
@@ -372,7 +445,7 @@ fun DocGenScreen(onBack: () -> Unit) {
                 }
                 items(matched, key = { "search-" + it.key }) { line ->
                     val idx = lines.indexOf(line)
-                    FieldInput(line) { v -> updateValue(idx, v) }
+                    FieldRow(line, onChange = { v -> updateValue(idx, v) }, onDelete = { deleteField(idx) })
                 }
             } else {
                 val sections = buildSections(lines)
@@ -417,7 +490,7 @@ fun DocGenScreen(onBack: () -> Unit) {
                                 }
                             } else if (line.isField) {
                                 item(key = "field-$idx-${line.key}") {
-                                    FieldInput(line) { v -> updateValue(idx, v) }
+                                    FieldRow(line, onChange = { v -> updateValue(idx, v) }, onDelete = { deleteField(idx) })
                                 }
                             }
                         }
@@ -427,6 +500,20 @@ fun DocGenScreen(onBack: () -> Unit) {
 
             item { Spacer(Modifier.height(8.dp)) }
         }
+    }
+
+    // ---------- 添加字段对话框 ----------
+    if (showAddDialog) {
+        AddFieldDialog(
+            defaults = DefaultFields.lines(context),
+            existingKeys = lines.filter { it.isField }.map { it.key }.toSet(),
+            onDismiss = { showAddDialog = false },
+            onConfirm = { key, value ->
+                addField(key, value)
+                showAddDialog = false
+                scope.launch { snackbar.showSnackbar("已添加字段 $key") }
+            }
+        )
     }
 
     // ---------- 结果弹窗 ----------
@@ -467,6 +554,18 @@ fun DocGenScreen(onBack: () -> Unit) {
     }
 }
 
+/** 字段行：输入框 + 删除按钮 */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FieldRow(line: RuleLine, onChange: (String) -> Unit, onDelete: () -> Unit) {
+    Row(verticalAlignment = Alignment.Top) {
+        Box(Modifier.weight(1f)) { FieldInput(line, onChange) }
+        IconButton(onClick = onDelete, modifier = Modifier.padding(top = 10.dp).size(38.dp)) {
+            Icon(Icons.Default.Delete, contentDescription = "删除字段", modifier = Modifier.size(18.dp))
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun FieldInput(line: RuleLine, onChange: (String) -> Unit) {
@@ -487,5 +586,123 @@ private fun FieldInput(line: RuleLine, onChange: (String) -> Unit) {
         singleLine = !isLong,
         minLines = if (isLong) 3 else 1,
         shape = RoundedCornerShape(10.dp)
+    )
+}
+
+/** 添加字段对话框：可从默认字段选择（带标签/分组），也可直接编辑 key 自定义 */
+private data class DefaultFieldItem(val group: String?, val key: String, val label: String)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AddFieldDialog(
+    defaults: List<RuleLine>,
+    existingKeys: Set<String>,
+    onDismiss: () -> Unit,
+    onConfirm: (key: String, value: String) -> Unit
+) {
+    var query by remember { mutableStateOf("") }
+    var key by remember { mutableStateOf("") }
+    var value by remember { mutableStateOf("") }
+
+    val items = remember(defaults) {
+        val list = mutableListOf<DefaultFieldItem>()
+        var group: String? = null
+        defaults.forEach { l ->
+            when {
+                l.isGroup -> group = l.text
+                l.isField -> list.add(DefaultFieldItem(group, l.key, FieldLabels.labelOf(l.key) ?: l.key))
+            }
+        }
+        list
+    }
+    val filtered = items.filter {
+        query.isBlank() ||
+            it.key.contains(query, true) ||
+            it.label.contains(query, true) ||
+            (it.group?.contains(query, true) == true)
+    }
+    val keyValid = Regex("^[A-Za-z][A-Za-z0-9]*$").matches(key.trim())
+    val keyExists = key.trim() in existingKeys
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("添加字段") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("搜索默认字段（标签 / key / 分组）", fontSize = 13.sp) },
+                    leadingIcon = { Icon(Icons.Default.Search, null, Modifier.size(18.dp)) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(10.dp)
+                )
+                Spacer(Modifier.height(6.dp))
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(220.dp)
+                ) {
+                    items(filtered, key = { it.key }) { item ->
+                        val exists = item.key in existingKeys
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(enabled = !exists) {
+                                    key = item.key
+                                    value = ""
+                                }
+                                .padding(vertical = 6.dp, horizontal = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    if (item.label == item.key) item.key else "${item.label}（${item.key}）",
+                                    fontSize = 13.sp,
+                                    color = if (exists) MaterialTheme.colorScheme.outline
+                                    else MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(item.group ?: "", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            if (exists) Text("已添加", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = key,
+                    onValueChange = { key = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("字段名 key（可改）") },
+                    singleLine = true,
+                    isError = key.isNotEmpty() && (!keyValid || keyExists),
+                    supportingText = {
+                        when {
+                            key.isNotBlank() && keyExists -> Text("该字段已存在")
+                            key.isNotBlank() && !keyValid -> Text("需字母开头、仅字母数字，如 gcsj10")
+                            else -> Text("点选上方默认字段，或直接输入自定义 key")
+                        }
+                    },
+                    shape = RoundedCornerShape(10.dp)
+                )
+                Spacer(Modifier.height(6.dp))
+                OutlinedTextField(
+                    value = value,
+                    onValueChange = { value = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("初始值（可留空）") },
+                    minLines = 1,
+                    shape = RoundedCornerShape(10.dp)
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                enabled = keyValid && !keyExists,
+                onClick = { onConfirm(key.trim(), value) }
+            ) { Text("添加") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
     )
 }

@@ -25,6 +25,10 @@ object SettingsStore {
     private const val K_DARK_MODE = "dark_mode"
     private const val K_PPTX_TONE = "pptx_tone"
     private const val K_PPTX_AUTO_PAGINATE = "pptx_auto_paginate"
+    private const val K_DOCGEN_TEMPLATE_DIR = "docgen_template_dir"
+
+    /** 生成文书：默认模板目录（与 PC 端 mb/ 对齐，可在 App 内修改） */
+    const val DOCGEN_DEFAULT_TEMPLATE_DIR = "/sdcard/pylaw/mb"
 
     /** 默认规范：诉讼文书 */
     val DEFAULT_SPEC: GovDocSpec get() = GovDocSpec.COURT_DOC
@@ -113,5 +117,15 @@ object SettingsStore {
             smartQuotes = smartQuotes(ctx),
             pageNumber = pageNumber(ctx)
         )
+    }
+
+    /** 生成文书：当前模板目录路径（默认 /sdcard/pylaw/mb） */
+    fun docgenTemplateDir(ctx: Context): String =
+        prefs(ctx).getString(K_DOCGEN_TEMPLATE_DIR, null)?.takeIf { it.isNotBlank() }
+            ?: DOCGEN_DEFAULT_TEMPLATE_DIR
+
+    /** 生成文书：保存自定义模板目录路径 */
+    fun saveDocgenTemplateDir(ctx: Context, path: String) {
+        prefs(ctx).edit().putString(K_DOCGEN_TEMPLATE_DIR, path.trim()).apply()
     }
 }

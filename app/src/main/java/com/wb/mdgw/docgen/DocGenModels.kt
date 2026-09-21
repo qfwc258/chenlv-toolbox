@@ -63,25 +63,6 @@ data class FieldDoc(
 }
 
 /**
- * 一个已导入的文书模板（docx / pdf）。
- *
- * 模板字节存于应用私有目录 filesDir/docgen/templates/<id>.<ext>，
- * 这里只持久化元数据，避免 JSON 膨胀。
- */
-@Serializable
-data class DocTemplate(
-    val id: String,
-    /** 导入时的原始文件名（含扩展名），用于按类型码筛选与输出命名 */
-    val fileName: String,
-    /** 扩展名（小写，不含点）：docx / pdf */
-    val ext: String,
-    val importedAt: Long = System.currentTimeMillis()
-) {
-    val isDocx: Boolean get() = ext.equals("docx", ignoreCase = true)
-    val isPdf: Boolean get() = ext.equals("pdf", ignoreCase = true)
-}
-
-/**
  * 文书类型（与 PC 脚本 DOCUMENT_TYPES 一致，文件名包含对应 code 即入选）。
  */
 enum class DocType(val code: String, val label: String) {

@@ -38,4 +38,20 @@ object FieldRuleStore : JsonFileStore<FieldDoc>() {
 
     /** 覆盖保存当前规则（失败静默，由基类保证不影响编辑） */
     fun save(context: Context, doc: FieldDoc) = write(context, doc)
+
+    /**
+     * 重置为内置默认结构（含常用默认值，丢弃用户增删的自定义字段与已填值），
+     * 落盘并返回，供「重置为默认结构」按钮使用。
+     */
+    fun resetOrDefault(context: Context): FieldDoc {
+        val text = runCatching {
+            context.assets.open("docgen/default_shared_text.txt")
+                .bufferedReader(Charsets.UTF_8)
+                .use { it.readText() }
+        }.getOrNull()
+        val lines = text?.let { SharedTextParser.parse(it) } ?: emptyList()
+        val doc = FieldDoc(lines)
+        if (lines.isNotEmpty()) write(context, doc)
+        return doc
+    }
 }
