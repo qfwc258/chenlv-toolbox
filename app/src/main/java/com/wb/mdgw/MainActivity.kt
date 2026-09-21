@@ -32,6 +32,7 @@ import com.wb.mdgw.law.Law
 import com.wb.mdgw.law.LawDetailScreen
 import com.wb.mdgw.law.LawSearchScreen
 import com.wb.mdgw.law.ToolsScreen
+import com.wb.mdgw.docgen.DocGenScreen
 
 class MainActivity : ComponentActivity() {
 
@@ -88,7 +89,8 @@ private enum class DocMode { WORD, PDF, WECHAT, PPTX, TOOLS, SETTINGS }
 private enum class ToolsSubScreen {
     MAIN,       // 工具主页（入口列表）
     SCREENSHOT, // 截图排版
-    LAW_SEARCH  // 法律查询
+    LAW_SEARCH, // 法律查询
+    DOC_GEN     // 生成文书
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -211,8 +213,13 @@ fun AppScreen(initialUri: Uri? = null) {
                 if (toolsSubScreen == ToolsSubScreen.MAIN) {
                     ToolsScreen(
                         onOpenScreenshot = { toolsSubScreen = ToolsSubScreen.SCREENSHOT },
-                        onOpenLawSearch = { toolsSubScreen = ToolsSubScreen.LAW_SEARCH }
+                        onOpenLawSearch = { toolsSubScreen = ToolsSubScreen.LAW_SEARCH },
+                        onOpenDocGen = { toolsSubScreen = ToolsSubScreen.DOC_GEN }
                     )
+                }
+                // 生成文书子页
+                if (toolsSubScreen == ToolsSubScreen.DOC_GEN) {
+                    DocGenScreen(onBack = { toolsSubScreen = ToolsSubScreen.MAIN })
                 }
                 // 截图排版子页
                 if (toolsSubScreen == ToolsSubScreen.SCREENSHOT) {

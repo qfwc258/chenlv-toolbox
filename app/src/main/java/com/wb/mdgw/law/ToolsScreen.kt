@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Camera
+import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.Gavel
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material3.Card
@@ -49,9 +50,16 @@ data class ToolItem(
 @Composable
 fun ToolsScreen(
     onOpenScreenshot: () -> Unit,
-    onOpenLawSearch: () -> Unit
+    onOpenLawSearch: () -> Unit,
+    onOpenDocGen: () -> Unit
 ) {
     val tools = listOf(
+        ToolItem(
+            title = "生成文书",
+            description = "按模板批量生成法律援助文书（占位符替换）",
+            icon = Icons.Default.EditNote,
+            onClick = onOpenDocGen
+        ),
         ToolItem(
             title = "截图排版",
             description = "长截图切分、排版处理",

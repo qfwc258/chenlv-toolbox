@@ -70,7 +70,7 @@ object FileUtils {
         return if (dot > 0) n.substring(0, dot) else n
     }
 
-    private const val DOCX_MIME =
+    const val DOCX_MIME =
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     const val PDF_MIME = "application/pdf"
 
@@ -158,14 +158,21 @@ object FileUtils {
         return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", f)
     }
 
-    /** 公共「下载 / 陈律文档」目录写入（best-effort）：成功返回展示路径，失败返回 null */
-    private fun tryWritePublic(context: Context, safeName: String, data: ByteArray, mimeType: String): String? {
+    /** 公共「下载 / 陈律文档」目录写入（best-effort）：成功返回展示路径，失败返回 null。
+     *  [relSubDir] 为相对「下载」的子目录（如 "陈律文档/案件_1"），默认根输出目录。 */
+    private fun tryWritePublic(
+        context: Context,
+        safeName: String,
+        data: ByteArray,
+        mimeType: String,
+        relSubDir: String = OUTPUT_DIR
+    ): String? {
         return try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val values = ContentValues().apply {
                     put(MediaStore.MediaColumns.DISPLAY_NAME, safeName)
                     put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
-                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/" + OUTPUT_DIR)
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/" + relSubDir)
                     put(MediaStore.MediaColumns.IS_PENDING, 1)
                 }
                 val resolver = context.contentResolver
@@ -175,10 +182,10 @@ object FileUtils {
                 values.clear()
                 values.put(MediaStore.MediaColumns.IS_PENDING, 0)
                 resolver.update(uri, values, null, null)
-                "$OUTPUT_DIR/$safeName"
+                "$relSubDir/$safeName"
             } else {
                 val pub = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-                val dir = File(pub, OUTPUT_DIR)
+                val dir = File(pub, relSubDir)
                 if (!(dir.exists() || dir.mkdirs())) return null
                 val f = File(dir, safeName)
                 f.writeBytes(data)
@@ -187,6 +194,28 @@ object FileUtils {
         } catch (_: Exception) {
             null
         }
+    }
+
+    /**
+     * 保存到「下载 / 陈律文档 / [subDir] /」（如 案件_1），主副本仍写缓存保证可打开 / 分享。
+     * 用于批量生成时按案件归档到独立子文件夹。
+     */
+    fun saveToDownloadsInDir(
+        context: Context,
+        subDir: String,
+        fileName: String,
+        data: ByteArray,
+        mimeType: String = DOCX_MIME
+    ): SavedFile {
+        val safeName = sanitize(fileName)
+        val safeSub = subDir.trim().trim('/').ifEmpty { "" }
+        // 缓存主副本用子目录前缀，避免不同案件同名模板互相覆盖
+        val cacheName = if (safeSub.isEmpty()) safeName else sanitize(safeSub.replace('/', '_')) + "_" + safeName
+        val cacheUri = writeCache(context, cacheName, data)
+        val relSubDir = if (safeSub.isEmpty()) OUTPUT_DIR else "$OUTPUT_DIR/$safeSub"
+        val publicPath = tryWritePublic(context, safeName, data, mimeType, relSubDir)
+        val display = publicPath ?: "已生成（应用缓存），点击下方按钮可直接打开 / 分享"
+        return SavedFile(cacheUri, display)
     }
 
     /** 写入应用缓存，用于分享 / 打开（mime 由后续的 open/share intent 决定） */

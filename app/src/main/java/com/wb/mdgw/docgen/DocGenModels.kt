@@ -1,0 +1,113 @@
+package com.wb.mdgw.docgen
+
+import kotlinx.serialization.Serializable
+
+/**
+ * 生成文书功能的数据模型。
+ *
+ * 对应 PC 端 Python 脚本：模板目录 mb/ + 替换规则 shared_text.txt（key::value），
+ * 按案件编号、文书类型批量生成保留原格式的 docx。
+ */
+
+/**
+ * 替换规则文件（shared_text.txt）解析后的「结构化行」。
+ *
+ * 保留原始的分组 / 注释 / 空行顺序，使手机端表单能按分组折叠展示、
+ * 导出时能 1:1 还原 PC 端文本格式。用单一数据类 + type 区分，规避多态序列化。
+ *
+ * @param type  行类型：[TYPE_GROUP] / [TYPE_COMMENT] / [TYPE_FIELD] / [TYPE_BLANK]
+ * @param key   字段 key（仅 TYPE_FIELD，如 "weitr"）
+ * @param value 字段值（仅 TYPE_FIELD，可多行）
+ * @param text  分组标题或注释正文（GROUP / COMMENT）
+ */
+@Serializable
+data class RuleLine(
+    val type: String,
+    val key: String = "",
+    var value: String = "",
+    val text: String = ""
+) {
+    val isField get() = type == TYPE_FIELD
+    val isGroup get() = type == TYPE_GROUP
+    val isComment get() = type == TYPE_COMMENT
+
+    companion object {
+        const val TYPE_GROUP = "group"     // --委托授权--
+        const val TYPE_COMMENT = "comment" // #案件情况
+        const val TYPE_FIELD = "field"     // key::value
+        const val TYPE_BLANK = "blank"     // 空行
+
+        fun group(title: String) = RuleLine(TYPE_GROUP, text = title)
+        fun comment(text: String) = RuleLine(TYPE_COMMENT, text = text)
+        fun field(key: String, value: String) = RuleLine(TYPE_FIELD, key = key, value = value)
+        fun blank() = RuleLine(TYPE_BLANK)
+    }
+}
+
+/**
+ * 一份「替换规则文档」（即一个案件的全部字段），结构化保存。
+ */
+@Serializable
+data class FieldDoc(
+    val lines: List<RuleLine> = emptyList(),
+    val updatedAt: Long = System.currentTimeMillis()
+) {
+    /** 仅取出 key::value 字段，供替换引擎使用（保持文件顺序） */
+    fun fieldLines(): List<RuleLine> = lines.filter { it.isField }
+
+    /** 生成 key -> value 映射（同 key 以后者为准，正常文件无重复 key） */
+    fun toMap(): Map<String, String> =
+        LinkedHashMap<String, String>().apply {
+            fieldLines().forEach { put(it.key, it.value) }
+        }
+}
+
+/**
+ * 一个已导入的文书模板（docx / pdf）。
+ *
+ * 模板字节存于应用私有目录 filesDir/docgen/templates/<id>.<ext>，
+ * 这里只持久化元数据，避免 JSON 膨胀。
+ */
+@Serializable
+data class DocTemplate(
+    val id: String,
+    /** 导入时的原始文件名（含扩展名），用于按类型码筛选与输出命名 */
+    val fileName: String,
+    /** 扩展名（小写，不含点）：docx / pdf */
+    val ext: String,
+    val importedAt: Long = System.currentTimeMillis()
+) {
+    val isDocx: Boolean get() = ext.equals("docx", ignoreCase = true)
+    val isPdf: Boolean get() = ext.equals("pdf", ignoreCase = true)
+}
+
+/**
+ * 文书类型（与 PC 脚本 DOCUMENT_TYPES 一致，文件名包含对应 code 即入选）。
+ */
+enum class DocType(val code: String, val label: String) {
+    ENTRUST("1", "委托"),
+    INVESTIGATE("2", "调查"),
+    LITIGATION("3", "诉讼"),
+    ENFORCE("4", "执行"),
+    AID_CRIMINAL("8", "法援刑"),
+    AID_CIVIL("9", "法援民");
+
+    companion object {
+        /** 全部类型 code（用于「全部」筛选） */
+        val ALL_CODES: Set<String> = values().map { it.code }.toSet()
+    }
+}
+
+/**
+ * 单个模板的生成结果。
+ */
+data class GenResult(
+    val templateName: String,
+    val success: Boolean,
+    /** 输出文件名（成功时） */
+    val outputName: String? = null,
+    /** 展示给用户的保存位置（成功时） */
+    val displayPath: String? = null,
+    /** 失败原因（失败时） */
+    val error: String? = null
+)
