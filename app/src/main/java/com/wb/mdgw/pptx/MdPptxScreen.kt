@@ -79,6 +79,8 @@ import androidx.core.content.ContextCompat
 import com.wb.mdgw.AppSettings
 import com.wb.mdgw.EditPreviewBar
 import com.wb.mdgw.MdEditorPane
+import com.wb.mdgw.MarkdownExchange
+import com.wb.mdgw.MarkdownExchangeDialog
 import com.wb.mdgw.MarkdownSnippets
 import com.wb.mdgw.FileUtils
 import com.wb.mdgw.ExportResultDialog
@@ -154,6 +156,8 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
     var fontSize by remember { mutableStateOf(15) }
     val undoStack = remember { ArrayDeque<TextFieldValue>() }
     val redoStack = remember { ArrayDeque<TextFieldValue>() }
+    // 跨编辑器（WORD / 公众号）互传的 Markdown
+    var incomingMd by remember { mutableStateOf<MarkdownExchange.Payload?>(null) }
     // 色调（单一主色驱动整套配色）与自动分页：全局共享状态，「设置」Tab 与本页实时同步
     val tone by AppSettings.pptxTone.collectAsState()
     val autoPaginate by AppSettings.pptxAutoPaginate.collectAsState()
@@ -255,6 +259,36 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
     // 自动保存自定义样式 CSS（与内容草稿分开持久化，便于独立「恢复默认」）
     LaunchedEffect(cssText) {
         PptStyleStore.save(context, cssText)
+    }
+
+    // ---------- 跨编辑器 Markdown 互传 ----------
+    fun sendTo(target: String) {
+        MarkdownExchange.send(context, MarkdownExchange.PPTX, target, mdTfv.text)
+        android.widget.Toast.makeText(
+            context, "已发送，打开${MarkdownExchange.sourceName(target)}即可导入",
+            android.widget.Toast.LENGTH_SHORT
+        ).show()
+    }
+    fun openImportExchange() {
+        val p = MarkdownExchange.peek(context)
+        if (p != null && p.text.isNotBlank()) incomingMd = p
+        else android.widget.Toast.makeText(context, "暂无可导入的内容", android.widget.Toast.LENGTH_SHORT).show()
+    }
+    fun applyIncoming(append: Boolean) {
+        val p = incomingMd ?: return
+        val merged = if (append) {
+            val base = mdTfv.text.trimEnd()
+            if (base.isEmpty() || base == DEFAULT_MD) p.text else "$base\n\n${p.text}"
+        } else p.text
+        mdTfv = TextFieldValue(merged, TextRange(merged.length))
+        undoStack.clear(); redoStack.clear()
+        MarkdownExchange.consume(context)
+        incomingMd = null
+        subView = SubView.EDIT
+    }
+    LaunchedEffect(Unit) {
+        delay(600)
+        MarkdownExchange.pendingFor(context, MarkdownExchange.PPTX)?.let { incomingMd = it }
     }
 
     // 自动保存波浪参数（与内容草稿 / CSS 分开持久化，便于独立「恢复默认」）
@@ -374,7 +408,9 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
                     onImport = { importLauncher.launch(arrayOf("text/markdown", "text/plain", "*/*")) },
                     onClear = {
                         mdTfv = TextFieldValue(""); undoStack.clear(); redoStack.clear()
-                    }
+                    },
+                    onSendTo = { sendTo(it) },
+                    onImportExchange = { openImportExchange() }
                 )
             }
         }
@@ -561,6 +597,16 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
         )
     // ---------- 导出命名对话框（文件名）已在上方 ----------
 }
+
+    // ---------- 跨编辑器导入 Markdown ----------
+    incomingMd?.let { p ->
+        MarkdownExchangeDialog(
+            sourceName = MarkdownExchange.sourceName(p.source),
+            onReplace = { applyIncoming(false) },
+            onAppend = { applyIncoming(true) },
+            onDismiss = { MarkdownExchange.consume(context); incomingMd = null }
+        )
+    }
 }
 
 // ────────────────────────────────────────────────
@@ -612,7 +658,14 @@ private fun PptxTopBar(
 // ────────────────────────────────────────────────
 
 @Composable
-private fun PptxActionBar(onExport: () -> Unit, onImport: () -> Unit, onClear: () -> Unit) {
+private fun PptxActionBar(
+    onExport: () -> Unit,
+    onImport: () -> Unit,
+    onClear: () -> Unit,
+    onSendTo: (String) -> Unit,
+    onImportExchange: () -> Unit
+) {
+    var importMenuOpen by remember { mutableStateOf(false) }
     Surface(
         tonalElevation = 3.dp, shadowElevation = 6.dp, color = MaterialTheme.colorScheme.surface,
         shape = UI_CARD_RADIUS, modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp)
@@ -625,14 +678,22 @@ private fun PptxActionBar(onExport: () -> Unit, onImport: () -> Unit, onClear: (
                 Spacer(Modifier.width(5.dp))
                 Text("导出PPTX", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
             }
-            OutlinedButton(
-                onClick = onImport, shape = UI_BTN_RADIUS, modifier = btnMod,
-                border = BorderStroke(1.2.dp, MaterialTheme.colorScheme.outline),
-                contentPadding = btnPad
-            ) {
-                Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(17.dp))
-                Spacer(Modifier.width(5.dp))
-                Text("导入", fontSize = 13.sp, maxLines = 1, softWrap = false)
+            Box {
+                OutlinedButton(
+                    onClick = { importMenuOpen = true }, shape = UI_BTN_RADIUS, modifier = btnMod,
+                    border = BorderStroke(1.2.dp, MaterialTheme.colorScheme.outline),
+                    contentPadding = btnPad
+                ) {
+                    Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(17.dp))
+                    Spacer(Modifier.width(5.dp))
+                    Text("导入/互传", fontSize = 13.sp, maxLines = 1, softWrap = false)
+                }
+                DropdownMenu(expanded = importMenuOpen, onDismissRequest = { importMenuOpen = false }) {
+                    DropdownMenuItem(text = { Text("导入 MD 文件") }, onClick = { importMenuOpen = false; onImport() })
+                    DropdownMenuItem(text = { Text("发送到 WORD") }, onClick = { importMenuOpen = false; onSendTo(MarkdownExchange.WORD) })
+                    DropdownMenuItem(text = { Text("发送到 公众号") }, onClick = { importMenuOpen = false; onSendTo(MarkdownExchange.WECHAT) })
+                    DropdownMenuItem(text = { Text("从其他编辑器导入") }, onClick = { importMenuOpen = false; onImportExchange() })
+                }
             }
             OutlinedButton(
                 onClick = onClear, shape = UI_BTN_RADIUS, modifier = btnMod,

@@ -43,6 +43,8 @@ import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.PlayArrow
@@ -234,6 +236,13 @@ fun DocGenScreen(onBack: () -> Unit) {
         val newLines = lines.toMutableList()
         newLines.removeAt(index)
         persistLines(newLines)
+    }
+
+    /** 同分组内上移/下移字段；移动后退出编辑态（全局索引已变化） */
+    fun moveField(index: Int, up: Boolean) {
+        if (!DefaultFields.canMoveField(lines, index, up)) return
+        persistLines(DefaultFields.moveField(lines, index, up))
+        editIndex = -1
     }
 
     fun addField(key: String, value: String, alias: String = "", targetGroup: String? = null) {
@@ -813,7 +822,11 @@ fun DocGenScreen(onBack: () -> Unit) {
                                                             line = line,
                                                             onChange = { v -> updateValue(r.index, v) },
                                                             onEdit = { editIndex = r.index },
-                                                            onDelete = { deleteField(r.index) }
+                                                            onDelete = { deleteField(r.index) },
+                                                            canMoveUp = DefaultFields.canMoveField(lines, r.index, true),
+                                                            canMoveDown = DefaultFields.canMoveField(lines, r.index, false),
+                                                            onMoveUp = { moveField(r.index, true) },
+                                                            onMoveDown = { moveField(r.index, false) }
                                                         )
                                                     }
                                                 }
@@ -1231,10 +1244,48 @@ private fun FieldRow(
     line: RuleLine,
     onChange: (String) -> Unit,
     onEdit: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    canMoveUp: Boolean = false,
+    canMoveDown: Boolean = false,
+    onMoveUp: (() -> Unit)? = null,
+    onMoveDown: (() -> Unit)? = null
 ) {
     Row(verticalAlignment = Alignment.Top) {
         Box(Modifier.weight(1f)) { FieldInput(line, onChange) }
+        // 同分组内排序（仅分组视图提供；搜索态不显示）
+        if (onMoveUp != null && onMoveDown != null) {
+            Column(
+                modifier = Modifier.padding(top = 6.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                IconButton(
+                    onClick = onMoveUp,
+                    enabled = canMoveUp,
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        Icons.Default.KeyboardArrowUp,
+                        contentDescription = "上移",
+                        modifier = Modifier.size(18.dp),
+                        tint = if (canMoveUp) MaterialTheme.colorScheme.onSurfaceVariant
+                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+                    )
+                }
+                IconButton(
+                    onClick = onMoveDown,
+                    enabled = canMoveDown,
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        Icons.Default.KeyboardArrowDown,
+                        contentDescription = "下移",
+                        modifier = Modifier.size(18.dp),
+                        tint = if (canMoveDown) MaterialTheme.colorScheme.onSurfaceVariant
+                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+                    )
+                }
+            }
+        }
         IconButton(onClick = onEdit, modifier = Modifier.padding(top = 10.dp).size(38.dp)) {
             Icon(Icons.Default.Edit, contentDescription = "编辑字段", modifier = Modifier.size(18.dp))
         }

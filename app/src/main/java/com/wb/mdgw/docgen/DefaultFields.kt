@@ -341,6 +341,60 @@ object DefaultFields {
         return collapseBlankLines(result)
     }
 
+    /** 判断字段是否为办案过程三元组（gcsj/gcfs/gcnr 系列），这类字段不参与单字段排序 */
+    private fun isProcessField(l: RuleLine): Boolean =
+        l.isField && FieldLabels.baseKey(l.key) in FieldLabels.REPEATABLE_BASE
+
+    /**
+     * 计算字段在同一分组内上移/下移的交换目标索引；返回 -1 表示不可移动。
+     *
+     * 规则：不跨分组标题；注释行（#）与空行跳过、锚定原位；
+     * 相邻为办案过程三元组时停止（不跨越、不交换）。
+     */
+    private fun moveFieldTarget(lines: List<RuleLine>, fieldIndex: Int, up: Boolean): Int {
+        val field = lines.getOrNull(fieldIndex) ?: return -1
+        if (!field.isField || isProcessField(field)) return -1
+
+        // 分组边界
+        var bound = if (up) 0 else lines.size
+        if (up) {
+            for (i in fieldIndex - 1 downTo 0) {
+                if (lines[i].isGroup) { bound = i + 1; break }
+            }
+            for (i in fieldIndex - 1 downTo bound) {
+                val l = lines[i]
+                if (l.isField) return if (isProcessField(l)) -1 else i
+            }
+        } else {
+            for (i in fieldIndex + 1 until lines.size) {
+                if (lines[i].isGroup) { bound = i; break }
+            }
+            for (i in fieldIndex + 1 until bound) {
+                val l = lines[i]
+                if (l.isField) return if (isProcessField(l)) -1 else i
+            }
+        }
+        return -1
+    }
+
+    /** 字段是否可在同一分组内上移/下移（供 UI 决定箭头是否禁用） */
+    fun canMoveField(lines: List<RuleLine>, fieldIndex: Int, up: Boolean): Boolean =
+        moveFieldTarget(lines, fieldIndex, up) >= 0
+
+    /**
+     * 在同一分组内上移/下移普通字段（与相邻普通字段交换）。
+     * 无法移动时原样返回；移动后全局索引变化，调用方应退出编辑态。
+     */
+    fun moveField(lines: List<RuleLine>, fieldIndex: Int, up: Boolean): List<RuleLine> {
+        val target = moveFieldTarget(lines, fieldIndex, up)
+        if (target < 0) return lines
+        val result = lines.toMutableList()
+        val tmp = result[fieldIndex]
+        result[fieldIndex] = result[target]
+        result[target] = tmp
+        return result
+    }
+
     /**
      * 删除分组。
      * @param deleteFields true=连组内字段/注释一并删除；false=仅删标题，内容并入上一分组。

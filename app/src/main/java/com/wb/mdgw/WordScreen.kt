@@ -112,6 +112,9 @@ fun WordScreen(
     val undoStack = remember { ArrayDeque<TextFieldValue>() }
     val redoStack = remember { ArrayDeque<TextFieldValue>() }
 
+    // 跨编辑器（PPTX / 公众号）互传的 Markdown
+    var incomingMd by remember { mutableStateOf<MarkdownExchange.Payload?>(null) }
+
     // ---------- 公文模型（生成后预览 / 就地编辑 / 导出） ----------
     var govDoc by remember { mutableStateOf<GovDoc?>(null) }
     var govBusy by remember { mutableStateOf(false) }
@@ -215,6 +218,32 @@ fun WordScreen(
         undoStack.addLast(tfv)
         tfv = redoStack.removeLast()
         dirty = true
+    }
+
+    // ---------- 跨编辑器 Markdown 互传 ----------
+    fun sendTo(target: String) {
+        MarkdownExchange.send(context, MarkdownExchange.WORD, target, tfv.text)
+        android.widget.Toast.makeText(
+            context, "已发送，打开${MarkdownExchange.sourceName(target)}即可导入",
+            android.widget.Toast.LENGTH_SHORT
+        ).show()
+    }
+    fun openImportExchange() {
+        val p = MarkdownExchange.peek(context)
+        if (p != null && p.text.isNotBlank()) incomingMd = p
+        else android.widget.Toast.makeText(context, "暂无可导入的内容", android.widget.Toast.LENGTH_SHORT).show()
+    }
+    fun applyIncoming(append: Boolean) {
+        val p = incomingMd ?: return
+        val merged = if (append) {
+            val base = tfv.text.trimEnd()
+            if (base.isEmpty()) p.text else "$base\n\n${p.text}"
+        } else p.text
+        tfv = TextFieldValue(merged, TextRange(merged.length))
+        undoStack.clear(); redoStack.clear(); dirty = true; autoSaved = false
+        MarkdownExchange.consume(context)
+        incomingMd = null
+        subView = SubView.EDIT
     }
 
     // ---------- 打开文件（.docx / .md / .txt） ----------
@@ -355,6 +384,11 @@ fun WordScreen(
             GovDocDraftSession.handled = true
             GovDocDraftStore.load(context)?.let { g -> pendingGovDraft = g; showRestoreGov = true }
         }
+    }
+    // 进入时检测来自其他编辑器的 Markdown（延迟以错开草稿恢复弹窗）
+    LaunchedEffect(Unit) {
+        delay(600)
+        MarkdownExchange.pendingFor(context, MarkdownExchange.WORD)?.let { incomingMd = it }
     }
     // 公文防抖自动保存
     LaunchedEffect(govEditVersion) {
@@ -732,7 +766,9 @@ fun WordScreen(
                     onOpen = { openPicker.launch(arrayOf("text/markdown", "text/x-markdown", "text/plain", DOCX_MIME, "application/octet-stream", "*/*")) },
                     onExportDocx = { exportDocx() },
                     onExportPdf = { exportPdf() },
-                    onExportText = { startExport(it) }
+                    onExportText = { startExport(it) },
+                    onSendTo = { sendTo(it) },
+                    onImportExchange = { openImportExchange() }
                 )
             }
         }
@@ -950,6 +986,16 @@ fun WordScreen(
             onDismiss = { findReplaceOpen = false }
         )
     }
+
+    // ---------- 跨编辑器导入 Markdown ----------
+    incomingMd?.let { p ->
+        MarkdownExchangeDialog(
+            sourceName = MarkdownExchange.sourceName(p.source),
+            onReplace = { applyIncoming(false) },
+            onAppend = { applyIncoming(true) },
+            onDismiss = { MarkdownExchange.consume(context); incomingMd = null }
+        )
+    }
 }
 
 // ============================================================
@@ -999,7 +1045,9 @@ private fun WordActionBar(
     onOpen: () -> Unit,
     onExportDocx: () -> Unit,
     onExportPdf: () -> Unit,
-    onExportText: (String) -> Unit
+    onExportText: (String) -> Unit,
+    onSendTo: (String) -> Unit,
+    onImportExchange: () -> Unit
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     Surface(
@@ -1047,6 +1095,9 @@ private fun WordActionBar(
                     DropdownMenuItem(text = { Text("导出 Markdown (.md)") }, onClick = { menuOpen = false; onExportText("md") })
                     DropdownMenuItem(text = { Text("导出 纯文本 (.txt)") }, onClick = { menuOpen = false; onExportText("txt") })
                     DropdownMenuItem(text = { Text("自定义后缀导出…") }, onClick = { menuOpen = false; onExportText("custom") })
+                    DropdownMenuItem(text = { Text("发送到 PPTX") }, onClick = { menuOpen = false; onSendTo(MarkdownExchange.PPTX) })
+                    DropdownMenuItem(text = { Text("发送到 公众号") }, onClick = { menuOpen = false; onSendTo(MarkdownExchange.WECHAT) })
+                    DropdownMenuItem(text = { Text("从其他编辑器导入") }, onClick = { menuOpen = false; onImportExchange() })
                 }
             }
         }

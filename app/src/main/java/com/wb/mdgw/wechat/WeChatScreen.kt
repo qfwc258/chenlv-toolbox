@@ -67,6 +67,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.material3.SnackbarHostState
 import com.wb.mdgw.AppSettings
 import com.wb.mdgw.EditPreviewBar
+import com.wb.mdgw.MarkdownExchange
+import com.wb.mdgw.MarkdownExchangeDialog
 import com.wb.mdgw.MarkdownSnippets
 import com.wb.mdgw.MdEditorPane
 import com.wb.mdgw.UI_CARD_RADIUS
@@ -102,6 +104,8 @@ fun WeChatScreen(snackbar: SnackbarHostState) {
     var fontSize by remember { mutableStateOf(15) }
     val undoStack = remember { ArrayDeque<TextFieldValue>() }
     val redoStack = remember { ArrayDeque<TextFieldValue>() }
+    // 跨编辑器（WORD / PPTX）互传的 Markdown
+    var incomingMd by remember { mutableStateOf<MarkdownExchange.Payload?>(null) }
     // 主题与自定义 CSS：全局共享状态，「设置」Tab 与本页实时同步
     val themeKey by AppSettings.wechatTheme.collectAsState()
     val effectiveCss by AppSettings.wechatCss.collectAsState()
@@ -138,6 +142,36 @@ fun WeChatScreen(snackbar: SnackbarHostState) {
                 customCss = effectiveCss
             )
         )
+    }
+
+    // ---------- 跨编辑器 Markdown 互传 ----------
+    fun sendTo(target: String) {
+        MarkdownExchange.send(context, MarkdownExchange.WECHAT, target, mdTfv.text)
+        Toast.makeText(
+            context, "已发送，打开${MarkdownExchange.sourceName(target)}即可导入",
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+    fun openImportExchange() {
+        val p = MarkdownExchange.peek(context)
+        if (p != null && p.text.isNotBlank()) incomingMd = p
+        else Toast.makeText(context, "暂无可导入的内容", Toast.LENGTH_SHORT).show()
+    }
+    fun applyIncoming(append: Boolean) {
+        val p = incomingMd ?: return
+        val merged = if (append) {
+            val base = mdTfv.text.trimEnd()
+            if (base.isEmpty()) p.text else "$base\n\n${p.text}"
+        } else p.text
+        mdTfv = TextFieldValue(merged, TextRange(merged.length))
+        undoStack.clear(); redoStack.clear()
+        subView = SubView.EDIT
+        MarkdownExchange.consume(context)
+        incomingMd = null
+    }
+    LaunchedEffect(Unit) {
+        delay(600)
+        MarkdownExchange.pendingFor(context, MarkdownExchange.WECHAT)?.let { incomingMd = it }
     }
 
     val pickLauncher = rememberLauncherForActivityResult(
@@ -224,7 +258,9 @@ fun WeChatScreen(snackbar: SnackbarHostState) {
                         mdTfv = TextFieldValue(DEFAULT_MD); undoStack.clear(); redoStack.clear()
                     },
                     onImport = { pickLauncher.launch("text/*") },
-                    onExportPdf = { requestPrintPdf() }
+                    onExportPdf = { requestPrintPdf() },
+                    onSendTo = { sendTo(it) },
+                    onImportExchange = { openImportExchange() }
                 )
             }
         }
@@ -301,6 +337,16 @@ fun WeChatScreen(snackbar: SnackbarHostState) {
                 AppSettings.setWechatCss(context, it)
                 showCss = false
             }
+        )
+    }
+
+    // ---------- 跨编辑器导入 Markdown ----------
+    incomingMd?.let { p ->
+        MarkdownExchangeDialog(
+            sourceName = MarkdownExchange.sourceName(p.source),
+            onReplace = { applyIncoming(false) },
+            onAppend = { applyIncoming(true) },
+            onDismiss = { MarkdownExchange.consume(context); incomingMd = null }
         )
     }
 }
@@ -397,7 +443,9 @@ private fun ActionBar(
     onClear: () -> Unit,
     onExample: () -> Unit,
     onImport: () -> Unit,
-    onExportPdf: () -> Unit
+    onExportPdf: () -> Unit,
+    onSendTo: (String) -> Unit,
+    onImportExchange: () -> Unit
 ) {
     Surface(
         tonalElevation = 3.dp, shadowElevation = 6.dp, color = MaterialTheme.colorScheme.surface,
@@ -448,6 +496,18 @@ private fun ActionBar(
                     DropdownMenuItem(
                         text = { Text("导入 MD 文件") },
                         onClick = { expanded = false; onImport() }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("发送到 WORD") },
+                        onClick = { expanded = false; onSendTo(MarkdownExchange.WORD) }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("发送到 PPTX") },
+                        onClick = { expanded = false; onSendTo(MarkdownExchange.PPTX) }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("从其他编辑器导入") },
+                        onClick = { expanded = false; onImportExchange() }
                     )
                 }
             }
