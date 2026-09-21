@@ -156,27 +156,31 @@ private fun scanViaMediaStore(context: Context): List<DocItem> {
     return out
 }
 
-private fun scanViaFile(context: Context): List<DocItem> {
+private fun scanViaFile(context: Context): List<DocItem> = runCatching {
     val root = File(
         Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
         "陈律文档"
     )
     if (!root.exists()) return emptyList()
     val authority = "${context.packageName}.fileprovider"
-    return root.walkTopDown()
+    root.walkTopDown()
         .filter { it.isFile }
-        .map { f ->
-            DocItem(
-                uri = FileProvider.getUriForFile(context, authority, f),
-                name = f.name,
-                mime = mimeOf(f.name, null),
-                size = f.length(),
-                modified = f.lastModified(),
-                relPath = "Download/陈律文档/" + (f.parentFile?.relativeTo(root)?.path?.takeIf { it != "." }?.let { "$it/" } ?: "")
-            )
+        .mapNotNull { f ->
+            // 个别文件无法被 FileProvider 共享时跳过，避免整页扫描失败
+            runCatching {
+                DocItem(
+                    uri = FileProvider.getUriForFile(context, authority, f),
+                    name = f.name,
+                    mime = mimeOf(f.name, null),
+                    size = f.length(),
+                    modified = f.lastModified(),
+                    relPath = "Download/陈律文档/" + (f.parentFile?.relativeTo(root)?.path?.takeIf { it != "." }?.let { "$it/" } ?: "")
+                )
+            }.getOrNull()
         }
         .sortedByDescending { it.modified }
-}
+        .toList()
+}.getOrDefault(emptyList())
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

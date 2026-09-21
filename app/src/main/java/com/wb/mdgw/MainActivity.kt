@@ -116,8 +116,7 @@ private val HOME_FEATURES = listOf(
     Feature(Route.DOC_GEN, "生成文书", Icons.Default.EditNote),
     Feature(Route.SCREENSHOT, "截图排版", Icons.Default.Camera),
     Feature(Route.LAW_SEARCH, "法律查询", Icons.Default.Gavel),
-    Feature(Route.DOCUMENTS, "我的文档", Icons.Default.Folder),
-    Feature(Route.SETTINGS, "设置", Icons.Default.Settings)
+    Feature(Route.DOCUMENTS, "我的文档", Icons.Default.Folder)
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -249,6 +248,10 @@ private fun HomeScreen(onOpen: (Route) -> Unit) {
                 Column {
                     Text("陈律工具箱", fontWeight = FontWeight.Bold, fontSize = 19.sp)
                     Text("常用工具一站式聚合", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+                }
+            }, actions = {
+                IconButton(onClick = { onOpen(Route.SETTINGS) }) {
+                    Icon(Icons.Default.Settings, contentDescription = "设置")
                 }
             })
         }
