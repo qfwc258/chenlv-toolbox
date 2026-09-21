@@ -6,6 +6,7 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
@@ -46,7 +48,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -55,6 +56,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -113,8 +115,8 @@ fun DocGenScreen(onBack: () -> Unit) {
     var hasAccess by remember { mutableStateOf(DocTemplateDir.hasAccess(context)) }
     var templates by remember { mutableStateOf(emptyList<DocTemplateFile>()) }
     var lines by remember { mutableStateOf(FieldRuleStore.loadOrDefault(context).lines) }
-    var caseNumber by remember { mutableStateOf("") }
-    var selectedTypes by remember { mutableStateOf(emptySet<String>()) } // 空 = 全部
+    var caseNumber by remember { mutableStateOf(SettingsStore.docgenCaseNumber(context)) }
+    var selectedTypes by remember { mutableStateOf(SettingsStore.docgenTypes(context)) } // 空 = 全部
     var keyword by remember { mutableStateOf("") }
     var collapsed by remember { mutableStateOf(emptySet<String>()) }
     var busy by remember { mutableStateOf(false) }
@@ -123,6 +125,7 @@ fun DocGenScreen(onBack: () -> Unit) {
     var addDialogGroup by remember { mutableStateOf<String?>(null) }
     var editIndex by remember { mutableStateOf(-1) }
     var showTemplateList by remember { mutableStateOf(false) }
+    var showTemplateCard by remember { mutableStateOf(false) }
 
     val defaults = remember { DefaultFields.lines(context) }
     val standardKeys = remember { DefaultFields.keys(context) }
@@ -130,6 +133,8 @@ fun DocGenScreen(onBack: () -> Unit) {
     fun rescan() {
         hasAccess = DocTemplateDir.hasAccess(context)
         templates = if (hasAccess) DocTemplateDir.scan(templateDir) else emptyList()
+        // 未授权 / 空目录时自动展开，引导用户处理；正常情况下保持折叠
+        if (!hasAccess || templates.isEmpty()) showTemplateCard = true
     }
 
     LaunchedEffect(Unit) { rescan() }
@@ -300,99 +305,135 @@ fun DocGenScreen(onBack: () -> Unit) {
                 .padding(horizontal = 12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // ---------- 模板目录 ----------
+            // ---------- 模板目录（默认折叠为一行状态条） ----------
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                     shape = RoundedCornerShape(14.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                 ) {
-                    Column(Modifier.padding(14.dp)) {
+                    Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+                        // 折叠状态条：图标 + 标题 + 路径/数量 + 扫描 + 展开
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("文书模板", fontWeight = FontWeight.SemiBold, fontSize = 15.sp, modifier = Modifier.weight(1f))
-                            OutlinedButton(onClick = {
-                                SettingsStore.saveDocgenTemplateDir(context, templateDir)
-                                rescan()
-                            }) {
-                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.size(4.dp))
-                                Text("重新扫描", fontSize = 12.sp)
+                            Icon(
+                                Icons.Default.Folder,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(Modifier.size(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text("文书模板", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                Text(
+                                    when {
+                                        !hasAccess -> "未授权 · 展开授权"
+                                        templates.isEmpty() -> "目录为空或不存在"
+                                        else -> "$templateDir · ${templates.size} 个"
+                                    },
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    SettingsStore.saveDocgenTemplateDir(context, templateDir)
+                                    rescan()
+                                },
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 0.dp)
+                            ) {
+                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(15.dp))
+                                Spacer(Modifier.size(3.dp))
+                                Text("扫描", fontSize = 12.sp)
+                            }
+                            IconButton(onClick = { showTemplateCard = !showTemplateCard }) {
+                                Icon(
+                                    if (showTemplateCard) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                    contentDescription = if (showTemplateCard) "折叠模板设置" else "展开模板设置"
+                                )
                             }
                         }
-                        Spacer(Modifier.height(6.dp))
-                        OutlinedTextField(
-                            value = templateDir,
-                            onValueChange = { templateDir = it },
-                            label = { Text("模板目录路径") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(10.dp)
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            "默认 /sdcard/pylaw/mb，把 docx/pdf 模板放进该目录；docx 按规则替换占位符，pdf 原样复制。",
-                            fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
 
-                        if (!hasAccess) {
-                            Spacer(Modifier.height(10.dp))
-                            Button(onClick = { requestStorageAccess() }, modifier = Modifier.fillMaxWidth()) {
-                                Icon(Icons.Default.Folder, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.size(6.dp))
-                                Text("授予存储权限（所有文件访问）")
-                            }
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                "需授权后才能读取 /sdcard 下的模板目录。",
-                                fontSize = 11.sp, color = MaterialTheme.colorScheme.error
-                            )
-                        } else if (templates.isEmpty()) {
-                            Spacer(Modifier.height(8.dp))
-                            Text(
-                                "目录为空或不存在：$templateDir（修改路径后点「重新扫描」）",
-                                fontSize = 12.sp, color = MaterialTheme.colorScheme.outline
-                            )
-                        } else {
-                            Spacer(Modifier.height(8.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    "已扫描到 ${templates.size} 个模板",
-                                    fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.weight(1f)
+                        // 展开区：路径 / 授权 / 模板列表
+                        AnimatedVisibility(visible = showTemplateCard) {
+                            Column {
+                                Spacer(Modifier.height(8.dp))
+                                OutlinedTextField(
+                                    value = templateDir,
+                                    onValueChange = { templateDir = it },
+                                    label = { Text("模板目录路径") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(10.dp)
                                 )
-                                TextButton(
-                                    onClick = { showTemplateList = !showTemplateList },
-                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp)
-                                ) {
-                                    Text(if (showTemplateList) "收起" else "展开查看", fontSize = 12.sp)
-                                    Icon(
-                                        if (showTemplateList) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(15.dp)
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    "默认 /sdcard/pylaw/mb，把 docx/pdf 模板放进该目录；docx 按规则替换占位符，pdf 原样复制。",
+                                    fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+
+                                if (!hasAccess) {
+                                    Spacer(Modifier.height(10.dp))
+                                    Button(onClick = { requestStorageAccess() }, modifier = Modifier.fillMaxWidth()) {
+                                        Icon(Icons.Default.Folder, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Spacer(Modifier.size(6.dp))
+                                        Text("授予存储权限（所有文件访问）")
+                                    }
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        "需授权后才能读取 /sdcard 下的模板目录。",
+                                        fontSize = 11.sp, color = MaterialTheme.colorScheme.error
                                     )
-                                }
-                            }
-                            AnimatedVisibility(visible = showTemplateList) {
-                                Column {
-                                    templates.forEach { t ->
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                                            verticalAlignment = Alignment.CenterVertically
+                                } else if (templates.isEmpty()) {
+                                    Spacer(Modifier.height(8.dp))
+                                    Text(
+                                        "目录为空或不存在：$templateDir（修改路径后点「扫描」）",
+                                        fontSize = 12.sp, color = MaterialTheme.colorScheme.outline
+                                    )
+                                } else {
+                                    Spacer(Modifier.height(8.dp))
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            "已扫描到 ${templates.size} 个模板",
+                                            fontSize = 12.sp,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        TextButton(
+                                            onClick = { showTemplateList = !showTemplateList },
+                                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp)
                                         ) {
+                                            Text(if (showTemplateList) "收起列表" else "查看列表", fontSize = 12.sp)
                                             Icon(
-                                                if (t.isPdf) Icons.Default.PictureAsPdf else Icons.Default.Description,
+                                                if (showTemplateList) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                                                 contentDescription = null,
-                                                modifier = Modifier.size(18.dp),
-                                                tint = MaterialTheme.colorScheme.primary
+                                                modifier = Modifier.size(15.dp)
                                             )
-                                            Text(
-                                                t.fileName,
-                                                fontSize = 13.sp,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
-                                            )
+                                        }
+                                    }
+                                    AnimatedVisibility(visible = showTemplateList) {
+                                        Column {
+                                            templates.forEach { t ->
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Icon(
+                                                        if (t.isPdf) Icons.Default.PictureAsPdf else Icons.Default.Description,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(18.dp),
+                                                        tint = MaterialTheme.colorScheme.primary
+                                                    )
+                                                    Text(
+                                                        t.fileName,
+                                                        fontSize = 13.sp,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                        modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
+                                                    )
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -411,8 +452,10 @@ fun DocGenScreen(onBack: () -> Unit) {
                         OutlinedTextField(
                             value = caseNumber,
                             onValueChange = { v ->
-                                // 允许中文 / 字母 / 数字，仅过滤文件系统非法字符
-                                caseNumber = v.replace(Regex("[<>:\"/\\\\|?*]"), "")
+                                // 允许中文 / 字母 / 数字，仅过滤文件系统非法字符；同时记住上次输入
+                                val cleaned = v.replace(Regex("[<>:\"/\\\\|?*]"), "")
+                                caseNumber = cleaned
+                                SettingsStore.saveDocgenCaseNumber(context, cleaned)
                             },
                             label = { Text("案件编号（可含中文）") },
                             placeholder = { Text("请输入案件编号", fontSize = 14.sp) },
@@ -428,20 +471,24 @@ fun DocGenScreen(onBack: () -> Unit) {
                         Text("文书类型（按文件名包含的类型码筛选）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(Modifier.height(6.dp))
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            FilterChip(
+                            TypeChip(
                                 selected = selectedTypes.isEmpty(),
-                                onClick = { selectedTypes = emptySet() },
-                                label = { Text("全部") }
+                                label = "全部",
+                                onClick = {
+                                    selectedTypes = emptySet()
+                                    SettingsStore.saveDocgenTypes(context, selectedTypes)
+                                }
                             )
                             DocType.values().forEach { dt ->
-                                FilterChip(
+                                TypeChip(
                                     selected = dt.code in selectedTypes,
+                                    label = "${dt.code} ${dt.label}",
                                     onClick = {
                                         selectedTypes = if (dt.code in selectedTypes)
                                             selectedTypes - dt.code
                                         else selectedTypes + dt.code
-                                    },
-                                    label = { Text("${dt.code} ${dt.label}") }
+                                        SettingsStore.saveDocgenTypes(context, selectedTypes)
+                                    }
                                 )
                             }
                         }
@@ -672,6 +719,36 @@ fun DocGenScreen(onBack: () -> Unit) {
                 }
             }
         )
+    }
+}
+
+/** 实心分段按钮：选中=主题色实底白字+✓，未选=浅底描边（比 FilterChip 更醒目） */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TypeChip(
+    selected: Boolean,
+    label: String,
+    onClick: () -> Unit
+) {
+    val container = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface
+    val content = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(9.dp),
+        color = container,
+        contentColor = content,
+        border = if (selected) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (selected) {
+                Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp))
+                Spacer(Modifier.size(4.dp))
+            }
+            Text(label, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+        }
     }
 }
 

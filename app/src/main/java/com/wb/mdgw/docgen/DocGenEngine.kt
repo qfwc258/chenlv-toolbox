@@ -66,6 +66,18 @@ object DocGenEngine {
         DefaultFields.keys(context).forEach { rules[it] = "" }
         fieldDoc.toMap().forEach { (k, v) -> rules[k] = v }
 
+        // 3) 扫描模板里实际出现、但未定义的占位符（如 dlrzj），按长度补空，
+        //    保证模板里不残留任何英文 key（对应「未添加的自动替换为空」）
+        runCatching {
+            val docxBytes = templates.filter { it.isDocx }.mapNotNull { it.readBytes() }
+            if (docxBytes.isNotEmpty()) {
+                val scan = DocxPlaceholders.scan(docxBytes, DefaultFields.keys(context))
+                (scan.standard + scan.unknown).forEach { k ->
+                    if (!rules.containsKey(k)) rules[k] = ""
+                }
+            }
+        }
+
         val caseDir = caseDirName(caseNumber)
 
         val results = mutableListOf<GenResult>()
