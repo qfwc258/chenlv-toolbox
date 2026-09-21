@@ -35,7 +35,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -105,19 +104,18 @@ private enum class Route {
 private data class Feature(
     val route: Route,
     val title: String,
-    val desc: String,
     val icon: ImageVector
 )
 
 private val HOME_FEATURES = listOf(
-    Feature(Route.WORD, "WORD 文档", "Markdown 编辑、转公文、导出 Word/PDF", Icons.Default.Article),
-    Feature(Route.PPTX, "PPTX 制作", "Markdown 一键转幻灯片", Icons.Default.Slideshow),
-    Feature(Route.PDF, "PDF 处理", "加页码、盖章", Icons.Default.PictureAsPdf),
-    Feature(Route.WECHAT, "公众号排版", "Markdown 转公众号图文", Icons.Default.ChatBubble),
-    Feature(Route.DOC_GEN, "生成文书", "按模板批量生成文书", Icons.Default.EditNote),
-    Feature(Route.SCREENSHOT, "截图排版", "长截图切分、排版", Icons.Default.Camera),
-    Feature(Route.LAW_SEARCH, "法律查询", "国家法律法规数据库检索", Icons.Default.Gavel),
-    Feature(Route.SETTINGS, "设置", "偏好、关于与崩溃日志", Icons.Default.Settings)
+    Feature(Route.WORD, "WORD 文档", Icons.Default.Article),
+    Feature(Route.PPTX, "PPTX 制作", Icons.Default.Slideshow),
+    Feature(Route.PDF, "PDF 处理", Icons.Default.PictureAsPdf),
+    Feature(Route.WECHAT, "公众号排版", Icons.Default.ChatBubble),
+    Feature(Route.DOC_GEN, "生成文书", Icons.Default.EditNote),
+    Feature(Route.SCREENSHOT, "截图排版", Icons.Default.Camera),
+    Feature(Route.LAW_SEARCH, "法律查询", Icons.Default.Gavel),
+    Feature(Route.SETTINGS, "设置", Icons.Default.Settings)
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -253,13 +251,13 @@ private fun HomeScreen(onOpen: (Route) -> Unit) {
     }
 }
 
-/** 宫格卡片：图标 + 标题 + 一行简介 */
+/** 宫格卡片：图标 + 标题，简洁居中 */
 @Composable
 private fun FeatureCard(feature: Feature, onClick: () -> Unit) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(132.dp)
+            .height(104.dp)
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
@@ -269,40 +267,22 @@ private fun FeatureCard(feature: Feature, onClick: () -> Unit) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 8.dp, vertical = 12.dp),
+                .padding(horizontal = 8.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Card(
-                shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-                )
-            ) {
-                Icon(
-                    feature.icon,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .padding(8.dp)
-                        .size(28.dp),
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            }
-            Spacer(Modifier.height(8.dp))
+            Icon(
+                feature.icon,
+                contentDescription = null,
+                modifier = Modifier.size(34.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
+            Spacer(Modifier.height(10.dp))
             Text(
                 feature.title,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Spacer(Modifier.height(3.dp))
-            Text(
-                feature.desc,
-                fontSize = 10.sp,
-                lineHeight = 13.sp,
-                color = MaterialTheme.colorScheme.outline,
-                maxLines = 2,
-                textAlign = TextAlign.Center,
                 overflow = TextOverflow.Ellipsis
             )
         }

@@ -112,6 +112,10 @@ object DocxTemplateFiller {
 
     /**
      * 替换单个段落内的占位符；命中任意 key 返回 true。
+     *
+     * 关键：普通字符严格留在它原本所属的 run（格式边界不动），只有占位符区间被替换；
+     * 替换值统一写入「占位符起始位置所在的 run」，因此长度增减只改变该 run，
+     * 绝不会把相邻无格式字符（如占位符前的「：」）卷进下划线 / 粗体 run。
      */
     private fun fillParagraph(p: Element, pattern: Regex, rules: Map<String, String>): Boolean {
         // 段落内全部文本 run（含 hyperlink 等容器内的，按文档顺序）
@@ -120,26 +124,55 @@ object DocxTemplateFiller {
             .filter { runHasText(it) }
         if (runs.isEmpty()) return false
 
-        val full = runs.joinToString("") { runText(it) }
+        val texts = runs.map { runText(it) }
+        // 每个 run 在拼接全文中的起止偏移
+        val starts = IntArray(runs.size + 1)
+        for (i in runs.indices) starts[i + 1] = starts[i] + texts[i].length
+        val full = texts.joinToString("")
         if (full.isEmpty()) return false
 
         val matches = pattern.findAll(full).toList()
         if (matches.isEmpty()) return false
 
-        // 构造替换后的全文（空值按 key 长度补空格）
-        val sb = StringBuilder(full.length)
+        // 每个 run 的新文本缓冲
+        val out = Array(runs.size) { StringBuilder() }
+
+        // 全局字符位置落在哪个 run（starts[i] <= pos < starts[i+1]）
+        fun runIndexOf(pos: Int): Int {
+            for (i in runs.indices) if (pos < starts[i + 1]) return i
+            return runs.size - 1
+        }
+
+        // 把普通（非占位符）区间 [a,b) 的字符按原 run 边界原样写回各 run
+        fun appendPlain(a0: Int, b0: Int) {
+            if (a0 >= b0) return
+            var a = a0
+            var i = runIndexOf(a)
+            while (a < b0) {
+                val segEnd = minOf(b0, starts[i + 1])
+                out[i].append(full.substring(a, segEnd))
+                a = segEnd
+                i++
+            }
+        }
+
         var cursor = 0
         for (m in matches) {
-            sb.append(full.substring(cursor, m.range.first))
+            val mStart = m.range.first
+            val mEnd = m.range.last + 1
+            // 占位符之前的普通文本：原样保留
+            appendPlain(cursor, mStart)
+            // 替换值：空值按 key 长度补空格；继承占位符起始 run 的格式
             val key = m.value
-            val value = rules[key].orEmpty()
-            sb.append(if (value.isBlank()) " ".repeat(key.length) else value)
-            cursor = m.range.last + 1
+            val raw = rules[key].orEmpty()
+            val value = if (raw.isBlank()) " ".repeat(key.length) else raw
+            out[runIndexOf(mStart)].append(value)
+            cursor = mEnd
         }
-        sb.append(full.substring(cursor))
-        val newFull = sb.toString()
+        // 末尾普通文本
+        appendPlain(cursor, full.length)
 
-        replaceRunsText(runs, newFull)
+        for (i in runs.indices) setRunText(runs[i], out[i].toString())
         return true
     }
 
@@ -170,29 +203,6 @@ object DocxTemplateFiller {
     // run 文本回填（移植自 DocxInPlace 已验证算法，保持本引擎自包含）
     // ------------------------------------------------------------------
 
-    /** 把 newText 回填到各 run；带格式（下划线/粗/斜）的 run 锁长，无格式 run 吸收增减 */
-    private fun replaceRunsText(runs: List<Element>, newText: String) {
-        if (newText.isEmpty()) {
-            runs.forEach { clearRunText(it) }
-            return
-        }
-        val lens = runs.map { runTextLen(it) }
-        val counts = distributeRespectingFormat(lens, runs.map { runHasFormatting(it) }, newText.length)
-        var cursor = 0
-        for (i in runs.indices) {
-            val end = (cursor + counts[i]).coerceAtMost(newText.length)
-            setRunText(runs[i], newText.substring(cursor, end))
-            cursor = end
-        }
-        if (cursor < newText.length) {
-            // 极端情况：格式 run 全锁长且总长不足，剩余追加到最后一个文本 run
-            val tail = newText.substring(cursor)
-            val last = runs.last()
-            val cur = last.childElements().filter { it.local() == "t" }.firstOrNull()?.textContent.orEmpty()
-            setRunText(last, cur + tail)
-        }
-    }
-
     /** run 文本（w:t 文字 + w:tab→\t + w:br→\n） */
     private fun runText(run: Element): String {
         val sb = StringBuilder()
@@ -205,15 +215,6 @@ object DocxTemplateFiller {
         }
         return sb.toString()
     }
-
-    private fun runTextLen(run: Element): Int =
-        run.childElements().sumOf { c ->
-            when (c.local()) {
-                "t" -> c.textContent.length
-                "tab", "br" -> 1
-                else -> 0
-            }
-        }
 
     private fun runHasText(run: Element): Boolean =
         run.childElements().any { it.local() in TEXTUAL }
@@ -267,54 +268,6 @@ object DocxTemplateFiller {
                 }
             }
         }
-    }
-
-    private fun clearRunText(run: Element) {
-        run.childElements().filter { it.local() in TEXTUAL }.forEach { run.removeChild(it) }
-    }
-
-    /** 受格式约束的字符数分配（格式 run 锁长，无格式 run 吸收增减），移植自 DocxInPlace */
-    private fun distributeRespectingFormat(lens: List<Int>, locked: List<Boolean>, total: Int): List<Int> {
-        val n = lens.size
-        if (n == 0) return emptyList()
-        val o = lens.sum()
-        if (o <= 0) return List(n) { if (it == 0) total else 0 }
-
-        val origStart = mutableListOf(0)
-        for (l in lens) origStart += origStart.last() + l
-
-        val pos = MutableList(n + 1) { 0 }
-        for (i in 1..n) pos[i] = (origStart[i].toLong() * total / o).toInt()
-        pos[n] = total
-
-        for (i in locked.indices) {
-            if (!locked[i]) continue
-            val cur = pos[i + 1] - pos[i]
-            val diff = lens[i] - cur
-            pos[i + 1] = (pos[i + 1] + diff).coerceIn(pos[i], total)
-        }
-        return (0 until n).map { pos[it + 1] - pos[it] }
-    }
-
-    private fun runHasFormatting(run: Element): Boolean {
-        val rPr = run.child("rPr") ?: return false
-        val u = rPr.child("u")
-        if (u != null && underlineOn(u)) return true
-        val b = rPr.child("b")
-        if (b != null && onFlag(b)) return true
-        val i = rPr.child("i")
-        if (i != null && onFlag(i)) return true
-        return false
-    }
-
-    private fun underlineOn(u: Element): Boolean {
-        val v = u.attr("w:val") ?: return true
-        return v != "none" && v != "0" && v != "false" && v != "off"
-    }
-
-    private fun onFlag(node: Element): Boolean {
-        val v = node.attr("w:val") ?: return true
-        return v == "true" || v == "1" || v == "on"
     }
 
     // ------------------------------------------------------------------
