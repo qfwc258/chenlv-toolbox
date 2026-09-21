@@ -50,6 +50,7 @@ import com.wb.mdgw.law.LawDetailScreen
 import com.wb.mdgw.law.LawSearchScreen
 import com.wb.mdgw.docgen.DocGenScreen
 import com.wb.mdgw.ftp.FtpScreen
+import com.wb.mdgw.update.UpdateManager
 
 class MainActivity : ComponentActivity() {
 
@@ -128,6 +129,12 @@ fun AppScreen(initialUri: Uri? = null) {
     val context = LocalContext.current
     // 冷启动恢复一次全局共享设置（幂等）
     remember { AppSettings.init(context) }
+
+    // 每日最多一次自动检查更新：仅刷新设置页红点，不弹窗打扰
+    LaunchedEffect(Unit) {
+        UpdateManager.refreshState(context)
+        UpdateManager.maybeAutoCheck(context)
+    }
 
     // 从「打开方式 / 分享」进入时直达对应功能，否则落到宫格主页
     val initialRoute = remember(initialUri) {

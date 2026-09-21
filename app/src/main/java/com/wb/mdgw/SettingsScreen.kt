@@ -32,6 +32,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.wb.mdgw.pptx.PptThemes
 import com.wb.mdgw.pptx.hexToColor
+import com.wb.mdgw.update.UpdateManager
+import com.wb.mdgw.update.rememberUpdateController
 import com.wb.mdgw.wechat.CssEditDialog
 import com.wb.mdgw.wechat.ThemePreset
 import com.wb.mdgw.wechat.ThemeStorage
@@ -56,6 +58,8 @@ fun SettingsScreen() {
     var showAbout by remember { mutableStateOf(false) }
     var showCss by remember { mutableStateOf(false) }
     var toneInput by remember { mutableStateOf(pptxTone) }
+    val updateController = rememberUpdateController()
+    val hasUpdate by UpdateManager.hasUpdate.collectAsState()
 
     Column(
         Modifier
@@ -74,6 +78,34 @@ fun SettingsScreen() {
             SettingsRow(title = "关于", desc = "版本、开发者与联系方式") {
                 TextButton(onClick = { showAbout = true }) {
                     Text("查看", fontSize = 13.sp)
+                }
+            }
+            // 检查更新：有新版时标题旁亮红点，描述变为「发现新版本」
+            SettingsRow(
+                title = "检查更新",
+                desc = if (hasUpdate) "发现新版本，点击查看"
+                else "当前版本 v${BuildConfig.VERSION_NAME}"
+            ) {
+                if (updateController.checking) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (hasUpdate) {
+                            Box(
+                                Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFFE53935))
+                            )
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        TextButton(onClick = { updateController.check() }) {
+                            Text("检查", fontSize = 13.sp)
+                        }
+                    }
                 }
             }
             // 崩溃日志：仅存本机，用户主动导出给开发者排查（不外传）

@@ -20,6 +20,9 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
 
+    <!-- 应用自更新：下载完成后调起系统安装器（Android 8+ 需用户授权「安装未知应用」） -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
     <!-- FTP 服务：前台服务保活 + 通知（Android 13+） -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
@@ -101,6 +104,22 @@
             android:name=".ftp.FtpServerService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <!-- 自更新：透明中转页，处理「安装未知应用」授权并调起安装器 -->
+        <activity
+            android:name=".update.InstallActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <!-- 自更新：系统下载完成广播（App 在后台时发「点击安装」通知） -->
+        <receiver
+            android:name=".update.UpdateDownloadReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.DOWNLOAD_COMPLETE" />
+            </intent-filter>
+        </receiver>
     </application>
 
 </manifest>
