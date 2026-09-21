@@ -78,30 +78,34 @@ jobs:
       - name: Build Release APK
         run: ./gradlew assembleRelease --no-daemon -PstoreFile=mdgw-release.jks -PstorePassword="${{ secrets.SIGNING_STORE_PASSWORD }}" -PkeyAlias="${{ secrets.SIGNING_KEY_ALIAS }}" -PkeyPassword="${{ secrets.SIGNING_KEY_PASSWORD }}" -PstoreType=PKCS12
 
-      - name: Get APK info
-        id: apk_info
+      - name: Get version and rename APK
+        id: version_info
         run: |
+          set -e
           APK_PATH=$(ls app/build/outputs/apk/release/*.apk | head -1)
-          APK_NAME=$(basename "$APK_PATH")
-          echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
-          echo "apk_name=$APK_NAME" >> $GITHUB_OUTPUT
+          # output-metadata.json 的 key 带引号（"versionName": "x.y.z"），正则必须匹配引号
+          VERSION_NAME=$(grep -oP '"versionName"\s*:\s*"\K[^"]+' app/build/outputs/apk/release/output-metadata.json | head -1)
+          COMMIT_COUNT=$(git rev-list --count HEAD)
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          if [ -z "$VERSION_NAME" ]; then
+            echo "::error::无法从 output-metadata.json 读取 versionName"
+            exit 1
+          fi
+          APK_NEW_NAME="chenlv-toolbox-v${VERSION_NAME}-${SHORT_SHA}.apk"
+          mkdir -p release-out
+          cp "$APK_PATH" "release-out/${APK_NEW_NAME}"
+          echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
+          echo "commit_count=$COMMIT_COUNT" >> $GITHUB_OUTPUT
+          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
+          echo "apk_path=release-out/${APK_NEW_NAME}" >> $GITHUB_OUTPUT
+          echo "apk_name=${APK_NEW_NAME}" >> $GITHUB_OUTPUT
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: chenlv-toolbox-apk
-          path: ${{ steps.apk_info.outputs.apk_path }}
+          path: ${{ steps.version_info.outputs.apk_path }}
           retention-days: 30
-
-      - name: Get version from APK
-        id: version_info
-        run: |
-          VERSION_NAME=$(grep -oP 'versionName:\s*"\K[^"]+' app/build/outputs/apk/release/output-metadata.json 2>/dev/null || echo "3.1.0")
-          COMMIT_COUNT=$(git rev-list --count HEAD)
-          SHORT_SHA=$(git rev-parse --short HEAD)
-          echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
-          echo "commit_count=$COMMIT_COUNT" >> $GITHUB_OUTPUT
-          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -119,8 +123,8 @@ jobs:
             
             ## 下载
             
-            - 点击下方 Assets 下载 APK
-          files: ${{ steps.apk_info.outputs.apk_path }}
+            - 下载下方 Assets 中的 `chenlv-toolbox-v<版本>-<提交>.apk`
+          files: ${{ steps.version_info.outputs.apk_path }}
           draft: ${{ github.event.inputs.release_type == 'draft' }}
           prerelease: false
         env:

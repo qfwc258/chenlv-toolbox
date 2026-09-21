@@ -26,8 +26,7 @@ object SettingsStore {
     private const val K_PPTX_TONE = "pptx_tone"
     private const val K_PPTX_AUTO_PAGINATE = "pptx_auto_paginate"
     private const val K_DOCGEN_TEMPLATE_DIR = "docgen_template_dir"
-    private const val K_DOCGEN_CASE_NUMBER = "docgen_case_number"
-    private const val K_DOCGEN_TYPES = "docgen_types"
+    private const val K_DOCGEN_SELECTED_TYPES = "docgen_selected_types"
 
     /** 生成文书：默认模板目录（与 PC 端 mb/ 对齐，可在 App 内修改） */
     const val DOCGEN_DEFAULT_TEMPLATE_DIR = "/sdcard/pylaw/mb"
@@ -131,20 +130,12 @@ object SettingsStore {
         prefs(ctx).edit().putString(K_DOCGEN_TEMPLATE_DIR, path.trim()).apply()
     }
 
-    /** 生成文书：记住上次输入的案件编号（可含中文） */
-    fun docgenCaseNumber(ctx: Context): String =
-        prefs(ctx).getString(K_DOCGEN_CASE_NUMBER, null) ?: ""
-
-    fun saveDocgenCaseNumber(ctx: Context, v: String) {
-        prefs(ctx).edit().putString(K_DOCGEN_CASE_NUMBER, v).apply()
-    }
-
     /** 生成文书：记住上次选中的文书类型 code（空集合表示全部） */
-    fun docgenTypes(ctx: Context): Set<String> =
-        prefs(ctx).getString(K_DOCGEN_TYPES, null)
+    fun docgenSelectedTypes(ctx: Context): Set<String> =
+        prefs(ctx).getString(K_DOCGEN_SELECTED_TYPES, null)
             ?.split(",")?.filter { it.isNotBlank() }?.toSet() ?: emptySet()
 
-    fun saveDocgenTypes(ctx: Context, codes: Set<String>) {
-        prefs(ctx).edit().putString(K_DOCGEN_TYPES, codes.joinToString(",")).apply()
+    fun saveDocgenSelectedTypes(ctx: Context, codes: Set<String>) {
+        prefs(ctx).edit().putString(K_DOCGEN_SELECTED_TYPES, codes.joinToString(",")).apply()
     }
 }

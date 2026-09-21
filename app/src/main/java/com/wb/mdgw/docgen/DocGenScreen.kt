@@ -8,6 +8,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,8 +20,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -27,6 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
@@ -40,6 +45,7 @@ import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -48,6 +54,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -71,7 +78,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -115,13 +121,15 @@ fun DocGenScreen(onBack: () -> Unit) {
     var hasAccess by remember { mutableStateOf(DocTemplateDir.hasAccess(context)) }
     var templates by remember { mutableStateOf(emptyList<DocTemplateFile>()) }
     var lines by remember { mutableStateOf(FieldRuleStore.loadOrDefault(context).lines) }
-    var caseNumber by remember { mutableStateOf(SettingsStore.docgenCaseNumber(context)) }
-    var selectedTypes by remember { mutableStateOf(SettingsStore.docgenTypes(context)) } // 空 = 全部
+    var typeList by remember { mutableStateOf(DocTypeStore.load(context)) }
+    var selectedTypes by remember { mutableStateOf(SettingsStore.docgenSelectedTypes(context)) } // 空 = 全部
     var keyword by remember { mutableStateOf("") }
+    var showSearch by remember { mutableStateOf(false) }
     var collapsed by remember { mutableStateOf(emptySet<String>()) }
     var busy by remember { mutableStateOf(false) }
     var output by remember { mutableStateOf<GenOutput?>(null) }
     var showAddDialog by remember { mutableStateOf(false) }
+    var showTypeManage by remember { mutableStateOf(false) }
     var addDialogGroup by remember { mutableStateOf<String?>(null) }
     var editIndex by remember { mutableStateOf(-1) }
     var showTemplateList by remember { mutableStateOf(false) }
@@ -129,6 +137,18 @@ fun DocGenScreen(onBack: () -> Unit) {
 
     val defaults = remember { DefaultFields.lines(context) }
     val standardKeys = remember { DefaultFields.keys(context) }
+
+    /** 保存类型列表，并清理已不存在的选中态 */
+    fun persistTypeList(newList: List<DocTypeItem>) {
+        typeList = newList
+        DocTypeStore.save(context, newList)
+        val valid = newList.map { it.code }.toSet()
+        val cleaned = selectedTypes.filter { it in valid }.toSet()
+        if (cleaned != selectedTypes) {
+            selectedTypes = cleaned
+            SettingsStore.saveDocgenSelectedTypes(context, cleaned)
+        }
+    }
 
     fun rescan() {
         hasAccess = DocTemplateDir.hasAccess(context)
@@ -210,13 +230,9 @@ fun DocGenScreen(onBack: () -> Unit) {
         }
     }
 
-    // 导出规则文本：直接写入案件文件夹（与生成文书同目录），不再弹保存位置选择
+    // 导出规则文本：直接写入案件文件夹（与生成文书同目录，目录名由 委托人_阶段 自动生成）
     fun exportRules() {
-        if (caseNumber.isBlank()) {
-            scope.launch { snackbar.showSnackbar("请先填写案件编号，以便归档到对应案件文件夹") }
-            return
-        }
-        val caseDir = DocGenEngine.caseDirName(caseNumber)
+        val caseDir = DocGenEngine.caseDirName(FieldDoc(lines))
         scope.launch {
             val saved = withContext(Dispatchers.IO) {
                 runCatching {
@@ -237,10 +253,6 @@ fun DocGenScreen(onBack: () -> Unit) {
             scope.launch { snackbar.showSnackbar("请先授予存储权限以读取模板目录") }
             return
         }
-        if (caseNumber.isBlank()) {
-            scope.launch { snackbar.showSnackbar("请先填写案件编号") }
-            return
-        }
         val tpl = DocTemplateDir.scan(templateDir)
         if (tpl.isEmpty()) {
             scope.launch { snackbar.showSnackbar("模板目录为空或不存在：$templateDir") }
@@ -249,7 +261,7 @@ fun DocGenScreen(onBack: () -> Unit) {
         scope.launch {
             busy = true
             val out = withContext(Dispatchers.IO) {
-                DocGenEngine.generate(context, caseNumber, selectedTypes, FieldDoc(lines), tpl)
+                DocGenEngine.generate(context, selectedTypes, FieldDoc(lines), tpl)
             }
             busy = false
             if (out.results.isEmpty()) {
@@ -443,43 +455,36 @@ fun DocGenScreen(onBack: () -> Unit) {
                 }
             }
 
-            // ---------- 案件信息 / 类型 ----------
+            // ---------- 文书类型（可增删、重命名） ----------
             item {
                 Card(shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(14.dp)) {
-                        Text("案件信息", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                        Spacer(Modifier.height(10.dp))
-                        OutlinedTextField(
-                            value = caseNumber,
-                            onValueChange = { v ->
-                                // 允许中文 / 字母 / 数字，仅过滤文件系统非法字符；同时记住上次输入
-                                val cleaned = v.replace(Regex("[<>:\"/\\\\|?*]"), "")
-                                caseNumber = cleaned
-                                SettingsStore.saveDocgenCaseNumber(context, cleaned)
-                            },
-                            label = { Text("案件编号（可含中文）") },
-                            placeholder = { Text("请输入案件编号", fontSize = 14.sp) },
-                            singleLine = true,
-                            isError = caseNumber.isBlank(),
-                            supportingText = {
-                                if (caseNumber.isBlank()) Text("必填，用于归档到「案件_<编号>」文件夹")
-                            },
-                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Text),
-                            modifier = Modifier.fillMaxWidth()
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("文书类型", fontWeight = FontWeight.SemiBold, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                            TextButton(
+                                onClick = { showTypeManage = true },
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp)
+                            ) {
+                                Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(15.dp))
+                                Spacer(Modifier.size(4.dp))
+                                Text("管理", fontSize = 12.sp)
+                            }
+                        }
+                        Text(
+                            "按文件名包含的类型码筛选；归档目录自动为「案件_委托人_阶段」",
+                            fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        Spacer(Modifier.height(10.dp))
-                        Text("文书类型（按文件名包含的类型码筛选）", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(Modifier.height(6.dp))
+                        Spacer(Modifier.height(8.dp))
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             TypeChip(
                                 selected = selectedTypes.isEmpty(),
                                 label = "全部",
                                 onClick = {
                                     selectedTypes = emptySet()
-                                    SettingsStore.saveDocgenTypes(context, selectedTypes)
+                                    SettingsStore.saveDocgenSelectedTypes(context, selectedTypes)
                                 }
                             )
-                            DocType.values().forEach { dt ->
+                            typeList.forEach { dt ->
                                 TypeChip(
                                     selected = dt.code in selectedTypes,
                                     label = "${dt.code} ${dt.label}",
@@ -487,7 +492,7 @@ fun DocGenScreen(onBack: () -> Unit) {
                                         selectedTypes = if (dt.code in selectedTypes)
                                             selectedTypes - dt.code
                                         else selectedTypes + dt.code
-                                        SettingsStore.saveDocgenTypes(context, selectedTypes)
+                                        SettingsStore.saveDocgenSelectedTypes(context, selectedTypes)
                                     }
                                 )
                             }
@@ -508,6 +513,18 @@ fun DocGenScreen(onBack: () -> Unit) {
                             }
                             IconButton(onClick = { exportRules() }) {
                                 Icon(Icons.Default.FileDownload, contentDescription = "导出规则到案件文件夹", modifier = Modifier.size(19.dp))
+                            }
+                            IconButton(onClick = {
+                                showSearch = !showSearch
+                                if (!showSearch) keyword = ""
+                            }) {
+                                Icon(
+                                    if (showSearch) Icons.Default.Close else Icons.Default.Search,
+                                    contentDescription = if (showSearch) "关闭搜索" else "搜索字段",
+                                    modifier = Modifier.size(19.dp),
+                                    tint = if (showSearch) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                             Box {
                                 var menuOpen by remember { mutableStateOf(false) }
@@ -537,17 +554,21 @@ fun DocGenScreen(onBack: () -> Unit) {
                                 }
                             }
                         }
-                        Spacer(Modifier.height(8.dp))
-                        OutlinedTextField(
-                            value = keyword,
-                            onValueChange = { keyword = it },
-                            modifier = Modifier.fillMaxWidth(),
-                            placeholder = { Text("搜索字段 / 标签 / 内容", fontSize = 13.sp) },
-                            leadingIcon = { Icon(Icons.Default.Search, null, Modifier.size(18.dp)) },
-                            singleLine = true,
-                            shape = RoundedCornerShape(12.dp)
-                        )
-                        Spacer(Modifier.height(6.dp))
+                        AnimatedVisibility(visible = showSearch) {
+                            Column {
+                                Spacer(Modifier.height(8.dp))
+                                OutlinedTextField(
+                                    value = keyword,
+                                    onValueChange = { keyword = it },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    placeholder = { Text("搜索字段 / 标签 / 内容", fontSize = 13.sp) },
+                                    leadingIcon = { Icon(Icons.Default.Search, null, Modifier.size(18.dp)) },
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+                                Spacer(Modifier.height(6.dp))
+                            }
+                        }
 
                         val kw = keyword.trim()
                         if (kw.isNotEmpty()) {
@@ -645,6 +666,15 @@ fun DocGenScreen(onBack: () -> Unit) {
 
             item { Spacer(Modifier.height(8.dp)) }
         }
+    }
+
+    // ---------- 文书类型管理对话框 ----------
+    if (showTypeManage) {
+        TypeManageDialog(
+            initial = typeList,
+            onDismiss = { showTypeManage = false },
+            onSave = { persistTypeList(it) }
+        )
     }
 
     // ---------- 添加字段对话框 ----------
@@ -750,6 +780,126 @@ private fun TypeChip(
             Text(label, fontSize = 13.sp, fontWeight = FontWeight.Medium)
         }
     }
+}
+
+/** 文书类型管理：增、删、改 类型码 / 显示名 */
+@Composable
+private fun TypeManageDialog(
+    initial: List<DocTypeItem>,
+    onDismiss: () -> Unit,
+    onSave: (List<DocTypeItem>) -> Unit
+) {
+    var items by remember { mutableStateOf(initial) }
+    var newCode by remember { mutableStateOf("") }
+    var newLabel by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf("") }
+    val codeFilter = remember { Regex("[^A-Za-z0-9]") }
+
+    fun addType() {
+        val code = newCode.trim()
+        val label = newLabel.trim()
+        if (code.isEmpty() || label.isEmpty()) {
+            error = "类型码和显示名都不能为空"
+            return
+        }
+        if (items.any { it.code.equals(code, ignoreCase = true) }) {
+            error = "类型码 $code 已存在"
+            return
+        }
+        items = items + DocTypeItem(code, label)
+        newCode = ""
+        newLabel = ""
+        error = ""
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("管理文书类型") },
+        text = {
+            Column(
+                Modifier
+                    .heightIn(max = 460.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    "类型码对应文件名中的数字/字母，生成时按「文件名包含该码」筛选",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                items.forEachIndexed { idx, item ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(
+                            value = item.code,
+                            onValueChange = { v ->
+                                val c = codeFilter.replace(v, "")
+                                items = items.toMutableList().also { it[idx] = item.copy(code = c) }
+                            },
+                            label = { Text("码", fontSize = 11.sp) },
+                            singleLine = true,
+                            modifier = Modifier.width(78.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        OutlinedTextField(
+                            value = item.label,
+                            onValueChange = { v ->
+                                items = items.toMutableList().also { it[idx] = item.copy(label = v) }
+                            },
+                            label = { Text("显示名", fontSize = 11.sp) },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        IconButton(onClick = { items = items.filterIndexed { i, _ -> i != idx } }) {
+                            Icon(Icons.Default.Delete, contentDescription = "删除类型", modifier = Modifier.size(18.dp))
+                        }
+                    }
+                }
+                HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                Text("新增类型", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = newCode,
+                        onValueChange = { newCode = codeFilter.replace(it, "") },
+                        label = { Text("码", fontSize = 11.sp) },
+                        singleLine = true,
+                        modifier = Modifier.width(78.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    OutlinedTextField(
+                        value = newLabel,
+                        onValueChange = { newLabel = it },
+                        label = { Text("显示名", fontSize = 11.sp) },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = { addType() }) {
+                        Icon(Icons.Default.Add, contentDescription = "添加类型")
+                    }
+                }
+                if (error.isNotEmpty()) {
+                    Text(error, fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                val valid = items.filter { it.code.isNotBlank() && it.label.isNotBlank() }
+                val codes = valid.map { it.code.lowercase() }
+                error = when {
+                    valid.isEmpty() -> "至少保留一个类型"
+                    codes.size != codes.distinct().size -> "存在重复的类型码"
+                    else -> ""
+                }
+                if (error.isEmpty()) {
+                    onSave(valid)
+                    onDismiss()
+                }
+            }) { Text("保存") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        }
+    )
 }
 
 /** 字段行：输入框 + 编辑 + 删除 */

@@ -67,21 +67,22 @@ data class FieldDoc(
 }
 
 /**
- * 文书类型（与 PC 脚本 DOCUMENT_TYPES 一致，文件名包含对应 code 即入选）。
+ * 文书类型项（可增删、重命名，持久化保存）。
+ *
+ * @param code  文件名匹配码（数字或字母，如 1/8/A）；生成时文件名包含该 code 即入选（对应 PC 的 lx）
+ * @param label 显示名（如「委托」），可自由重命名
  */
-enum class DocType(val code: String, val label: String) {
-    ENTRUST("1", "委托"),
-    INVESTIGATE("2", "调查"),
-    LITIGATION("3", "诉讼"),
-    ENFORCE("4", "执行"),
-    AID_CRIMINAL("8", "法援刑"),
-    AID_CIVIL("9", "法援民");
+@Serializable
+data class DocTypeItem(
+    val code: String,
+    val label: String
+)
 
-    companion object {
-        /** 全部类型 code（用于「全部」筛选） */
-        val ALL_CODES: Set<String> = values().map { it.code }.toSet()
-    }
-}
+/** 文书类型列表（JSON 持久化包装类） */
+@Serializable
+data class DocTypeList(
+    val items: List<DocTypeItem> = emptyList()
+)
 
 /**
  * 单个模板的生成结果。

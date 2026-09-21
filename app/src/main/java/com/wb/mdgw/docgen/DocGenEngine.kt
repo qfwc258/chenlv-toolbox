@@ -43,20 +43,26 @@ object DocGenEngine {
     fun sanitizeFileName(name: String): String =
         ILLEGAL_CHARS.replace(name, "").trim().take(MAX_NAME)
 
-    /** 案件归档子目录名：案件_<编号>（空编号回退为 1） */
-    fun caseDirName(caseNumber: String): String =
-        DIR_PREFIX + sanitizeFileName(caseNumber.trim().ifBlank { "1" })
+    /**
+     * 案件归档子目录名：案件_<委托人 weitr>_<阶段 jied>，如「案件_周_一审」。
+     * 任一段为空 / 全是非法字符时用「未填」占位，避免出现连续下划线。
+     */
+    fun caseDirName(fieldDoc: FieldDoc): String {
+        val m = fieldDoc.toMap()
+        val weitr = sanitizeFileName(m["weitr"].orEmpty().trim()).ifBlank { "未填" }
+        val jied = sanitizeFileName(m["jied"].orEmpty().trim()).ifBlank { "未填" }
+        return "$DIR_PREFIX${weitr}_$jied"
+    }
 
     /**
      * 执行批量生成。
      *
-     * @param caseNumber   案件编号（决定输出子目录 案件_<编号>，可含中文；空则回退为 1）
      * @param selectedTypes 选中的文书类型 code 集合；**空集合表示全部**（对应 PC 的 lx=0）
      * @param templates    从模板目录扫描得到的文件列表
+     * 案件归档目录由字段 weitr（委托人）、jied（阶段）自动拼成，见 [caseDirName]。
      */
     fun generate(
         context: Context,
-        caseNumber: String,
         selectedTypes: Set<String>,
         fieldDoc: FieldDoc,
         templates: List<DocTemplateFile>
@@ -78,7 +84,7 @@ object DocGenEngine {
             }
         }
 
-        val caseDir = caseDirName(caseNumber)
+        val caseDir = caseDirName(fieldDoc)
 
         val results = mutableListOf<GenResult>()
         data class Out(val name: String, val bytes: ByteArray, val mime: String)
