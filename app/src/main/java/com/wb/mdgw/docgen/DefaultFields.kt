@@ -103,4 +103,137 @@ object DefaultFields {
         result.add(insertAt, RuleLine.field(trimmedKey, value, if (isDefault) "" else alias.trim()))
         return result
     }
+
+    /** 办案过程分组名（gcsj/gcfs/gcnr 三元组所在分组） */
+    const val PROCESS_GROUP = "办案过程"
+
+    /**
+     * 内置默认值表（默认值有效 key → 内置值）。
+     * 可重复字段（gcsj/gcfs/gcnr）取第一个序号字段的值作为该类字段的内置默认。
+     */
+    fun builtinDefaults(context: Context): Map<String, String> {
+        val map = LinkedHashMap<String, String>()
+        for (l in lines(context)) {
+            if (!l.isField) continue
+            val dk = FieldLabels.defaultKey(l.key)
+            if (dk !in map) map[dk] = l.value
+        }
+        return map
+    }
+
+    /**
+     * 某字段的有效默认值：用户自定义覆盖 → 内置默认 → 空。
+     * @param overrides 用户自定义默认值覆盖表（默认值有效 key → 值）
+     */
+    fun effectiveDefault(context: Context, key: String, overrides: Map<String, String>): String {
+        val dk = FieldLabels.defaultKey(key)
+        overrides[dk]?.let { return it }
+        return builtinDefaults(context)[dk] ?: ""
+    }
+
+    /** 对一份结构的所有字段套用有效默认值（重置 / 新建时使用），非字段行原样保留 */
+    fun applyUserDefaults(
+        context: Context,
+        lines: List<RuleLine>,
+        overrides: Map<String, String>
+    ): List<RuleLine> = lines.map { l ->
+        if (l.isField) l.copy(value = effectiveDefault(context, l.key, overrides)) else l
+    }
+
+    /** 默认值管理界面的单条字段（已按默认值有效 key 去重、可重复字段归并） */
+    data class DefaultFieldEntry(
+        val group: String?,
+        val key: String,
+        val label: String,
+        val long: Boolean
+    )
+
+    /**
+     * 默认值管理界面字段清单：先按内置结构顺序列出全部字段（过程三元组归并为三项），
+     * 再补充当前表单里出现过的自定义字段，保证任意字段都能设默认值。
+     */
+    fun defaultEntries(context: Context, currentLines: List<RuleLine>): List<DefaultFieldEntry> {
+        val seen = LinkedHashSet<String>()
+        val result = mutableListOf<DefaultFieldEntry>()
+
+        var group: String? = null
+        for (l in lines(context)) {
+            when {
+                l.isGroup -> group = l.text
+                l.isField -> {
+                    val dk = FieldLabels.defaultKey(l.key)
+                    if (seen.add(dk)) {
+                        result.add(
+                            DefaultFieldEntry(
+                                group = group,
+                                key = dk,
+                                label = FieldLabels.displayName(dk),
+                                long = FieldLabels.isLong(dk)
+                            )
+                        )
+                    }
+                }
+            }
+        }
+
+        var customGroup: String? = CUSTOM_GROUP
+        for (l in currentLines) {
+            when {
+                l.isGroup -> customGroup = l.text
+                l.isField -> {
+                    val dk = FieldLabels.defaultKey(l.key)
+                    if (seen.add(dk)) {
+                        result.add(
+                            DefaultFieldEntry(
+                                group = customGroup,
+                                key = dk,
+                                label = FieldLabels.displayName(l.key, l.alias),
+                                long = FieldLabels.isLong(l.key)
+                            )
+                        )
+                    }
+                }
+            }
+        }
+        return result
+    }
+
+    /**
+     * 插入一整组办案过程三元组（gcsjN/gcfsN/gcnrN），已存在的字段跳过。
+     *
+     * @param number 序号 N
+     * @param values 具体 key（如 gcsj3）→ 初始值，缺失视为空
+     */
+    fun insertProcessGroup(
+        current: List<RuleLine>,
+        number: Int,
+        values: Map<String, String>
+    ): List<RuleLine> {
+        val keys = listOf("gcsj", "gcfs", "gcnr").map { "$it$number" }
+        if (keys.all { k -> current.any { it.isField && it.key == k } }) return current
+
+        val result = current.toMutableList()
+        val gIdx = result.indexOfFirst { it.isGroup && it.text == PROCESS_GROUP }
+        if (gIdx < 0) {
+            if (result.isNotEmpty() && result.last().type != RuleLine.TYPE_BLANK) {
+                result.add(RuleLine.blank())
+            }
+            result.add(RuleLine.group(PROCESS_GROUP))
+            keys.forEach { k -> result.add(RuleLine.field(k, values[k] ?: "")) }
+            return result
+        }
+
+        var end = result.size
+        for (i in gIdx + 1 until result.size) {
+            if (result[i].isGroup) { end = i; break }
+        }
+        var insertAt = end
+        for (k in keys) {
+            if (result.none { it.isField && it.key == k }) {
+                result.add(insertAt, RuleLine.field(k, values[k] ?: ""))
+                insertAt++
+            }
+        }
+        return result
+    }
 }

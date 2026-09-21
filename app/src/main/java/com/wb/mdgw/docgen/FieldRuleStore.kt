@@ -19,20 +19,15 @@ object FieldRuleStore : JsonFileStore<FieldDoc>() {
     fun load(context: Context): FieldDoc = read(context) ?: FieldDoc()
 
     /**
-     * 读取当前规则；若用户从未导入 / 填写（为空），则加载内置的空白法律援助字段结构
-     * （assets/docgen/default_shared_text.txt，仅含分组 / 注释 / key，不含真实案件数据），
-     * 并落盘一次，使手机端开箱即有标准字段表单。
+     * 读取当前规则；若用户从未导入 / 填写（为空），则加载内置的法律援助字段结构
+     * （assets/docgen/default_shared_text.txt），并套用用户自定义的字段默认值，
+     * 落盘一次，使手机端开箱即有标准字段表单。
      */
     fun loadOrDefault(context: Context): FieldDoc {
         val existing = read(context)
         if (existing != null && existing.lines.isNotEmpty()) return existing
-        val lines = runCatching {
-            context.assets.open("docgen/default_shared_text.txt")
-                .bufferedReader(Charsets.UTF_8)
-                .use { it.readText() }
-        }.getOrNull()?.let { SharedTextParser.parse(it) } ?: emptyList()
-        val doc = FieldDoc(lines)
-        if (lines.isNotEmpty()) write(context, doc)
+        val doc = buildDefaultDoc(context)
+        if (doc.lines.isNotEmpty()) write(context, doc)
         return doc
     }
 
@@ -40,18 +35,28 @@ object FieldRuleStore : JsonFileStore<FieldDoc>() {
     fun save(context: Context, doc: FieldDoc) = write(context, doc)
 
     /**
-     * 重置为内置默认结构（含常用默认值，丢弃用户增删的自定义字段与已填值），
-     * 落盘并返回，供「重置为默认结构」按钮使用。
+     * 构建内置默认结构：解析 assets 默认字段后，套用用户自定义默认值覆盖表。
      */
-    fun resetOrDefault(context: Context): FieldDoc {
+    private fun buildDefaultDoc(context: Context): FieldDoc {
         val text = runCatching {
             context.assets.open("docgen/default_shared_text.txt")
                 .bufferedReader(Charsets.UTF_8)
                 .use { it.readText() }
         }.getOrNull()
-        val lines = text?.let { SharedTextParser.parse(it) } ?: emptyList()
-        val doc = FieldDoc(lines)
-        if (lines.isNotEmpty()) write(context, doc)
+        val raw = text?.let { SharedTextParser.parse(it) } ?: emptyList()
+        val overrides = DefaultValueStore.load(context)
+        val lines = if (overrides.isEmpty()) raw
+        else DefaultFields.applyUserDefaults(context, raw, overrides)
+        return FieldDoc(lines)
+    }
+
+    /**
+     * 重置为内置默认结构（套用用户自定义默认值，丢弃用户增删的自定义字段与已填值），
+     * 落盘并返回，供「重置为默认结构」按钮使用。
+     */
+    fun resetOrDefault(context: Context): FieldDoc {
+        val doc = buildDefaultDoc(context)
+        if (doc.lines.isNotEmpty()) write(context, doc)
         return doc
     }
 }

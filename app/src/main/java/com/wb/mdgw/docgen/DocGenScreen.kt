@@ -46,6 +46,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -70,6 +71,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -108,6 +110,51 @@ private fun buildSections(lines: List<RuleLine>): List<Section> {
     return result
 }
 
+/** 分组内的渲染项：普通字段 / 注释，或成组的办案过程三元组 */
+private sealed class FieldRender {
+    data class Single(val index: Int, val line: RuleLine) : FieldRender()
+    data class Process(
+        val number: Int,
+        val time: Pair<Int, RuleLine>?,
+        val way: Pair<Int, RuleLine>?,
+        val content: Pair<Int, RuleLine>?
+    ) : FieldRender()
+}
+
+/** 把分组内平铺字段转换为渲染项；办案过程（gcsj/gcfs/gcnr）按序号聚合成组 */
+private fun toFieldRender(items: List<Pair<Int, RuleLine>>): List<FieldRender> {
+    val hasProcess = items.any { (_, l) ->
+        l.isField && FieldLabels.baseKey(l.key) in FieldLabels.REPEATABLE_BASE
+    }
+    if (!hasProcess) return items.map { (idx, l) -> FieldRender.Single(idx, l) }
+
+    val result = mutableListOf<FieldRender>()
+    val groups = sortedMapOf<Int, MutableMap<String, Pair<Int, RuleLine>>>()
+    fun flush() {
+        groups.forEach { (n, m) ->
+            result.add(FieldRender.Process(n, m["gcsj"], m["gcfs"], m["gcnr"]))
+        }
+        groups.clear()
+    }
+    for (entry in items) {
+        val (idx, l) = entry
+        if (l.isField) {
+            val base = FieldLabels.baseKey(l.key)
+            if (base in FieldLabels.REPEATABLE_BASE) {
+                val num = l.key.removePrefix(base).toIntOrNull()
+                if (num != null) {
+                    groups.getOrPut(num) { mutableMapOf() }[base] = idx to l
+                    continue
+                }
+            }
+        }
+        flush()
+        result.add(FieldRender.Single(idx, l))
+    }
+    flush()
+    return result
+}
+
 private val KEY_REGEX = Regex("^[A-Za-z][A-Za-z0-9]*$")
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -137,6 +184,8 @@ fun DocGenScreen(onBack: () -> Unit) {
 
     val defaults = remember { DefaultFields.lines(context) }
     val standardKeys = remember { DefaultFields.keys(context) }
+    var userDefaults by remember { mutableStateOf(DefaultValueStore.load(context)) }
+    var showDefaultManage by remember { mutableStateOf(false) }
 
     /** 保存类型列表，并清理已不存在的选中态 */
     fun persistTypeList(newList: List<DocTypeItem>) {
@@ -177,7 +226,48 @@ fun DocGenScreen(onBack: () -> Unit) {
     }
 
     fun addField(key: String, value: String, alias: String = "") {
-        persistLines(DefaultFields.insertField(lines, key, value, defaults, alias))
+        // 新增字段时若未指定值，自动带出该字段的有效默认值（用户自定义 → 内置 → 空）
+        val v = value.ifBlank { DefaultFields.effectiveDefault(context, key, userDefaults) }
+        persistLines(DefaultFields.insertField(lines, key, v, defaults, alias))
+    }
+
+    /** 一组办案过程（gcsj/gcfs/gcnr）的初始值 */
+    fun processValues(number: Int): Map<String, String> =
+        listOf("gcsj", "gcfs", "gcnr").associate { base ->
+            val key = "$base$number"
+            key to DefaultFields.effectiveDefault(context, key, userDefaults)
+        }
+
+    /** 现有办案过程的最大序号 + 1 */
+    fun nextProcessNumber(): Int {
+        val max = lines
+            .filter { it.isField && FieldLabels.baseKey(it.key) in FieldLabels.REPEATABLE_BASE }
+            .mapNotNull { l -> l.key.removePrefix(FieldLabels.baseKey(l.key)).toIntOrNull() }
+            .maxOrNull() ?: 0
+        return max + 1
+    }
+
+    /** 追加下一序号的办案过程三元组 */
+    fun addProcess() {
+        val n = nextProcessNumber()
+        persistLines(DefaultFields.insertProcessGroup(lines, n, processValues(n)))
+    }
+
+    /** 补回某序号缺失的过程字段（缺失位置点击输入框时调用） */
+    fun ensureProcess(number: Int) {
+        persistLines(DefaultFields.insertProcessGroup(lines, number, processValues(number)))
+    }
+
+    /** 整组删除某序号的办案过程 */
+    fun deleteProcess(number: Int) {
+        val keys = listOf("gcsj", "gcfs", "gcnr").map { "$it$number" }.toSet()
+        persistLines(lines.filterNot { it.isField && it.key in keys })
+    }
+
+    /** 把某字段当前值存为该字段（默认值有效 key）的默认值 */
+    fun setFieldDefault(key: String, value: String) {
+        DefaultValueStore.set(context, FieldLabels.defaultKey(key), value)
+        userDefaults = DefaultValueStore.load(context)
     }
 
     fun updateField(index: Int, newKey: String, newValue: String, newAlias: String) {
@@ -458,7 +548,7 @@ fun DocGenScreen(onBack: () -> Unit) {
             // ---------- 文书类型（可增删、重命名） ----------
             item {
                 Card(shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(14.dp)) {
+                    Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("文书类型", fontWeight = FontWeight.SemiBold, fontSize = 15.sp, modifier = Modifier.weight(1f))
                             TextButton(
@@ -470,11 +560,6 @@ fun DocGenScreen(onBack: () -> Unit) {
                                 Text("管理", fontSize = 12.sp)
                             }
                         }
-                        Text(
-                            "按文件名包含的类型码筛选；归档目录自动为「案件_委托人_阶段」",
-                            fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.height(8.dp))
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             TypeChip(
                                 selected = selectedTypes.isEmpty(),
@@ -549,6 +634,13 @@ fun DocGenScreen(onBack: () -> Unit) {
                                                 collapsed = emptySet()
                                                 snackbar.showSnackbar("已重置为默认结构")
                                             }
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("默认值管理") },
+                                        onClick = {
+                                            menuOpen = false
+                                            showDefaultManage = true
                                         }
                                     )
                                 }
@@ -626,22 +718,49 @@ fun DocGenScreen(onBack: () -> Unit) {
                                 }
                                 AnimatedVisibility(visible = !isCollapsed) {
                                     Column {
-                                        section.items.forEach { (idx, line) ->
-                                            if (line.isComment) {
-                                                Text(
-                                                    line.text,
-                                                    fontSize = 12.sp,
-                                                    fontWeight = FontWeight.Medium,
-                                                    color = MaterialTheme.colorScheme.tertiary,
-                                                    modifier = Modifier.padding(start = 4.dp, top = 6.dp, bottom = 2.dp)
+                                        toFieldRender(section.items).forEach { r ->
+                                            when (r) {
+                                                is FieldRender.Single -> {
+                                                    val line = r.line
+                                                    if (line.isComment) {
+                                                        Text(
+                                                            line.text,
+                                                            fontSize = 12.sp,
+                                                            fontWeight = FontWeight.Medium,
+                                                            color = MaterialTheme.colorScheme.tertiary,
+                                                            modifier = Modifier.padding(start = 4.dp, top = 6.dp, bottom = 2.dp)
+                                                        )
+                                                    } else if (line.isField) {
+                                                        FieldRow(
+                                                            line = line,
+                                                            onChange = { v -> updateValue(r.index, v) },
+                                                            onEdit = { editIndex = r.index },
+                                                            onDelete = { deleteField(r.index) }
+                                                        )
+                                                    }
+                                                }
+                                                is FieldRender.Process -> ProcessGroupCard(
+                                                    number = r.number,
+                                                    time = r.time,
+                                                    way = r.way,
+                                                    content = r.content,
+                                                    onValue = { idx, v -> updateValue(idx, v) },
+                                                    onEnsure = { n -> ensureProcess(n) },
+                                                    onDelete = { n -> deleteProcess(n) }
                                                 )
-                                            } else if (line.isField) {
-                                                FieldRow(
-                                                    line = line,
-                                                    onChange = { v -> updateValue(idx, v) },
-                                                    onEdit = { editIndex = idx },
-                                                    onDelete = { deleteField(idx) }
-                                                )
+                                            }
+                                        }
+                                        if (section.title == DefaultFields.PROCESS_GROUP) {
+                                            Spacer(Modifier.height(4.dp))
+                                            OutlinedButton(
+                                                onClick = { addProcess() },
+                                                modifier = Modifier.fillMaxWidth(),
+                                                shape = RoundedCornerShape(10.dp),
+                                                contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 4.dp)
+                                            ) {
+                                                Icon(Icons.Default.Add, null, Modifier.size(16.dp))
+                                                Spacer(Modifier.size(4.dp))
+                                                Text("添加过程", fontSize = 13.sp)
                                             }
                                         }
                                     }
@@ -706,9 +825,29 @@ fun DocGenScreen(onBack: () -> Unit) {
                     updateField(editIndex, k, v, a)
                     editIndex = -1
                     scope.launch { snackbar.showSnackbar("已保存字段 $k") }
+                },
+                onSetDefault = { k, v ->
+                    setFieldDefault(k, v)
+                    scope.launch { snackbar.showSnackbar("已将当前值设为「${FieldLabels.displayName(k)}」的默认值") }
                 }
             )
         }
+    }
+
+    // ---------- 默认值管理弹窗 ----------
+    if (showDefaultManage) {
+        DefaultValuesDialog(
+            entries = DefaultFields.defaultEntries(context, lines),
+            builtin = DefaultFields.builtinDefaults(context),
+            initial = userDefaults,
+            onDismiss = { showDefaultManage = false },
+            onSave = { overrides ->
+                DefaultValueStore.save(context, overrides)
+                userDefaults = overrides
+                showDefaultManage = false
+                scope.launch { snackbar.showSnackbar("已保存字段默认值；重置或新增字段时生效") }
+            }
+        )
     }
 
     // ---------- 结果弹窗 ----------
@@ -943,6 +1082,102 @@ private fun FieldInput(line: RuleLine, onChange: (String) -> Unit) {
         minLines = if (isLong) 3 else 1,
         shape = RoundedCornerShape(10.dp)
     )
+}
+
+// ==================== 办案过程成组卡片 ====================
+
+/** 一条办案过程（过程时间 / 过程方式 / 过程内容）成组卡片；缺失字段显示补回按钮 */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ProcessGroupCard(
+    number: Int,
+    time: Pair<Int, RuleLine>?,
+    way: Pair<Int, RuleLine>?,
+    content: Pair<Int, RuleLine>?,
+    onValue: (Int, String) -> Unit,
+    onEnsure: (Int) -> Unit,
+    onDelete: (Int) -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+    ) {
+        Column(Modifier.padding(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "过程 $number",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.weight(1f)
+                )
+                IconButton(onClick = { onDelete(number) }, modifier = Modifier.size(28.dp)) {
+                    Icon(Icons.Default.Delete, contentDescription = "删除过程 $number", modifier = Modifier.size(16.dp))
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+            Row {
+                Box(Modifier.weight(1f)) {
+                    if (time != null) ProcessSmallField(time, "过程时间", onValue)
+                    else MissingFieldButton("＋时间") { onEnsure(number) }
+                }
+                Spacer(Modifier.width(8.dp))
+                Box(Modifier.weight(1f)) {
+                    if (way != null) ProcessSmallField(way, "过程方式", onValue)
+                    else MissingFieldButton("＋方式") { onEnsure(number) }
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            if (content != null) {
+                ProcessContentField(content, onValue)
+            } else {
+                OutlinedButton(
+                    onClick = { onEnsure(number) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 6.dp)
+                ) { Text("＋ 添加过程内容", fontSize = 12.sp) }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ProcessSmallField(p: Pair<Int, RuleLine>, label: String, onValue: (Int, String) -> Unit) {
+    OutlinedTextField(
+        value = p.second.value,
+        onValueChange = { onValue(p.first, it) },
+        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+        label = { Text(label, fontSize = 11.sp, maxLines = 1) },
+        singleLine = true,
+        shape = RoundedCornerShape(10.dp)
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ProcessContentField(p: Pair<Int, RuleLine>, onValue: (Int, String) -> Unit) {
+    OutlinedTextField(
+        value = p.second.value,
+        onValueChange = { onValue(p.first, it) },
+        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+        label = { Text("过程内容", fontSize = 11.sp) },
+        minLines = 2,
+        shape = RoundedCornerShape(10.dp)
+    )
+}
+
+@Composable
+private fun MissingFieldButton(text: String, onClick: () -> Unit) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+        shape = RoundedCornerShape(10.dp),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 14.dp)
+    ) { Text(text, fontSize = 12.sp) }
 }
 
 // ==================== 添加字段对话框 ====================
@@ -1244,7 +1479,8 @@ private fun EditFieldDialog(
     originalIsStandard: Boolean,
     isKeyDuplicate: (String) -> Boolean,
     onDismiss: () -> Unit,
-    onSave: (key: String, value: String, alias: String) -> Unit
+    onSave: (key: String, value: String, alias: String) -> Unit,
+    onSetDefault: (key: String, value: String) -> Unit
 ) {
     var key by remember { mutableStateOf(line.key) }
     var value by remember { mutableStateOf(line.value) }
@@ -1290,6 +1526,15 @@ private fun EditFieldDialog(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp)
                 )
+                TextButton(
+                    enabled = keyValid && !dup,
+                    onClick = { onSetDefault(key.trim(), value) },
+                    modifier = Modifier.padding(top = 2.dp)
+                ) {
+                    Icon(Icons.Default.Star, null, Modifier.size(15.dp))
+                    Spacer(Modifier.size(4.dp))
+                    Text("将当前值设为默认值", fontSize = 12.sp)
+                }
                 if (originalIsStandard && keyChanged) {
                     Spacer(Modifier.height(6.dp))
                     Text(
@@ -1303,6 +1548,89 @@ private fun EditFieldDialog(
             Button(enabled = keyValid && !dup, onClick = { onSave(key.trim(), value, alias.trim()) }) {
                 Text("保存")
             }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
+    )
+}
+
+// ==================== 默认值管理弹窗 ====================
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DefaultValuesDialog(
+    entries: List<DefaultFields.DefaultFieldEntry>,
+    builtin: Map<String, String>,
+    initial: Map<String, String>,
+    onDismiss: () -> Unit,
+    onSave: (Map<String, String>) -> Unit
+) {
+    // 本地编辑：初始值 = 用户覆盖 → 内置默认 → 空
+    val values = remember {
+        mutableStateMapOf<String, String>().apply {
+            entries.forEach { e -> put(e.key, initial[e.key] ?: builtin[e.key] ?: "") }
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("默认值管理") },
+        text = {
+            Column {
+                Text(
+                    "设置各字段的默认值，重置或新增字段时自动带出。过程时间 / 方式 / 内容对所有序号生效。",
+                    fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(6.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = {
+                        entries.forEach { e -> values[e.key] = builtin[e.key] ?: "" }
+                    }) { Text("全部恢复内置", fontSize = 12.sp) }
+                }
+                HorizontalDivider()
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 460.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    var lastGroup: String? = null
+                    entries.forEach { e ->
+                        if (e.group != null && e.group != lastGroup) {
+                            Text(
+                                e.group,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(top = 8.dp, bottom = 2.dp)
+                            )
+                            lastGroup = e.group
+                        }
+                        val label = if (e.label == e.key) e.key else "${e.label}（${e.key}）"
+                        OutlinedTextField(
+                            value = values[e.key] ?: "",
+                            onValueChange = { values[e.key] = it },
+                            label = { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 11.sp) },
+                            singleLine = !e.long,
+                            minLines = if (e.long) 2 else 1,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 3.dp),
+                            shape = RoundedCornerShape(10.dp)
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                // 与内置值相同则不写入覆盖，覆盖表只存「与内置不同」的值
+                val overrides = linkedMapOf<String, String>()
+                entries.forEach { e ->
+                    val v = (values[e.key] ?: "").trim()
+                    if (v != (builtin[e.key] ?: "").trim()) overrides[e.key] = v
+                }
+                onSave(overrides)
+            }) { Text("保存") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
     )

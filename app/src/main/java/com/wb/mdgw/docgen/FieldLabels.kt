@@ -78,16 +78,27 @@ object FieldLabels {
     )
 
     /** 取 key 去掉末尾数字后的基础部分（gcsj1 → gcsj） */
-    private fun baseOf(key: String): String {
+    fun baseKey(key: String): String {
         var end = key.length
         while (end > 0 && key[end - 1].isDigit()) end--
         return key.substring(0, end)
     }
 
+    /** 按序号重复的字段（办案过程三元组）：默认值按基础 key 统一设置、对所有序号生效 */
+    val REPEATABLE_BASE: Set<String> = setOf("gcsj", "gcfs", "gcnr")
+
+    /**
+     * 字段在「默认值管理」里使用的有效 key：可重复字段归并到基础 key，其余字段保持原 key。
+     */
+    fun defaultKey(key: String): String {
+        val base = baseKey(key)
+        return if (base in REPEATABLE_BASE) base else key
+    }
+
     /** 中文标签；未配置返回 null（UI 回退显示原 key） */
     fun labelOf(key: String): String? {
         BASE[key]?.let { return it }
-        val base = baseOf(key)
+        val base = baseKey(key)
         if (base == key) return null
         val baseLabel = BASE[base] ?: return null
         val suffix = key.substring(base.length)
@@ -103,6 +114,6 @@ object FieldLabels {
     /** 是否为长文本字段（多行输入框） */
     fun isLong(key: String): Boolean {
         if (key in LONG_BASE) return true
-        return baseOf(key) in LONG_BASE
+        return baseKey(key) in LONG_BASE
     }
 }

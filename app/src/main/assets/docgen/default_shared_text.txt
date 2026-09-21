@@ -39,39 +39,39 @@ basl::
 
 --办案过程--
 gcsj1::
-gcfs1::
+gcfs1::直接
 gcnr1::
 
 gcsj2::
-gcfs2::
+gcfs2::直接
 gcnr2::
 
 gcsj3::
-gcfs3::
+gcfs3::直接
 gcnr3::
 
 gcsj4::
-gcfs4::
+gcfs4::直接
 gcnr4::
 
 gcsj5::
-gcfs5::
+gcfs5::直接
 gcnr5::
 
 gcsj6::
-gcfs6::
+gcfs6::直接
 gcnr6::
 
 gcsj7::
-gcfs7::
+gcfs7::直接
 gcnr7::
 
 gcsj8::
-gcfs8::
+gcfs8::直接
 gcnr8::
 
 gcsj9::
-gcfs9::
+gcfs9::直接
 gcnr9::
 
 --阅卷--
