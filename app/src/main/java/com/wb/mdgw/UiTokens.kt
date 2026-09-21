@@ -131,7 +131,9 @@ fun ExportResultDialog(
     savePath: String,
     fileIcon: ImageVector,
     onOpen: () -> Unit,
-    onShare: () -> Unit
+    onShare: () -> Unit,
+    extraActionText: String? = null,
+    onExtraAction: (() -> Unit)? = null
 ) {
     if (visible) {
         AlertDialog(
@@ -156,6 +158,12 @@ fun ExportResultDialog(
                     Button(onClick = onShare, modifier = Modifier.fillMaxWidth().height(UI_ACTION_HEIGHT), shape = UI_BTN_RADIUS) {
                         Icon(Icons.Default.Share, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
                         Text("分享文件", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
+                    }
+                    if (extraActionText != null && onExtraAction != null) {
+                        OutlinedButton(onClick = onExtraAction, modifier = Modifier.fillMaxWidth().height(UI_ACTION_HEIGHT), shape = UI_BTN_RADIUS) {
+                            Icon(Icons.Default.PictureAsPdf, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
+                            Text(extraActionText, fontSize = 14.sp, maxLines = 1, softWrap = false)
+                        }
                     }
                 }
             },

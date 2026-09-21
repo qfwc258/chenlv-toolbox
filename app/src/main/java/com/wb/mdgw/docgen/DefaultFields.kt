@@ -213,7 +213,13 @@ object DefaultFields {
         if (keys.all { k -> current.any { it.isField && it.key == k } }) return current
 
         val result = current.toMutableList()
-        val gIdx = result.indexOfFirst { it.isGroup && it.text == PROCESS_GROUP }
+        // 定位过程分组：优先「含 gcsj/gcfs/gcnr 字段的分组」（重命名后仍可识别），
+        // 其次固定名「办案过程」，都没有则在文末新建。
+        val byContent = processGroupTitle(result)
+        val gIdx = when {
+            byContent != null -> result.indexOfFirst { it.isGroup && it.text == byContent }
+            else -> result.indexOfFirst { it.isGroup && it.text == PROCESS_GROUP }
+        }
         if (gIdx < 0) {
             if (result.isNotEmpty() && result.last().type != RuleLine.TYPE_BLANK) {
                 result.add(RuleLine.blank())
@@ -235,5 +241,138 @@ object DefaultFields {
             }
         }
         return result
+    }
+
+    // ==================== 分组管理 ====================
+
+    /** 含办案过程三元组（gcsj/gcfs/gcnr）字段的分组标题；没有返回 null */
+    fun processGroupTitle(lines: List<RuleLine>): String? {
+        var g: String? = null
+        for (l in lines) {
+            when {
+                l.isGroup -> g = l.text
+                l.isField && FieldLabels.baseKey(l.key) in FieldLabels.REPEATABLE_BASE -> return g
+            }
+        }
+        return null
+    }
+
+    /** 列出当前结构中的全部分组标题（去重、保序） */
+    fun listGroups(lines: List<RuleLine>): List<String> =
+        lines.filter { it.isGroup }.map { it.text }.distinct()
+
+    /** 字段（按全局行索引）所属分组标题；位于第一个分组之前返回 null */
+    fun groupOfField(lines: List<RuleLine>, fieldIndex: Int): String? {
+        var g: String? = null
+        for (i in 0..fieldIndex) {
+            if (lines[i].isGroup) g = lines[i].text
+        }
+        return g
+    }
+
+    /** 重命名分组；新名为空或与其他分组重名时原样返回 */
+    fun renameGroup(lines: List<RuleLine>, oldTitle: String, newTitle: String): List<RuleLine> {
+        val nt = newTitle.trim()
+        if (nt.isEmpty() || nt == oldTitle) return lines
+        if (lines.any { it.isGroup && it.text == nt }) return lines
+        return lines.map { if (it.isGroup && it.text == oldTitle) it.copy(text = nt) else it }
+    }
+
+    /**
+     * 新增分组：插到 [afterTitle] 分组区块之后；省略或参照不存在时追加到文末。
+     * 已存在同名分组时原样返回。
+     */
+    fun addGroup(lines: List<RuleLine>, title: String, afterTitle: String? = null): List<RuleLine> {
+        val t = title.trim()
+        if (t.isEmpty() || lines.any { it.isGroup && it.text == t }) return lines
+        val result = lines.toMutableList()
+
+        if (afterTitle == null) {
+            if (result.isNotEmpty() && result.last().type != RuleLine.TYPE_BLANK) result.add(RuleLine.blank())
+            result.add(RuleLine.group(t))
+            return collapseBlankLines(result)
+        }
+        val gIdx = result.indexOfFirst { it.isGroup && it.text == afterTitle }
+        if (gIdx < 0) {
+            if (result.isNotEmpty() && result.last().type != RuleLine.TYPE_BLANK) result.add(RuleLine.blank())
+            result.add(RuleLine.group(t))
+            return collapseBlankLines(result)
+        }
+        var end = result.size
+        for (i in gIdx + 1 until result.size) {
+            if (result[i].isGroup) { end = i; break }
+        }
+        // 区块末尾的空行不纳入插入点，保持「空行 + 新标题」分隔
+        var insertAt = end
+        while (insertAt > gIdx + 1 && result[insertAt - 1].type == RuleLine.TYPE_BLANK) insertAt--
+        result.add(insertAt, RuleLine.group(t))
+        result.add(insertAt, RuleLine.blank())
+        return collapseBlankLines(result)
+    }
+
+    /**
+     * 把字段（全局行索引）移动到目标分组区块末尾；目标分组不存在则在文末新建。
+     * 仅移动字段行；注释行不处理。移动后全局索引会变化，调用方应退出编辑态。
+     */
+    fun moveFieldToGroup(lines: List<RuleLine>, fieldIndex: Int, targetGroup: String): List<RuleLine> {
+        val t = targetGroup.trim()
+        if (t.isEmpty()) return lines
+        val field = lines.getOrNull(fieldIndex) ?: return lines
+        if (!field.isField) return lines
+        if (groupOfField(lines, fieldIndex) == t) return lines
+
+        val result = lines.toMutableList()
+        result.removeAt(fieldIndex)
+
+        val gIdx = result.indexOfFirst { it.isGroup && it.text == t }
+        if (gIdx < 0) {
+            if (result.isNotEmpty() && result.last().type != RuleLine.TYPE_BLANK) result.add(RuleLine.blank())
+            result.add(RuleLine.group(t))
+            result.add(field)
+            return collapseBlankLines(result)
+        }
+        var end = result.size
+        for (i in gIdx + 1 until result.size) {
+            if (result[i].isGroup) { end = i; break }
+        }
+        var insertAt = end
+        while (insertAt > gIdx + 1 && result[insertAt - 1].type == RuleLine.TYPE_BLANK) insertAt--
+        result.add(insertAt, field)
+        return collapseBlankLines(result)
+    }
+
+    /**
+     * 删除分组。
+     * @param deleteFields true=连组内字段/注释一并删除；false=仅删标题，内容并入上一分组。
+     */
+    fun deleteGroup(lines: List<RuleLine>, title: String, deleteFields: Boolean): List<RuleLine> {
+        val gIdx = lines.indexOfFirst { it.isGroup && it.text == title }
+        if (gIdx < 0) return lines
+        var end = lines.size
+        for (i in gIdx + 1 until lines.size) {
+            if (lines[i].isGroup) { end = i; break }
+        }
+        val result = lines.toMutableList()
+        if (deleteFields) {
+            result.subList(gIdx, end).clear()
+        } else {
+            result.removeAt(gIdx)
+        }
+        return collapseBlankLines(result)
+    }
+
+    /** 折叠连续空行（最多保留一个），并去掉首尾空行 */
+    private fun collapseBlankLines(lines: List<RuleLine>): List<RuleLine> {
+        val out = mutableListOf<RuleLine>()
+        for (l in lines) {
+            if (l.type == RuleLine.TYPE_BLANK) {
+                if (out.isNotEmpty() && out.last().type != RuleLine.TYPE_BLANK) out.add(l)
+            } else {
+                out.add(l)
+            }
+        }
+        while (out.isNotEmpty() && out.first().type == RuleLine.TYPE_BLANK) out.removeAt(0)
+        while (out.isNotEmpty() && out.last().type == RuleLine.TYPE_BLANK) out.removeAt(out.lastIndex)
+        return out
     }
 }

@@ -85,7 +85,11 @@ object ShotLayout {
         val splitLongImage: Boolean = true,
         val splitRatio: Double = DEFAULT_RATIO,
         val columns: Int = DEFAULT_COLS,
-        val rows: Int? = null
+        val rows: Int? = null,
+        /** 导出 PDF 是否自动加页码（默认开，底部居中） */
+        val addPageNumber: Boolean = true,
+        /** 页码位置：0=底部居中 1=左下 2=右下 3=顶部居中 4=左上 5=右上 */
+        val pageNumberPosition: Int = 0
     )
 
     /**

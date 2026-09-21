@@ -19,6 +19,7 @@ import androidx.exifinterface.media.ExifInterface
 import com.wb.mdgw.DocxWriter
 import com.wb.mdgw.FileUtils
 import com.wb.mdgw.PageSetup
+import com.wb.mdgw.PdfPageNum
 import com.wb.mdgw.inchToEmu
 import java.io.ByteArrayOutputStream
 
@@ -393,7 +394,28 @@ object ShotEngine {
             openPage?.let { pdf.finishPage(it) }
             val pdfOut = ByteArrayOutputStream(1 shl 18)
             pdf.writeTo(pdfOut)
-            return Result(docxBytes, pdfOut.toByteArray(), plan)
+            var pdfBytes = pdfOut.toByteArray()
+            // 自动加页码（失败不阻断导出）
+            if (config.addPageNumber) {
+                val position = when (config.pageNumberPosition) {
+                    1 -> PdfPageNum.Position.BOTTOM_LEFT
+                    2 -> PdfPageNum.Position.BOTTOM_RIGHT
+                    3 -> PdfPageNum.Position.TOP_CENTER
+                    4 -> PdfPageNum.Position.TOP_LEFT
+                    5 -> PdfPageNum.Position.TOP_RIGHT
+                    else -> PdfPageNum.Position.BOTTOM_CENTER
+                }
+                pdfBytes = runCatching {
+                    PdfPageNum.addPageNumbersRobust(
+                        pdfBytes,
+                        PdfPageNum.Options(position = position, fontSize = 4)
+                    )
+                }.getOrElse {
+                    android.util.Log.w("ShotEngine", "加页码失败，导出无页码 PDF: ${it.message}")
+                    pdfBytes
+                }
+            }
+            return Result(docxBytes, pdfBytes, plan)
         } finally {
             pdf.close()
         }

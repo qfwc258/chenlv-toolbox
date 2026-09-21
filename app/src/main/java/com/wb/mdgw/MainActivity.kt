@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.Article
 import androidx.compose.material.icons.filled.Camera
 import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.EditNote
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Gavel
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Settings
@@ -97,7 +98,7 @@ fun MdGwTheme(darkTheme: Boolean = false, content: @Composable () -> Unit) {
 
 /** 顶层路由：主页宫格 + 各功能页（平铺，不再有底部 Tab） */
 private enum class Route {
-    HOME, WORD, PDF, WECHAT, PPTX, SETTINGS, SCREENSHOT, LAW_SEARCH, DOC_GEN
+    HOME, WORD, PDF, WECHAT, PPTX, SETTINGS, SCREENSHOT, LAW_SEARCH, DOC_GEN, DOCUMENTS
 }
 
 /** 宫格功能项 */
@@ -115,6 +116,7 @@ private val HOME_FEATURES = listOf(
     Feature(Route.DOC_GEN, "生成文书", Icons.Default.EditNote),
     Feature(Route.SCREENSHOT, "截图排版", Icons.Default.Camera),
     Feature(Route.LAW_SEARCH, "法律查询", Icons.Default.Gavel),
+    Feature(Route.DOCUMENTS, "我的文档", Icons.Default.Folder),
     Feature(Route.SETTINGS, "设置", Icons.Default.Settings)
 )
 
@@ -144,6 +146,8 @@ fun AppScreen(initialUri: Uri? = null) {
 
     var route by remember { mutableStateOf(initialRoute) }
     var selectedLaw by remember { mutableStateOf<Law?>(null) }
+    // 跨页流转：截图排版等产物一键带入「PDF 处理」（加页码/盖章）
+    var pendingPdfUri by remember { mutableStateOf<Uri?>(null) }
     val snackbar = remember { SnackbarHostState() }
     val darkMode by AppSettings.darkMode.collectAsState()
 
@@ -183,7 +187,7 @@ fun AppScreen(initialUri: Uri? = null) {
                 AnimatedVisibility(route == Route.PDF, enter = fadeIn(), exit = fadeOut()) {
                     SimpleScreenFrame("PDF 处理", onBack = { route = Route.HOME }) {
                         PdfScreen(
-                            initialUri = initialUri.takeIf { initialRoute == Route.PDF },
+                            initialUri = pendingPdfUri ?: initialUri.takeIf { initialRoute == Route.PDF },
                             snackbar = snackbar
                         )
                     }
@@ -192,7 +196,11 @@ fun AppScreen(initialUri: Uri? = null) {
                     SimpleScreenFrame("截图排版", onBack = { route = Route.HOME }) {
                         ShotScreen(
                             snackbar = snackbar,
-                            initialUri = initialUri.takeIf { initialRoute == Route.SCREENSHOT }
+                            initialUri = initialUri.takeIf { initialRoute == Route.SCREENSHOT },
+                            onOpenPdf = { uri ->
+                                pendingPdfUri = uri
+                                route = Route.PDF
+                            }
                         )
                     }
                 }
@@ -200,6 +208,16 @@ fun AppScreen(initialUri: Uri? = null) {
                     SimpleScreenFrame("法律查询", onBack = { route = Route.HOME }) {
                         LawSearchScreen(onLawClick = { law -> selectedLaw = law })
                     }
+                }
+                AnimatedVisibility(route == Route.DOCUMENTS, enter = fadeIn(), exit = fadeOut()) {
+                    DocumentsScreen(
+                        onBack = { route = Route.HOME },
+                        snackbar = snackbar,
+                        onOpenPdf = { uri ->
+                            pendingPdfUri = uri
+                            route = Route.PDF
+                        }
+                    )
                 }
                 AnimatedVisibility(route == Route.SETTINGS, enter = fadeIn(), exit = fadeOut()) {
                     SimpleScreenFrame("设置", onBack = { route = Route.HOME }) {

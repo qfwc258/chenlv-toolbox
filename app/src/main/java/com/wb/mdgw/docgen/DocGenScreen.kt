@@ -30,8 +30,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
@@ -40,9 +42,11 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -187,6 +191,13 @@ fun DocGenScreen(onBack: () -> Unit) {
     var userDefaults by remember { mutableStateOf(DefaultValueStore.load(context)) }
     var showDefaultManage by remember { mutableStateOf(false) }
 
+    // 分组管理弹窗状态
+    var groupMenuFor by remember { mutableStateOf<String?>(null) }
+    var renameGroupFor by remember { mutableStateOf<String?>(null) }
+    var deleteGroupFor by remember { mutableStateOf<String?>(null) }
+    var newGroupAfter by remember { mutableStateOf<String?>(null) }
+    var showNewGroup by remember { mutableStateOf(false) }
+
     /** 保存类型列表，并清理已不存在的选中态 */
     fun persistTypeList(newList: List<DocTypeItem>) {
         typeList = newList
@@ -225,10 +236,18 @@ fun DocGenScreen(onBack: () -> Unit) {
         persistLines(newLines)
     }
 
-    fun addField(key: String, value: String, alias: String = "") {
+    fun addField(key: String, value: String, alias: String = "", targetGroup: String? = null) {
         // 新增字段时若未指定值，自动带出该字段的有效默认值（用户自定义 → 内置 → 空）
         val v = value.ifBlank { DefaultFields.effectiveDefault(context, key, userDefaults) }
-        persistLines(DefaultFields.insertField(lines, key, v, defaults, alias))
+        var nl = DefaultFields.insertField(lines, key, v, defaults, alias)
+        // 用户指定目标分组：插入后移动到该分组
+        if (targetGroup != null) {
+            val idx = nl.indexOfFirst { it.isField && it.key == key.trim() }
+            if (idx >= 0 && DefaultFields.groupOfField(nl, idx) != targetGroup) {
+                nl = DefaultFields.moveFieldToGroup(nl, idx, targetGroup)
+            }
+        }
+        persistLines(nl)
     }
 
     /** 一组办案过程（gcsj/gcfs/gcnr）的初始值 */
@@ -268,6 +287,34 @@ fun DocGenScreen(onBack: () -> Unit) {
     fun setFieldDefault(key: String, value: String) {
         DefaultValueStore.set(context, FieldLabels.defaultKey(key), value)
         userDefaults = DefaultValueStore.load(context)
+    }
+
+    // ---------- 分组管理 ----------
+    fun doRenameGroup(old: String, new: String) {
+        val nl = DefaultFields.renameGroup(lines, old, new)
+        if (nl !== lines) {
+            persistLines(nl)
+            collapsed = collapsed.map { if (it == old) new.trim() else it }.toSet()
+            scope.launch { snackbar.showSnackbar("已重命名分组") }
+        }
+    }
+
+    fun doAddGroup(title: String, after: String?) {
+        val nl = DefaultFields.addGroup(lines, title, after)
+        if (nl !== lines) {
+            persistLines(nl)
+            // 新建分组默认展开
+            collapsed = collapsed - title.trim()
+            scope.launch { snackbar.showSnackbar("已新增分组") }
+        }
+    }
+
+    fun doDeleteGroup(title: String, deleteFields: Boolean) {
+        persistLines(DefaultFields.deleteGroup(lines, title, deleteFields))
+        collapsed = collapsed - title
+        scope.launch {
+            snackbar.showSnackbar(if (deleteFields) "已删除分组及字段" else "已删除分组，字段已保留")
+        }
     }
 
     fun updateField(index: Int, newKey: String, newValue: String, newAlias: String) {
@@ -690,6 +737,9 @@ fun DocGenScreen(onBack: () -> Unit) {
                             buildSections(lines).forEach { section ->
                                 val header = section.title ?: "其他字段"
                                 val isCollapsed = header in collapsed
+                                val sectionHasProcess = section.items.any { (_, l) ->
+                                    l.isField && FieldLabels.baseKey(l.key) in FieldLabels.REPEATABLE_BASE
+                                }
                                 Row(
                                     modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
                                     verticalAlignment = Alignment.CenterVertically
@@ -714,6 +764,34 @@ fun DocGenScreen(onBack: () -> Unit) {
                                         showAddDialog = true
                                     }, modifier = Modifier.size(28.dp)) {
                                         Icon(Icons.Default.Add, contentDescription = "在该分组添加字段", modifier = Modifier.size(18.dp))
+                                    }
+                                    if (section.title != null) {
+                                        Box {
+                                            IconButton(onClick = { groupMenuFor = section.title },
+                                                modifier = Modifier.size(28.dp)) {
+                                                Icon(Icons.Default.MoreVert, contentDescription = "分组管理", modifier = Modifier.size(18.dp))
+                                            }
+                                            DropdownMenu(
+                                                expanded = groupMenuFor == section.title,
+                                                onDismissRequest = { groupMenuFor = null }
+                                            ) {
+                                                DropdownMenuItem(
+                                                    text = { Text("重命名分组") },
+                                                    leadingIcon = { Icon(Icons.Default.Edit, null, Modifier.size(18.dp)) },
+                                                    onClick = { groupMenuFor = null; renameGroupFor = section.title }
+                                                )
+                                                DropdownMenuItem(
+                                                    text = { Text("在其后新增分组") },
+                                                    leadingIcon = { Icon(Icons.Default.CreateNewFolder, null, Modifier.size(18.dp)) },
+                                                    onClick = { groupMenuFor = null; newGroupAfter = section.title; showNewGroup = true }
+                                                )
+                                                DropdownMenuItem(
+                                                    text = { Text("删除分组", color = MaterialTheme.colorScheme.error) },
+                                                    leadingIcon = { Icon(Icons.Default.Delete, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error) },
+                                                    onClick = { groupMenuFor = null; deleteGroupFor = section.title }
+                                                )
+                                            }
+                                        }
                                     }
                                 }
                                 AnimatedVisibility(visible = !isCollapsed) {
@@ -750,7 +828,7 @@ fun DocGenScreen(onBack: () -> Unit) {
                                                 )
                                             }
                                         }
-                                        if (section.title == DefaultFields.PROCESS_GROUP) {
+                                        if (sectionHasProcess) {
                                             Spacer(Modifier.height(4.dp))
                                             OutlinedButton(
                                                 onClick = { addProcess() },
@@ -770,14 +848,36 @@ fun DocGenScreen(onBack: () -> Unit) {
 
                         // 底部全宽添加按钮
                         Spacer(Modifier.height(6.dp))
-                        OutlinedButton(
-                            onClick = { addDialogGroup = null; showAddDialog = true },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Icon(Icons.Default.Add, null, Modifier.size(18.dp))
-                            Spacer(Modifier.size(4.dp))
-                            Text("添加字段")
+                        if (DefaultFields.processGroupTitle(lines) == null) {
+                            OutlinedButton(
+                                onClick = { addProcess() },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Icon(Icons.Default.PlaylistAdd, null, Modifier.size(18.dp))
+                                Spacer(Modifier.size(4.dp))
+                                Text("添加办案过程分组")
+                            }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            OutlinedButton(
+                                onClick = { newGroupAfter = null; showNewGroup = true },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Icon(Icons.Default.CreateNewFolder, null, Modifier.size(18.dp))
+                                Spacer(Modifier.size(4.dp))
+                                Text("新增分组")
+                            }
+                            Button(
+                                onClick = { addDialogGroup = null; showAddDialog = true },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Icon(Icons.Default.Add, null, Modifier.size(18.dp))
+                                Spacer(Modifier.size(4.dp))
+                                Text("添加字段")
+                            }
                         }
                     }
                 }
@@ -804,9 +904,10 @@ fun DocGenScreen(onBack: () -> Unit) {
             standardKeys = standardKeys,
             existingKeys = lines.filter { it.isField }.map { it.key }.toSet(),
             initialGroup = addDialogGroup,
+            availableGroups = DefaultFields.listGroups(lines),
             onDismiss = { showAddDialog = false },
-            onAdd = { key, value, alias ->
-                addField(key, value, alias)
+            onAdd = { key, value, alias, group ->
+                addField(key, value, alias, group)
                 scope.launch { snackbar.showSnackbar("已添加字段 $key") }
             }
         )
@@ -820,9 +921,15 @@ fun DocGenScreen(onBack: () -> Unit) {
                 line = line,
                 originalIsStandard = line.key in standardKeys,
                 isKeyDuplicate = { k -> lines.any { it.isField && it.key == k } },
+                groups = DefaultFields.listGroups(lines),
+                currentGroup = DefaultFields.groupOfField(lines, editIndex),
                 onDismiss = { editIndex = -1 },
-                onSave = { k, v, a ->
+                onSaveAndMove = { k, v, a, moveTo ->
                     updateField(editIndex, k, v, a)
+                    if (moveTo != null) {
+                        val nl = DefaultFields.moveFieldToGroup(lines, editIndex, moveTo)
+                        persistLines(nl)
+                    }
                     editIndex = -1
                     scope.launch { snackbar.showSnackbar("已保存字段 $k") }
                 },
@@ -846,6 +953,82 @@ fun DocGenScreen(onBack: () -> Unit) {
                 userDefaults = overrides
                 showDefaultManage = false
                 scope.launch { snackbar.showSnackbar("已保存字段默认值；重置或新增字段时生效") }
+            }
+        )
+    }
+
+    // ---------- 分组：重命名弹窗 ----------
+    renameGroupFor?.let { old ->
+        var name by remember(old) { mutableStateOf(old) }
+        AlertDialog(
+            onDismissRequest = { renameGroupFor = null },
+            title = { Text("重命名分组") },
+            text = {
+                OutlinedTextField(
+                    value = name, onValueChange = { name = it },
+                    label = { Text("分组名称") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp)
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    val nt = name.trim()
+                    if (nt.isNotEmpty() && nt != old) doRenameGroup(old, nt)
+                    renameGroupFor = null
+                }) { Text("保存") }
+            },
+            dismissButton = { TextButton(onClick = { renameGroupFor = null }) { Text("取消") } }
+        )
+    }
+
+    // ---------- 分组：新增弹窗 ----------
+    if (showNewGroup) {
+        var name by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { showNewGroup = false },
+            title = { Text("新增分组") },
+            text = {
+                OutlinedTextField(
+                    value = name, onValueChange = { name = it },
+                    label = { Text("分组名称") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp)
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    val nt = name.trim()
+                    if (nt.isNotEmpty()) doAddGroup(nt, newGroupAfter)
+                    showNewGroup = false
+                }) { Text("新增") }
+            },
+            dismissButton = { TextButton(onClick = { showNewGroup = false }) { Text("取消") } }
+        )
+    }
+
+    // ---------- 分组：删除弹窗 ----------
+    deleteGroupFor?.let { title ->
+        AlertDialog(
+            onDismissRequest = { deleteGroupFor = null },
+            title = { Text("删除分组「$title」") },
+            text = { Text("是否同时删除该分组下的字段？") },
+            confirmButton = {
+                TextButton(onClick = {
+                    doDeleteGroup(title, deleteFields = true)
+                    deleteGroupFor = null
+                }) { Text("连字段删除", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = {
+                        doDeleteGroup(title, deleteFields = false)
+                        deleteGroupFor = null
+                    }) { Text("仅删标题") }
+                    TextButton(onClick = { deleteGroupFor = null }) { Text("取消") }
+                }
             }
         )
     }
@@ -1192,8 +1375,9 @@ private fun AddFieldDialog(
     standardKeys: List<String>,
     existingKeys: Set<String>,
     initialGroup: String?,
+    availableGroups: List<String>,
     onDismiss: () -> Unit,
-    onAdd: (key: String, value: String, alias: String) -> Unit
+    onAdd: (key: String, value: String, alias: String, group: String?) -> Unit
 ) {
     var query by remember { mutableStateOf("") }
     var scan by remember { mutableStateOf<DocxPlaceholders.ScanResult?>(null) }
@@ -1201,6 +1385,10 @@ private fun AddFieldDialog(
     var customKey by remember { mutableStateOf("") }
     var customAlias by remember { mutableStateOf("") }
     var customValue by remember { mutableStateOf("") }
+
+    // 目标分组：null=自动归类（默认字段回原分组，自定义字段进「自定义字段」）
+    var targetGroup by remember { mutableStateOf(initialGroup) }
+    var groupMenuOpen by remember { mutableStateOf(false) }
 
     // 打开即扫描模板（IO）
     LaunchedEffect(Unit) {
@@ -1253,6 +1441,38 @@ private fun AddFieldDialog(
         title = { Text("添加字段") },
         text = {
             Column {
+                // 目标分组选择
+                Box {
+                    OutlinedButton(
+                        onClick = { groupMenuOpen = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Icon(Icons.Default.FolderOpen, null, Modifier.size(16.dp))
+                        Spacer(Modifier.size(6.dp))
+                        Text(
+                            "添加到：" + (targetGroup ?: "自动归类"),
+                            fontSize = 13.sp,
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1, overflow = TextOverflow.Ellipsis
+                        )
+                        Icon(Icons.Default.ArrowDropDown, null, Modifier.size(18.dp))
+                    }
+                    DropdownMenu(expanded = groupMenuOpen, onDismissRequest = { groupMenuOpen = false }) {
+                        DropdownMenuItem(
+                            text = { Text("自动归类（默认）") },
+                            onClick = { targetGroup = null; groupMenuOpen = false }
+                        )
+                        availableGroups.forEach { g ->
+                            DropdownMenuItem(
+                                text = { Text(g, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                onClick = { targetGroup = g; groupMenuOpen = false }
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
@@ -1278,14 +1498,14 @@ private fun AddFieldDialog(
                                 key = item.key,
                                 subtitle = item.group ?: "",
                                 exists = item.key in existingKeys,
-                                onAdd = { onAdd(item.key, "", "") }
+                                onAdd = { onAdd(item.key, "", "", targetGroup) }
                             )
                         }
                         items(unknownMatched, key = { "su-" + it }) { k ->
                             PickerRow(
                                 label = k, key = k, subtitle = "疑似模板占位符",
                                 exists = k in existingKeys,
-                                onAdd = { onAdd(k, "", "") }
+                                onAdd = { onAdd(k, "", "", targetGroup) }
                             )
                         }
                         if (matched.isEmpty() && unknownMatched.isEmpty()) {
@@ -1323,14 +1543,14 @@ private fun AddFieldDialog(
                                     key = k,
                                     subtitle = item?.group ?: "标准字段",
                                     exists = false,
-                                    onAdd = { onAdd(k, "", "") }
+                                    onAdd = { onAdd(k, "", "", targetGroup) }
                                 )
                             }
                             items(needUnknown, key = { "u-" + it }) { k ->
                                 PickerRow(
                                     label = k, key = k, subtitle = "疑似自定义占位符",
                                     exists = false,
-                                    onAdd = { onAdd(k, "", "") }
+                                    onAdd = { onAdd(k, "", "", targetGroup) }
                                 )
                             }
                         }
@@ -1366,7 +1586,7 @@ private fun AddFieldDialog(
                                         key = f.key,
                                         subtitle = null,
                                         exists = f.key in existingKeys,
-                                        onAdd = { onAdd(f.key, "", "") }
+                                        onAdd = { onAdd(f.key, "", "", targetGroup) }
                                     )
                                 }
                             }
@@ -1421,7 +1641,7 @@ private fun AddFieldDialog(
                                     Button(
                                         enabled = keyValid && !keyExists,
                                         onClick = {
-                                            onAdd(customKey.trim(), customValue, customAlias.trim())
+                                            onAdd(customKey.trim(), customValue, customAlias.trim(), targetGroup)
                                             customKey = ""; customAlias = ""; customValue = ""
                                         },
                                         modifier = Modifier.fillMaxWidth()
@@ -1478,13 +1698,17 @@ private fun EditFieldDialog(
     line: RuleLine,
     originalIsStandard: Boolean,
     isKeyDuplicate: (String) -> Boolean,
+    groups: List<String>,
+    currentGroup: String?,
     onDismiss: () -> Unit,
-    onSave: (key: String, value: String, alias: String) -> Unit,
+    onSaveAndMove: (key: String, value: String, alias: String, moveTo: String?) -> Unit,
     onSetDefault: (key: String, value: String) -> Unit
 ) {
     var key by remember { mutableStateOf(line.key) }
     var value by remember { mutableStateOf(line.value) }
     var alias by remember { mutableStateOf(line.alias) }
+    var targetGroup by remember { mutableStateOf(currentGroup) }
+    var groupMenuOpen by remember { mutableStateOf(false) }
 
     val keyValid = KEY_REGEX.matches(key.trim())
     val keyChanged = key.trim() != line.key
@@ -1510,6 +1734,30 @@ private fun EditFieldDialog(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp)
                 )
+                Spacer(Modifier.height(6.dp))
+                // 所属分组
+                Box {
+                    OutlinedButton(
+                        onClick = { groupMenuOpen = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                    ) {
+                        Icon(Icons.Default.FolderOpen, null, Modifier.size(16.dp))
+                        Spacer(Modifier.size(6.dp))
+                        Text("所属分组：" + (targetGroup ?: "其他字段"), fontSize = 13.sp,
+                            modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Icon(Icons.Default.ArrowDropDown, null, Modifier.size(18.dp))
+                    }
+                    DropdownMenu(expanded = groupMenuOpen, onDismissRequest = { groupMenuOpen = false }) {
+                        groups.forEach { g ->
+                            DropdownMenuItem(
+                                text = { Text(g, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                onClick = { targetGroup = g; groupMenuOpen = false }
+                            )
+                        }
+                    }
+                }
                 Spacer(Modifier.height(6.dp))
                 OutlinedTextField(
                     value = alias, onValueChange = { alias = it },
@@ -1545,9 +1793,15 @@ private fun EditFieldDialog(
             }
         },
         confirmButton = {
-            Button(enabled = keyValid && !dup, onClick = { onSave(key.trim(), value, alias.trim()) }) {
-                Text("保存")
-            }
+            Button(
+                enabled = keyValid && !dup,
+                onClick = {
+                    onSaveAndMove(
+                        key.trim(), value, alias.trim(),
+                        if (targetGroup != currentGroup) targetGroup else null
+                    )
+                }
+            ) { Text("保存") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
     )

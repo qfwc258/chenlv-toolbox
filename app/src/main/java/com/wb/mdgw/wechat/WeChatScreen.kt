@@ -2,6 +2,8 @@ package com.wb.mdgw.wechat
 
 import android.content.Context
 import android.net.Uri
+import android.print.PrintAttributes
+import android.print.PrintManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
@@ -42,6 +44,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.runtime.Composable
@@ -113,6 +116,8 @@ fun WeChatScreen(snackbar: SnackbarHostState) {
     var webViewLoaded by remember { mutableStateOf(false) }
     // 编辑态点「复制」时，先切到预览并等加载完成再复制
     var pendingCopy by remember { mutableStateOf(false) }
+    // 编辑态点「导出 PDF」时，先切到预览并等加载完成再调系统打印
+    var pendingPrint by remember { mutableStateOf(false) }
 
     // 预览用完整文档（<head><style>）；复制用纯内联片段（零 <head>/<style>/class）
     val previewHtml = remember(mdTfv.text, effectiveCss) {
@@ -153,6 +158,22 @@ fun WeChatScreen(snackbar: SnackbarHostState) {
         if (pendingCopy && subView == SubView.PREVIEW && webViewLoaded && previewWebView != null) {
             pendingCopy = false
             copyViaWebView(previewWebView, copyHtml, context)
+        }
+    }
+
+    // 导出 PDF：预览态直接调系统打印；编辑态先切预览，加载完成后再打印
+    fun requestPrintPdf() {
+        if (subView == SubView.PREVIEW && webViewLoaded && previewWebView != null) {
+            printWebViewToPdf(previewWebView, "公众号排版", context)
+        } else {
+            pendingPrint = true
+            subView = SubView.PREVIEW
+        }
+    }
+    LaunchedEffect(subView, webViewLoaded, pendingPrint) {
+        if (pendingPrint && subView == SubView.PREVIEW && webViewLoaded && previewWebView != null) {
+            pendingPrint = false
+            printWebViewToPdf(previewWebView, "公众号排版", context)
         }
     }
 
@@ -202,7 +223,8 @@ fun WeChatScreen(snackbar: SnackbarHostState) {
                     onExample = {
                         mdTfv = TextFieldValue(DEFAULT_MD); undoStack.clear(); redoStack.clear()
                     },
-                    onImport = { pickLauncher.launch("text/*") }
+                    onImport = { pickLauncher.launch("text/*") },
+                    onExportPdf = { requestPrintPdf() }
                 )
             }
         }
@@ -374,7 +396,8 @@ private fun ActionBar(
     onCopy: () -> Unit,
     onClear: () -> Unit,
     onExample: () -> Unit,
-    onImport: () -> Unit
+    onImport: () -> Unit,
+    onExportPdf: () -> Unit
 ) {
     Surface(
         tonalElevation = 3.dp, shadowElevation = 6.dp, color = MaterialTheme.colorScheme.surface,
@@ -413,6 +436,11 @@ private fun ActionBar(
                     expanded = expanded,
                     onDismissRequest = { expanded = false }
                 ) {
+                    DropdownMenuItem(
+                        text = { Text("导出 PDF（打印）") },
+                        leadingIcon = { Icon(Icons.Default.PictureAsPdf, null, Modifier.size(18.dp)) },
+                        onClick = { expanded = false; onExportPdf() }
+                    )
                     DropdownMenuItem(
                         text = { Text("载入示例") },
                         onClick = { expanded = false; onExample() }
@@ -480,6 +508,32 @@ private fun PreviewPane(
         },
         modifier = modifier
     )
+}
+
+/**
+ * 通过预览 WebView 调用系统打印框架，把排版稿导出为 PDF（用户在系统打印界面选「另存为 PDF」）。
+ * 走系统原生渲染，保真度最高；必须在 WebView 加载完成后调用。
+ */
+private fun printWebViewToPdf(webView: WebView?, jobName: String, context: Context) {
+    if (webView == null) {
+        Toast.makeText(context, "预览尚未加载完成，请稍后再试", Toast.LENGTH_SHORT).show()
+        return
+    }
+    val printManager = context.getSystemService(Context.PRINT_SERVICE) as? PrintManager
+    if (printManager == null) {
+        Toast.makeText(context, "当前设备不支持打印 / 导出 PDF", Toast.LENGTH_SHORT).show()
+        return
+    }
+    runCatching {
+        val adapter = webView.createPrintDocumentAdapter(jobName)
+        val attrs = PrintAttributes.Builder()
+            .setMediaSize(PrintAttributes.MediaSize.ISO_A4)
+            .setMinMargins(PrintAttributes.Margins.NO_MARGINS)
+            .build()
+        printManager.print(jobName, adapter, attrs)
+    }.onFailure {
+        Toast.makeText(context, "导出 PDF 失败：${it.message ?: "未知错误"}", Toast.LENGTH_SHORT).show()
+    }
 }
 
 /**

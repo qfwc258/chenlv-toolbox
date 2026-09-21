@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -77,7 +78,7 @@ private fun StepTitle(step: Int, text: String) {
  */
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-fun ShotScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
+fun ShotScreen(initialUri: Uri? = null, snackbar: SnackbarHostState, onOpenPdf: (Uri) -> Unit = {}) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -88,6 +89,8 @@ fun ShotScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
     var splitLongImage by remember { mutableStateOf(true) }
     var colsText by remember { mutableStateOf("2") }
     var rowsText by remember { mutableStateOf("") } // 空 = 自动行数
+    var addPageNumber by remember { mutableStateOf(true) }
+    var pageNumberPos by remember { mutableStateOf(0) } // 0 底居中 1 左下 2 右下 3 顶居中 4 左上 5 右上
 
     var busy by remember { mutableStateOf(false) }
     var doneSeg by remember { mutableStateOf(0) }
@@ -110,12 +113,14 @@ fun ShotScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
     /** 行数（可选）；空 / ≤0 = 自动（ceil(段数/列数)） */
     val rows: Int? = rowsText.toIntOrNull()?.takeIf { it > 0 }
 
-    /** 当前排版配置（切分开关 / 比例 / 行列） */
+    /** 当前排版配置（切分开关 / 比例 / 行列 / 页码） */
     val config = ShotLayout.ShotConfig(
         splitLongImage = splitLongImage,
         splitRatio = ratio,
         columns = columns,
-        rows = rows
+        rows = rows,
+        addPageNumber = addPageNumber,
+        pageNumberPosition = pageNumberPos
     )
 
     /** 实时布局预估（选图 / 配置变化即重算，纯计算无位图开销） */
@@ -341,7 +346,12 @@ fun ShotScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
         savePath = savedPdf?.displayPath ?: "",
         fileIcon = Icons.Default.PictureAsPdf,
         onOpen = { openOrShare(savedPdf, "排版文档", FileUtils.PDF_MIME, open = true) },
-        onShare = { openOrShare(savedPdf, "排版文档", FileUtils.PDF_MIME, open = false) }
+        onShare = { openOrShare(savedPdf, "排版文档", FileUtils.PDF_MIME, open = false) },
+        extraActionText = "加页码 / 盖章（PDF 处理）",
+        onExtraAction = {
+            showPdfResult = false
+            savedPdf?.uri?.let(onOpenPdf)
+        }
     )
 
     Column(
@@ -457,6 +467,44 @@ fun ShotScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.fillMaxWidth()
                     )
+
+                    // PDF 页码开关
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.weight(1f)) {
+                            Text("PDF 页码", fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                            Text(
+                                "导出 PDF 时自动加页码（Word 文档不受影响）",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(checked = addPageNumber, onCheckedChange = { addPageNumber = it })
+                    }
+                    AnimatedVisibility(visible = addPageNumber) {
+                        val posNames = listOf("底部居中", "左下角", "右下角", "顶部居中", "左上角", "右上角")
+                        var posMenuOpen by remember { mutableStateOf(false) }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("页码位置：", fontSize = 13.sp)
+                            Box {
+                                OutlinedButton(
+                                    onClick = { posMenuOpen = true },
+                                    shape = RoundedCornerShape(10.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                                ) {
+                                    Text(posNames[pageNumberPos], fontSize = 13.sp)
+                                    Icon(Icons.Default.ArrowDropDown, null, Modifier.size(18.dp))
+                                }
+                                DropdownMenu(expanded = posMenuOpen, onDismissRequest = { posMenuOpen = false }) {
+                                    posNames.forEachIndexed { i, n ->
+                                        DropdownMenuItem(
+                                            text = { Text(n) },
+                                            onClick = { pageNumberPos = i; posMenuOpen = false }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
 
                     // 实时预估
                     val modeHint = if (splitLongImage) "（${previewPlan.segments.size} 段）" else ""
