@@ -53,7 +53,7 @@ class FtpServerService : Service() {
                 val eng = FtpServerEngine(config)
                 eng.start()
                 engine = eng
-                val ip = FtpSettings.effectiveIp(this)
+                val ip = FtpSettings.firstIpv4()
                 val addr = "ftp://$ip:${config.port}"
                 FtpServerState.rootDir.value = config.rootDir
                 FtpServerState.address.value = addr

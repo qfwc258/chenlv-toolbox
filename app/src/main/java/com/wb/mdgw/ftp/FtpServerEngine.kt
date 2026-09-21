@@ -291,13 +291,10 @@ class FtpServerEngine(
             }.getOrNull()
         }
 
-        private fun pasvIp(): String {
-            if (config.ip.isNotBlank()) return config.ip.trim()
-            return runCatching {
-                val a = control.localAddress.hostAddress ?: ""
-                a.substringBefore('%')
-            }.getOrDefault("127.0.0.1")
-        }
+        private fun pasvIp(): String = runCatching {
+            // 控制连接实际到达的本机地址，即客户端可连回的地址
+            (control.localAddress.hostAddress ?: "127.0.0.1").substringBefore('%')
+        }.getOrDefault("127.0.0.1")
 
         // ---------- 数据传输命令 ----------
         private fun doList(cmd: String, arg: String) {
