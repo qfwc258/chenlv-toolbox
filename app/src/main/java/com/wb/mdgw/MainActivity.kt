@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Gavel
+import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Slideshow
@@ -48,6 +49,7 @@ import com.wb.mdgw.law.Law
 import com.wb.mdgw.law.LawDetailScreen
 import com.wb.mdgw.law.LawSearchScreen
 import com.wb.mdgw.docgen.DocGenScreen
+import com.wb.mdgw.ftp.FtpScreen
 
 class MainActivity : ComponentActivity() {
 
@@ -98,7 +100,7 @@ fun MdGwTheme(darkTheme: Boolean = false, content: @Composable () -> Unit) {
 
 /** 顶层路由：主页宫格 + 各功能页（平铺，不再有底部 Tab） */
 private enum class Route {
-    HOME, WORD, PDF, WECHAT, PPTX, SETTINGS, SCREENSHOT, LAW_SEARCH, DOC_GEN, DOCUMENTS
+    HOME, WORD, PDF, WECHAT, PPTX, SETTINGS, SCREENSHOT, LAW_SEARCH, DOC_GEN, DOCUMENTS, FTP
 }
 
 /** 宫格功能项 */
@@ -116,7 +118,8 @@ private val HOME_FEATURES = listOf(
     Feature(Route.DOC_GEN, "生成文书", Icons.Default.EditNote),
     Feature(Route.SCREENSHOT, "截图排版", Icons.Default.Camera),
     Feature(Route.LAW_SEARCH, "法律查询", Icons.Default.Gavel),
-    Feature(Route.DOCUMENTS, "我的文档", Icons.Default.Folder)
+    Feature(Route.DOCUMENTS, "我的文档", Icons.Default.Folder),
+    Feature(Route.FTP, "FTP 服务", Icons.Default.Dns)
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -222,6 +225,9 @@ fun AppScreen(initialUri: Uri? = null) {
                     SimpleScreenFrame("设置", onBack = { route = Route.HOME }) {
                         SettingsScreen()
                     }
+                }
+                AnimatedVisibility(route == Route.FTP, enter = fadeIn(), exit = fadeOut()) {
+                    FtpScreen(onBack = { route = Route.HOME })
                 }
 
                 // 法条详情页（覆盖层）
