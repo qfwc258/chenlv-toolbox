@@ -19,7 +19,9 @@ data class GenOutput(
     val zipUri: Uri?,
     val zipName: String,
     /** 输出子目录名，如「案件_1」 */
-    val caseDir: String
+    val caseDir: String,
+    /** 归档到案件文件夹的 shared_text.txt 展示路径（失败为 null） */
+    val sharedTextPath: String? = null
 )
 
 /**
@@ -41,6 +43,10 @@ object DocGenEngine {
     fun sanitizeFileName(name: String): String =
         ILLEGAL_CHARS.replace(name, "").trim().take(MAX_NAME)
 
+    /** 案件归档子目录名：案件_<编号>（空编号回退为 1） */
+    fun caseDirName(caseNumber: String): String =
+        DIR_PREFIX + sanitizeFileName(caseNumber.trim().ifBlank { "1" })
+
     /**
      * 执行批量生成。
      *
@@ -60,7 +66,7 @@ object DocGenEngine {
         DefaultFields.keys(context).forEach { rules[it] = "" }
         fieldDoc.toMap().forEach { (k, v) -> rules[k] = v }
 
-        val caseDir = DIR_PREFIX + sanitizeFileName(caseNumber.trim().ifBlank { "1" })
+        val caseDir = caseDirName(caseNumber)
 
         val results = mutableListOf<GenResult>()
         data class Out(val name: String, val bytes: ByteArray, val mime: String)
@@ -125,12 +131,19 @@ object DocGenEngine {
             zipUri = FileUtils.writeCache(context, zipName, bos.toByteArray())
         }
 
+        // 归档当前替换规则到案件文件夹（与生成文书同目录，便于留存）
+        val sharedTextPath = runCatching {
+            val txt = SharedTextParser.export(fieldDoc).toByteArray(Charsets.UTF_8)
+            FileUtils.saveToDownloadsInDir(context, caseDir, "shared_text.txt", txt, "text/plain").displayPath
+        }.getOrNull()
+
         return GenOutput(
             results = results,
             successCount = outs.size,
             zipUri = zipUri,
             zipName = zipName,
-            caseDir = caseDir
+            caseDir = caseDir,
+            sharedTextPath = sharedTextPath
         )
     }
 

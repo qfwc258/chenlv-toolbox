@@ -4,23 +4,38 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.core.content.IntentCompat
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Article
+import androidx.compose.material.icons.filled.Camera
+import androidx.compose.material.icons.filled.ChatBubble
+import androidx.compose.material.icons.filled.EditNote
+import androidx.compose.material.icons.filled.Gavel
+import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Slideshow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
@@ -31,7 +46,6 @@ import com.wb.mdgw.shot.ShotScreen
 import com.wb.mdgw.law.Law
 import com.wb.mdgw.law.LawDetailScreen
 import com.wb.mdgw.law.LawSearchScreen
-import com.wb.mdgw.law.ToolsScreen
 import com.wb.mdgw.docgen.DocGenScreen
 
 class MainActivity : ComponentActivity() {
@@ -40,7 +54,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, true)
 
-        // 支持从「打开方式 / 分享」进入；根据文件类型决定进入哪个模式
+        // 支持从「打开方式 / 分享」进入；根据文件类型决定进入哪个功能
         val incoming: Uri? = when (intent?.action) {
             Intent.ACTION_VIEW -> intent.data
             Intent.ACTION_SEND -> {
@@ -81,180 +95,240 @@ fun MdGwTheme(darkTheme: Boolean = false, content: @Composable () -> Unit) {
     MaterialTheme(colorScheme = colors, content = content)
 }
 
-private enum class DocMode { WORD, PDF, WECHAT, PPTX, TOOLS, SETTINGS }
-
-/**
- * 工具 tab 内的子页面
- */
-private enum class ToolsSubScreen {
-    MAIN,       // 工具主页（入口列表）
-    SCREENSHOT, // 截图排版
-    LAW_SEARCH, // 法律查询
-    DOC_GEN     // 生成文书
+/** 顶层路由：主页宫格 + 各功能页（平铺，不再有底部 Tab） */
+private enum class Route {
+    HOME, WORD, PDF, WECHAT, PPTX, SETTINGS, SCREENSHOT, LAW_SEARCH, DOC_GEN
 }
+
+/** 宫格功能项 */
+private data class Feature(
+    val route: Route,
+    val title: String,
+    val desc: String,
+    val icon: ImageVector
+)
+
+private val HOME_FEATURES = listOf(
+    Feature(Route.WORD, "WORD 文档", "Markdown 编辑、转公文、导出 Word/PDF", Icons.Default.Article),
+    Feature(Route.PPTX, "PPTX 制作", "Markdown 一键转幻灯片", Icons.Default.Slideshow),
+    Feature(Route.PDF, "PDF 处理", "加页码、盖章", Icons.Default.PictureAsPdf),
+    Feature(Route.WECHAT, "公众号排版", "Markdown 转公众号图文", Icons.Default.ChatBubble),
+    Feature(Route.DOC_GEN, "生成文书", "按模板批量生成文书", Icons.Default.EditNote),
+    Feature(Route.SCREENSHOT, "截图排版", "长截图切分、排版", Icons.Default.Camera),
+    Feature(Route.LAW_SEARCH, "法律查询", "国家法律法规数据库检索", Icons.Default.Gavel),
+    Feature(Route.SETTINGS, "设置", "偏好、关于与崩溃日志", Icons.Default.Settings)
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppScreen(initialUri: Uri? = null) {
     val context = LocalContext.current
-        // 冷启动恢复一次全局共享设置（幂等）
-        remember { AppSettings.init(context) }
-        val detected = remember(initialUri) {
-            if (initialUri != null) {
-                val name = FileUtils.displayName(context, initialUri).lowercase()
-                val mime = runCatching { context.contentResolver.getType(initialUri) }.getOrNull()
-                when {
-                    // 长截图：mime 或扩展名识别，直达工具 tab 的截图排版子页（分享入口 SEND image/*）
-                    mime?.startsWith("image/") == true -> DocMode.TOOLS
-                    name.endsWith(".png") || name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".webp") -> DocMode.TOOLS
-                    name.endsWith(".pdf") || initialUri.toString().contains("pdf", true) -> DocMode.PDF
-                    name.endsWith(".docx") || name.endsWith(".doc") -> DocMode.WORD
-                    else -> DocMode.WORD
-                }
-            } else DocMode.WORD
-        }
-        var mode by remember { mutableStateOf(detected) }
-        var selectedLaw by remember { mutableStateOf<Law?>(null) }
-        var toolsSubScreen by remember { mutableStateOf(ToolsSubScreen.MAIN) }
-        val snackbar = remember { SnackbarHostState() }
-        val darkMode by AppSettings.darkMode.collectAsState()
+    // 冷启动恢复一次全局共享设置（幂等）
+    remember { AppSettings.init(context) }
 
-        MdGwTheme(darkTheme = darkMode) {
-        Scaffold(
-        snackbarHost = { SnackbarHost(snackbar) },
-        bottomBar = {
-            NavigationBar(
-                containerColor = MaterialTheme.colorScheme.surface,
-                tonalElevation = 2.dp
-            ) {
-                NavigationBarItem(
-                    selected = mode == DocMode.WORD,
-                    onClick = { mode = DocMode.WORD },
-                    icon = { Icon(Icons.Default.Article, contentDescription = null) },
-                    label = { Text("WORD", fontSize = 11.sp, maxLines = 1, softWrap = false) }
-                )
-                NavigationBarItem(
-                    selected = mode == DocMode.PDF,
-                    onClick = { mode = DocMode.PDF },
-                    icon = { Icon(Icons.Default.PictureAsPdf, contentDescription = null) },
-                    label = { Text("PDF", fontSize = 11.sp, maxLines = 1, softWrap = false) }
-                )
-                NavigationBarItem(
-                    selected = mode == DocMode.WECHAT,
-                    onClick = { mode = DocMode.WECHAT },
-                    icon = { Icon(Icons.Default.ChatBubble, contentDescription = null) },
-                    label = { Text("公众号", fontSize = 11.sp, maxLines = 1, softWrap = false) }
-                )
-                NavigationBarItem(
-                    selected = mode == DocMode.PPTX,
-                    onClick = { mode = DocMode.PPTX },
-                    icon = { Icon(Icons.Default.Slideshow, contentDescription = null) },
-                    label = { Text("PPTX", fontSize = 11.sp, maxLines = 1, softWrap = false) }
-                )
-                NavigationBarItem(
-                    selected = mode == DocMode.TOOLS,
-                    onClick = {
-                        mode = DocMode.TOOLS
-                        toolsSubScreen = ToolsSubScreen.MAIN
-                    },
-                    icon = { Icon(Icons.Default.Build, contentDescription = null) },
-                    label = { Text("工具", fontSize = 11.sp, maxLines = 1, softWrap = false) }
-                )
-                NavigationBarItem(
-                    selected = mode == DocMode.SETTINGS,
-                    onClick = { mode = DocMode.SETTINGS },
-                    icon = { Icon(Icons.Default.Settings, contentDescription = null) },
-                    label = { Text("设置", fontSize = 11.sp, maxLines = 1, softWrap = false) }
-                )
+    // 从「打开方式 / 分享」进入时直达对应功能，否则落到宫格主页
+    val initialRoute = remember(initialUri) {
+        if (initialUri == null) {
+            Route.HOME
+        } else {
+            val name = FileUtils.displayName(context, initialUri).lowercase()
+            val mime = runCatching { context.contentResolver.getType(initialUri) }.getOrNull()
+            when {
+                mime?.startsWith("image/") == true -> Route.SCREENSHOT
+                name.endsWith(".png") || name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".webp") -> Route.SCREENSHOT
+                name.endsWith(".pdf") || initialUri.toString().contains("pdf", true) -> Route.PDF
+                name.endsWith(".docx") || name.endsWith(".doc") -> Route.WORD
+                else -> Route.WORD
             }
         }
-    ) { pad ->
-        // 顶部不再放置任何常驻控件：编辑/预览区直接顶到状态栏下方，最大化可用高度。
-        // 四屏同时存活，仅切换可见性，避免切 Tab 丢失编辑状态。
-        // initialUri 仅首次传递给对应模式，之后不再触发。
-        // 注：全限定名 AnimatedVisibility 规避与 ColumnScope 扩展的同名歧义（编译安全）。
-        Box(Modifier.padding(pad).fillMaxSize()) {
-            androidx.compose.animation.AnimatedVisibility(
-                visible = mode == DocMode.WORD,
-                enter = fadeIn(), exit = fadeOut()
-            ) {
-                WordScreen(
-                    snackbar = snackbar,
-                    initialUri = initialUri.takeIf { detected == DocMode.WORD }
-                )
-            }
-            androidx.compose.animation.AnimatedVisibility(
-                visible = mode == DocMode.PDF,
-                enter = fadeIn(), exit = fadeOut()
-            ) {
-                PdfScreen(
-                    initialUri = initialUri.takeIf { detected == DocMode.PDF },
-                    snackbar = snackbar
-                )
-            }
-            androidx.compose.animation.AnimatedVisibility(
-                visible = mode == DocMode.WECHAT,
-                enter = fadeIn(), exit = fadeOut()
-            ) {
-                WeChatScreen(snackbar = snackbar)
-            }
-            androidx.compose.animation.AnimatedVisibility(
-                visible = mode == DocMode.PPTX,
-                enter = fadeIn(), exit = fadeOut()
-            ) {
-                MdPptxScreen(snackbar = snackbar)
-            }
-            // 工具 tab
-            androidx.compose.animation.AnimatedVisibility(
-                visible = mode == DocMode.TOOLS,
-                enter = fadeIn(), exit = fadeOut()
-            ) {
-                // 工具主页
-                if (toolsSubScreen == ToolsSubScreen.MAIN) {
-                    ToolsScreen(
-                        onOpenScreenshot = { toolsSubScreen = ToolsSubScreen.SCREENSHOT },
-                        onOpenLawSearch = { toolsSubScreen = ToolsSubScreen.LAW_SEARCH },
-                        onOpenDocGen = { toolsSubScreen = ToolsSubScreen.DOC_GEN }
-                    )
+    }
+
+    var route by remember { mutableStateOf(initialRoute) }
+    var selectedLaw by remember { mutableStateOf<Law?>(null) }
+    val snackbar = remember { SnackbarHostState() }
+    val darkMode by AppSettings.darkMode.collectAsState()
+
+    // 返回逻辑：法条详情 → 关闭详情；其它功能页 → 回主页；主页不拦截（退出 App）
+    BackHandler(enabled = selectedLaw != null) { selectedLaw = null }
+    BackHandler(enabled = selectedLaw == null && route != Route.HOME) { route = Route.HOME }
+
+    MdGwTheme(darkTheme = darkMode) {
+        Scaffold(snackbarHost = { SnackbarHost(snackbar) }) { pad ->
+            // 各屏同时存活，仅切换可见性，避免返回主页丢失编辑状态（草稿、撤销栈）
+            Box(Modifier.padding(pad).fillMaxSize()) {
+                // 主页宫格
+                AnimatedVisibility(route == Route.HOME, enter = fadeIn(), exit = fadeOut()) {
+                    HomeScreen(onOpen = { route = it })
                 }
-                // 生成文书子页
-                if (toolsSubScreen == ToolsSubScreen.DOC_GEN) {
-                    DocGenScreen(onBack = { toolsSubScreen = ToolsSubScreen.MAIN })
-                }
-                // 截图排版子页
-                if (toolsSubScreen == ToolsSubScreen.SCREENSHOT) {
-                    ShotScreen(
+
+                // WORD / PPTX / 公众号：全屏编辑器，用系统返回键回主页（保留最大编辑区）
+                AnimatedVisibility(route == Route.WORD, enter = fadeIn(), exit = fadeOut()) {
+                    WordScreen(
                         snackbar = snackbar,
-                        initialUri = initialUri.takeIf { detected == DocMode.TOOLS }
+                        initialUri = initialUri.takeIf { initialRoute == Route.WORD }
                     )
                 }
-                // 法律查询子页
-                if (toolsSubScreen == ToolsSubScreen.LAW_SEARCH) {
-                    LawSearchScreen(
-                        onLawClick = { law -> selectedLaw = law }
-                    )
+                AnimatedVisibility(route == Route.PPTX, enter = fadeIn(), exit = fadeOut()) {
+                    MdPptxScreen(snackbar = snackbar)
                 }
-            }
-            androidx.compose.animation.AnimatedVisibility(
-                visible = mode == DocMode.SETTINGS,
-                enter = fadeIn(), exit = fadeOut()
-            ) {
-                SettingsScreen()
-            }
-            // 法规详情页（覆盖层）
-            if (selectedLaw != null) {
-                androidx.compose.animation.AnimatedVisibility(
-                    visible = true,
-                    enter = fadeIn(), exit = fadeOut()
-                ) {
-                    LawDetailScreen(
-                        law = selectedLaw!!,
-                        onBack = { selectedLaw = null }
-                    )
+                AnimatedVisibility(route == Route.WECHAT, enter = fadeIn(), exit = fadeOut()) {
+                    WeChatScreen(snackbar = snackbar)
+                }
+
+                // 自带顶部栏的子页
+                AnimatedVisibility(route == Route.DOC_GEN, enter = fadeIn(), exit = fadeOut()) {
+                    DocGenScreen(onBack = { route = Route.HOME })
+                }
+
+                // 无自带标题栏的页面：统一套一个带返回的标题栏
+                AnimatedVisibility(route == Route.PDF, enter = fadeIn(), exit = fadeOut()) {
+                    SimpleScreenFrame("PDF 处理", onBack = { route = Route.HOME }) {
+                        PdfScreen(
+                            initialUri = initialUri.takeIf { initialRoute == Route.PDF },
+                            snackbar = snackbar
+                        )
+                    }
+                }
+                AnimatedVisibility(route == Route.SCREENSHOT, enter = fadeIn(), exit = fadeOut()) {
+                    SimpleScreenFrame("截图排版", onBack = { route = Route.HOME }) {
+                        ShotScreen(
+                            snackbar = snackbar,
+                            initialUri = initialUri.takeIf { initialRoute == Route.SCREENSHOT }
+                        )
+                    }
+                }
+                AnimatedVisibility(route == Route.LAW_SEARCH, enter = fadeIn(), exit = fadeOut()) {
+                    SimpleScreenFrame("法律查询", onBack = { route = Route.HOME }) {
+                        LawSearchScreen(onLawClick = { law -> selectedLaw = law })
+                    }
+                }
+                AnimatedVisibility(route == Route.SETTINGS, enter = fadeIn(), exit = fadeOut()) {
+                    SimpleScreenFrame("设置", onBack = { route = Route.HOME }) {
+                        SettingsScreen()
+                    }
+                }
+
+                // 法条详情页（覆盖层）
+                if (selectedLaw != null) {
+                    AnimatedVisibility(visible = true, enter = fadeIn(), exit = fadeOut()) {
+                        LawDetailScreen(
+                            law = selectedLaw!!,
+                            onBack = { selectedLaw = null }
+                        )
+                    }
                 }
             }
         }
     }
+}
+
+/** 功能主页：一行三列宫格，可随功能数量自动换行扩展 */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun HomeScreen(onOpen: (Route) -> Unit) {
+    Scaffold(
+        topBar = {
+            TopAppBar(title = {
+                Column {
+                    Text("陈律工具箱", fontWeight = FontWeight.Bold, fontSize = 19.sp)
+                    Text("常用工具一站式聚合", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+                }
+            })
+        }
+    ) { pad ->
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(3),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(pad),
+            contentPadding = PaddingValues(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            items(HOME_FEATURES, key = { it.route.name }) { f ->
+                FeatureCard(feature = f, onClick = { onOpen(f.route) })
+            }
+        }
+    }
+}
+
+/** 宫格卡片：图标 + 标题 + 一行简介 */
+@Composable
+private fun FeatureCard(feature: Feature, onClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(132.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 8.dp, vertical = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Card(
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                )
+            ) {
+                Icon(
+                    feature.icon,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .padding(8.dp)
+                        .size(28.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                feature.title,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.height(3.dp))
+            Text(
+                feature.desc,
+                fontSize = 10.sp,
+                lineHeight = 13.sp,
+                color = MaterialTheme.colorScheme.outline,
+                maxLines = 2,
+                textAlign = TextAlign.Center,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+/** 给没有自带标题栏的页面套一个统一的顶部返回栏 */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SimpleScreenFrame(
+    title: String,
+    onBack: () -> Unit,
+    content: @Composable () -> Unit
+) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(title, fontWeight = FontWeight.SemiBold) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回主页")
+                    }
+                }
+            )
+        }
+    ) { pad ->
+        Box(Modifier.padding(pad).fillMaxSize()) { content() }
     }
 }
 
@@ -299,7 +373,7 @@ fun AboutDialog(onDismiss: () -> Unit) {
                 )
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    "集 Markdown 编辑、公文生成、PDF 处理、微信公众号排版与 PPT 制作于一体的移动办公工具。",
+                    "集 Markdown 编辑、公文生成、PDF 处理、微信公众号排版、PPT 制作、批量文书与法律查询于一体的移动办公工具。",
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     lineHeight = 19.sp

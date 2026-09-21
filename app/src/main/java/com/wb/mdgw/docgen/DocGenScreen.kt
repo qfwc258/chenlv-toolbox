@@ -113,7 +113,7 @@ fun DocGenScreen(onBack: () -> Unit) {
     var hasAccess by remember { mutableStateOf(DocTemplateDir.hasAccess(context)) }
     var templates by remember { mutableStateOf(emptyList<DocTemplateFile>()) }
     var lines by remember { mutableStateOf(FieldRuleStore.loadOrDefault(context).lines) }
-    var caseNumber by remember { mutableStateOf("1") }
+    var caseNumber by remember { mutableStateOf("") }
     var selectedTypes by remember { mutableStateOf(emptySet<String>()) } // 空 = 全部
     var keyword by remember { mutableStateOf("") }
     var collapsed by remember { mutableStateOf(emptySet<String>()) }
@@ -122,6 +122,7 @@ fun DocGenScreen(onBack: () -> Unit) {
     var showAddDialog by remember { mutableStateOf(false) }
     var addDialogGroup by remember { mutableStateOf<String?>(null) }
     var editIndex by remember { mutableStateOf(-1) }
+    var showTemplateList by remember { mutableStateOf(false) }
 
     val defaults = remember { DefaultFields.lines(context) }
     val standardKeys = remember { DefaultFields.keys(context) }
@@ -204,25 +205,35 @@ fun DocGenScreen(onBack: () -> Unit) {
         }
     }
 
-    // 导出规则文本
-    val ruleExporter = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("text/plain")
-    ) { uri ->
-        if (uri != null) scope.launch {
-            withContext(Dispatchers.IO) {
+    // 导出规则文本：直接写入案件文件夹（与生成文书同目录），不再弹保存位置选择
+    fun exportRules() {
+        if (caseNumber.isBlank()) {
+            scope.launch { snackbar.showSnackbar("请先填写案件编号，以便归档到对应案件文件夹") }
+            return
+        }
+        val caseDir = DocGenEngine.caseDirName(caseNumber)
+        scope.launch {
+            val saved = withContext(Dispatchers.IO) {
                 runCatching {
-                    context.contentResolver.openOutputStream(uri)?.use {
-                        it.write(SharedTextParser.export(FieldDoc(lines)).toByteArray())
-                    }
-                }
+                    val bytes = SharedTextParser.export(FieldDoc(lines)).toByteArray(Charsets.UTF_8)
+                    FileUtils.saveToDownloadsInDir(context, caseDir, "shared_text.txt", bytes, "text/plain")
+                }.getOrNull()
             }
-            snackbar.showSnackbar("已导出 shared_text.txt")
+            if (saved != null) {
+                snackbar.showSnackbar("已导出：下载/陈律文档/$caseDir/shared_text.txt")
+            } else {
+                snackbar.showSnackbar("导出失败，请检查存储权限")
+            }
         }
     }
 
     fun doGenerate() {
         if (!hasAccess) {
             scope.launch { snackbar.showSnackbar("请先授予存储权限以读取模板目录") }
+            return
+        }
+        if (caseNumber.isBlank()) {
+            scope.launch { snackbar.showSnackbar("请先填写案件编号") }
             return
         }
         val tpl = DocTemplateDir.scan(templateDir)
@@ -343,25 +354,47 @@ fun DocGenScreen(onBack: () -> Unit) {
                             )
                         } else {
                             Spacer(Modifier.height(8.dp))
-                            Text("已扫描到 ${templates.size} 个模板：", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
-                            templates.forEach { t ->
-                                Row(
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    "已扫描到 ${templates.size} 个模板",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                TextButton(
+                                    onClick = { showTemplateList = !showTemplateList },
+                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp)
                                 ) {
+                                    Text(if (showTemplateList) "收起" else "展开查看", fontSize = 12.sp)
                                     Icon(
-                                        if (t.isPdf) Icons.Default.PictureAsPdf else Icons.Default.Description,
+                                        if (showTemplateList) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                                         contentDescription = null,
-                                        modifier = Modifier.size(18.dp),
-                                        tint = MaterialTheme.colorScheme.primary
+                                        modifier = Modifier.size(15.dp)
                                     )
-                                    Text(
-                                        t.fileName,
-                                        fontSize = 13.sp,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
-                                    )
+                                }
+                            }
+                            AnimatedVisibility(visible = showTemplateList) {
+                                Column {
+                                    templates.forEach { t ->
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                if (t.isPdf) Icons.Default.PictureAsPdf else Icons.Default.Description,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(18.dp),
+                                                tint = MaterialTheme.colorScheme.primary
+                                            )
+                                            Text(
+                                                t.fileName,
+                                                fontSize = 13.sp,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -382,7 +415,12 @@ fun DocGenScreen(onBack: () -> Unit) {
                                 caseNumber = v.replace(Regex("[<>:\"/\\\\|?*]"), "")
                             },
                             label = { Text("案件编号（可含中文）") },
+                            placeholder = { Text("请输入案件编号", fontSize = 14.sp) },
                             singleLine = true,
+                            isError = caseNumber.isBlank(),
+                            supportingText = {
+                                if (caseNumber.isBlank()) Text("必填，用于归档到「案件_<编号>」文件夹")
+                            },
                             keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Text),
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -421,8 +459,8 @@ fun DocGenScreen(onBack: () -> Unit) {
                             IconButton(onClick = { ruleImporter.launch(arrayOf("text/plain", "text/*", "*/*")) }) {
                                 Icon(Icons.Default.FileUpload, contentDescription = "导入规则", modifier = Modifier.size(19.dp))
                             }
-                            IconButton(onClick = { ruleExporter.launch("shared_text.txt") }) {
-                                Icon(Icons.Default.FileDownload, contentDescription = "导出规则", modifier = Modifier.size(19.dp))
+                            IconButton(onClick = { exportRules() }) {
+                                Icon(Icons.Default.FileDownload, contentDescription = "导出规则到案件文件夹", modifier = Modifier.size(19.dp))
                             }
                             Box {
                                 var menuOpen by remember { mutableStateOf(false) }
@@ -606,6 +644,9 @@ fun DocGenScreen(onBack: () -> Unit) {
                 Column {
                     Text("成功 ${out.successCount} 个，失败 ${failed.size} 个", fontSize = 14.sp)
                     Text("保存位置：下载 / 陈律文档 / ${out.caseDir}/", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (out.sharedTextPath != null) {
+                        Text("已归档 shared_text.txt 到该文件夹", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                    }
                     if (failed.isNotEmpty()) {
                         Spacer(Modifier.height(6.dp))
                         Text("失败项：", fontSize = 12.sp, fontWeight = FontWeight.Medium)
