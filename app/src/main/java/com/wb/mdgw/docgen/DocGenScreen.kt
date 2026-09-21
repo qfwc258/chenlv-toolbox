@@ -5,6 +5,7 @@ import android.net.Uri
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,11 +27,13 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
@@ -40,6 +43,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -74,7 +79,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** 分组后的 UI 小节（title 为 null 表示首个分组之前的散字段）；每项携带全局行索引以保证 LazyColumn key 唯一 */
+/** 分组后的 UI 小节（title 为 null 表示首个分组之前的散字段）；每项携带全局行索引以保证 key 唯一 */
 private data class Section(val title: String?, val items: List<Pair<Int, RuleLine>>)
 
 private fun buildSections(lines: List<RuleLine>): List<Section> {
@@ -95,6 +100,8 @@ private fun buildSections(lines: List<RuleLine>): List<Section> {
     return result
 }
 
+private val KEY_REGEX = Regex("^[A-Za-z][A-Za-z0-9]*$")
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun DocGenScreen(onBack: () -> Unit) {
@@ -113,6 +120,11 @@ fun DocGenScreen(onBack: () -> Unit) {
     var busy by remember { mutableStateOf(false) }
     var output by remember { mutableStateOf<GenOutput?>(null) }
     var showAddDialog by remember { mutableStateOf(false) }
+    var addDialogGroup by remember { mutableStateOf<String?>(null) }
+    var editIndex by remember { mutableStateOf(-1) }
+
+    val defaults = remember { DefaultFields.lines(context) }
+    val standardKeys = remember { DefaultFields.keys(context) }
 
     fun rescan() {
         hasAccess = DocTemplateDir.hasAccess(context)
@@ -138,9 +150,20 @@ fun DocGenScreen(onBack: () -> Unit) {
         persistLines(newLines)
     }
 
-    fun addField(key: String, value: String) {
-        val defaults = DefaultFields.lines(context)
-        persistLines(DefaultFields.insertField(lines, key, value, defaults))
+    fun addField(key: String, value: String, alias: String = "") {
+        persistLines(DefaultFields.insertField(lines, key, value, defaults, alias))
+    }
+
+    fun updateField(index: Int, newKey: String, newValue: String, newAlias: String) {
+        val old = lines.getOrNull(index) ?: return
+        if (!old.isField) return
+        val key = newKey.trim()
+        if (!KEY_REGEX.matches(key)) return
+        val duplicate = lines.withIndex().any { (i, l) -> i != index && l.isField && l.key == key }
+        if (duplicate) return
+        persistLines(lines.toMutableList().also {
+            it[index] = old.copy(key = key, value = newValue, alias = newAlias.trim())
+        })
     }
 
     // Android 11+：跳「所有文件访问」设置页，返回后重扫
@@ -388,22 +411,45 @@ fun DocGenScreen(onBack: () -> Unit) {
                 }
             }
 
-            // ---------- 替换字段 ----------
+            // ---------- 主要字段（工具条 + 分组字段合并为一个卡片） ----------
             item {
                 Card(shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(14.dp)) {
+                        // 标题行
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("替换字段", fontWeight = FontWeight.SemiBold, fontSize = 15.sp, modifier = Modifier.weight(1f))
-                            OutlinedButton(onClick = { showAddDialog = true }) {
-                                Icon(Icons.Default.Add, null, Modifier.size(16.dp)); Spacer(Modifier.size(2.dp)); Text("添加", fontSize = 12.sp)
+                            Text("主要字段", fontWeight = FontWeight.SemiBold, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                            IconButton(onClick = { ruleImporter.launch(arrayOf("text/plain", "text/*", "*/*")) }) {
+                                Icon(Icons.Default.FileUpload, contentDescription = "导入规则", modifier = Modifier.size(19.dp))
                             }
-                            Spacer(Modifier.size(6.dp))
-                            OutlinedButton(onClick = {
-                                ruleImporter.launch(arrayOf("text/plain", "text/*", "*/*"))
-                            }) { Icon(Icons.Default.FileUpload, null, Modifier.size(16.dp)); Spacer(Modifier.size(2.dp)); Text("导入", fontSize = 12.sp) }
-                            Spacer(Modifier.size(6.dp))
-                            OutlinedButton(onClick = { ruleExporter.launch("shared_text.txt") }) {
-                                Icon(Icons.Default.FileDownload, null, Modifier.size(16.dp)); Spacer(Modifier.size(2.dp)); Text("导出", fontSize = 12.sp)
+                            IconButton(onClick = { ruleExporter.launch("shared_text.txt") }) {
+                                Icon(Icons.Default.FileDownload, contentDescription = "导出规则", modifier = Modifier.size(19.dp))
+                            }
+                            Box {
+                                var menuOpen by remember { mutableStateOf(false) }
+                                IconButton(onClick = { menuOpen = true }) {
+                                    Icon(Icons.Default.MoreVert, contentDescription = "更多")
+                                }
+                                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                                    DropdownMenuItem(
+                                        text = { Text("清空所有值") },
+                                        onClick = {
+                                            menuOpen = false
+                                            persistLines(lines.map { if (it.isField) it.copy(value = "") else it })
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("重置为默认结构") },
+                                        onClick = {
+                                            menuOpen = false
+                                            scope.launch {
+                                                val doc = withContext(Dispatchers.IO) { FieldRuleStore.resetOrDefault(context) }
+                                                lines = doc.lines
+                                                collapsed = emptySet()
+                                                snackbar.showSnackbar("已重置为默认结构")
+                                            }
+                                        }
+                                    )
+                                }
                             }
                         }
                         Spacer(Modifier.height(8.dp))
@@ -416,83 +462,97 @@ fun DocGenScreen(onBack: () -> Unit) {
                             singleLine = true,
                             shape = RoundedCornerShape(12.dp)
                         )
-                        Spacer(Modifier.height(2.dp))
-                        Row {
-                            TextButton(onClick = {
-                                persistLines(lines.map { if (it.isField) it.copy(value = "") else it })
-                            }, modifier = Modifier.weight(1f)) { Text("清空所有值", fontSize = 12.sp) }
-                            TextButton(onClick = {
-                                scope.launch {
-                                    val doc = withContext(Dispatchers.IO) { FieldRuleStore.resetOrDefault(context) }
-                                    lines = doc.lines
-                                    collapsed = emptySet()
-                                    snackbar.showSnackbar("已重置为默认结构")
-                                }
-                            }, modifier = Modifier.weight(1f)) { Text("重置为默认结构", fontSize = 12.sp) }
-                        }
-                    }
-                }
-            }
+                        Spacer(Modifier.height(6.dp))
 
-            // 字段编辑区
-            val kw = keyword.trim()
-            if (kw.isNotEmpty()) {
-                val matched = lines.filter {
-                    it.isField && (
-                        it.key.contains(kw, true) ||
-                        (FieldLabels.labelOf(it.key) ?: "").contains(kw) ||
-                        it.value.contains(kw))
-                }
-                items(matched, key = { "search-" + it.key }) { line ->
-                    val idx = lines.indexOf(line)
-                    FieldRow(line, onChange = { v -> updateValue(idx, v) }, onDelete = { deleteField(idx) })
-                }
-            } else {
-                val sections = buildSections(lines)
-                sections.forEach { section ->
-                    val header = section.title ?: "其他"
-                    val isCollapsed = header in collapsed
-                    item(key = "group-$header") {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                section.title ?: "其他字段",
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 14.sp,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.weight(1f)
-                            )
-                            IconButton(onClick = {
-                                collapsed = if (isCollapsed) collapsed - header else collapsed + header
-                            }, modifier = Modifier.size(28.dp)) {
-                                Icon(
-                                    if (isCollapsed) Icons.Default.ExpandMore else Icons.Default.ExpandLess,
-                                    contentDescription = null
+                        val kw = keyword.trim()
+                        if (kw.isNotEmpty()) {
+                            // 搜索结果（扁平）
+                            val matched = lines.filter {
+                                it.isField && (
+                                    it.key.contains(kw, true) ||
+                                    it.alias.contains(kw) ||
+                                    (FieldLabels.labelOf(it.key) ?: "").contains(kw) ||
+                                    it.value.contains(kw))
+                            }
+                            if (matched.isEmpty()) {
+                                Text("没有匹配的字段", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline,
+                                    modifier = Modifier.padding(8.dp))
+                            }
+                            matched.forEach { line ->
+                                val idx = lines.indexOf(line)
+                                FieldRow(
+                                    line = line,
+                                    onChange = { v -> updateValue(idx, v) },
+                                    onEdit = { editIndex = idx },
+                                    onDelete = { deleteField(idx) }
                                 )
                             }
-                        }
-                    }
-                    if (!isCollapsed) {
-                        section.items.forEach { (idx, line) ->
-                            if (line.isComment) {
-                                item(key = "comment-$idx") {
+                        } else {
+                            // 分组字段
+                            buildSections(lines).forEach { section ->
+                                val header = section.title ?: "其他字段"
+                                val isCollapsed = header in collapsed
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    IconButton(onClick = {
+                                        collapsed = if (isCollapsed) collapsed - header else collapsed + header
+                                    }, modifier = Modifier.size(28.dp)) {
+                                        Icon(
+                                            if (isCollapsed) Icons.Default.ExpandMore else Icons.Default.ExpandLess,
+                                            contentDescription = null
+                                        )
+                                    }
                                     Text(
-                                        line.text,
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = MaterialTheme.colorScheme.tertiary,
-                                        modifier = Modifier.padding(start = 4.dp, top = 6.dp, bottom = 2.dp)
+                                        section.title ?: "其他字段",
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 14.sp,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.weight(1f)
                                     )
+                                    IconButton(onClick = {
+                                        addDialogGroup = section.title
+                                        showAddDialog = true
+                                    }, modifier = Modifier.size(28.dp)) {
+                                        Icon(Icons.Default.Add, contentDescription = "在该分组添加字段", modifier = Modifier.size(18.dp))
+                                    }
                                 }
-                            } else if (line.isField) {
-                                item(key = "field-$idx-${line.key}") {
-                                    FieldRow(line, onChange = { v -> updateValue(idx, v) }, onDelete = { deleteField(idx) })
+                                AnimatedVisibility(visible = !isCollapsed) {
+                                    Column {
+                                        section.items.forEach { (idx, line) ->
+                                            if (line.isComment) {
+                                                Text(
+                                                    line.text,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = MaterialTheme.colorScheme.tertiary,
+                                                    modifier = Modifier.padding(start = 4.dp, top = 6.dp, bottom = 2.dp)
+                                                )
+                                            } else if (line.isField) {
+                                                FieldRow(
+                                                    line = line,
+                                                    onChange = { v -> updateValue(idx, v) },
+                                                    onEdit = { editIndex = idx },
+                                                    onDelete = { deleteField(idx) }
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                             }
+                        }
+
+                        // 底部全宽添加按钮
+                        Spacer(Modifier.height(6.dp))
+                        OutlinedButton(
+                            onClick = { addDialogGroup = null; showAddDialog = true },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Icon(Icons.Default.Add, null, Modifier.size(18.dp))
+                            Spacer(Modifier.size(4.dp))
+                            Text("添加字段")
                         }
                     }
                 }
@@ -505,15 +565,35 @@ fun DocGenScreen(onBack: () -> Unit) {
     // ---------- 添加字段对话框 ----------
     if (showAddDialog) {
         AddFieldDialog(
-            defaults = DefaultFields.lines(context),
+            templates = templates,
+            defaults = defaults,
+            standardKeys = standardKeys,
             existingKeys = lines.filter { it.isField }.map { it.key }.toSet(),
+            initialGroup = addDialogGroup,
             onDismiss = { showAddDialog = false },
-            onConfirm = { key, value ->
-                addField(key, value)
-                showAddDialog = false
+            onAdd = { key, value, alias ->
+                addField(key, value, alias)
                 scope.launch { snackbar.showSnackbar("已添加字段 $key") }
             }
         )
+    }
+
+    // ---------- 编辑字段对话框 ----------
+    if (editIndex >= 0 && editIndex < lines.size) {
+        val line = lines[editIndex]
+        if (line.isField) {
+            EditFieldDialog(
+                line = line,
+                originalIsStandard = line.key in standardKeys,
+                isKeyDuplicate = { k -> lines.any { it.isField && it.key == k } },
+                onDismiss = { editIndex = -1 },
+                onSave = { k, v, a ->
+                    updateField(editIndex, k, v, a)
+                    editIndex = -1
+                    scope.launch { snackbar.showSnackbar("已保存字段 $k") }
+                }
+            )
+        }
     }
 
     // ---------- 结果弹窗 ----------
@@ -554,12 +634,20 @@ fun DocGenScreen(onBack: () -> Unit) {
     }
 }
 
-/** 字段行：输入框 + 删除按钮 */
+/** 字段行：输入框 + 编辑 + 删除 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun FieldRow(line: RuleLine, onChange: (String) -> Unit, onDelete: () -> Unit) {
+private fun FieldRow(
+    line: RuleLine,
+    onChange: (String) -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
     Row(verticalAlignment = Alignment.Top) {
         Box(Modifier.weight(1f)) { FieldInput(line, onChange) }
+        IconButton(onClick = onEdit, modifier = Modifier.padding(top = 10.dp).size(38.dp)) {
+            Icon(Icons.Default.Edit, contentDescription = "编辑字段", modifier = Modifier.size(18.dp))
+        }
         IconButton(onClick = onDelete, modifier = Modifier.padding(top = 10.dp).size(38.dp)) {
             Icon(Icons.Default.Delete, contentDescription = "删除字段", modifier = Modifier.size(18.dp))
         }
@@ -569,7 +657,7 @@ private fun FieldRow(line: RuleLine, onChange: (String) -> Unit, onDelete: () ->
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun FieldInput(line: RuleLine, onChange: (String) -> Unit) {
-    val label = FieldLabels.labelOf(line.key) ?: line.key
+    val display = FieldLabels.displayName(line.key, line.alias)
     val isLong = FieldLabels.isLong(line.key)
     OutlinedTextField(
         value = line.value,
@@ -579,7 +667,7 @@ private fun FieldInput(line: RuleLine, onChange: (String) -> Unit) {
             .padding(vertical = 3.dp),
         label = {
             Text(
-                if (label == line.key) line.key else "$label（${line.key}）",
+                if (display == line.key) line.key else "$display（${line.key}）",
                 maxLines = 1, overflow = TextOverflow.Ellipsis
             )
         },
@@ -589,41 +677,74 @@ private fun FieldInput(line: RuleLine, onChange: (String) -> Unit) {
     )
 }
 
-/** 添加字段对话框：可从默认字段选择（带标签/分组），也可直接编辑 key 自定义 */
+// ==================== 添加字段对话框 ====================
+
+private data class DefaultGroup(val title: String, val fields: List<RuleLine>)
 private data class DefaultFieldItem(val group: String?, val key: String, val label: String)
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AddFieldDialog(
+    templates: List<DocTemplateFile>,
     defaults: List<RuleLine>,
+    standardKeys: List<String>,
     existingKeys: Set<String>,
+    initialGroup: String?,
     onDismiss: () -> Unit,
-    onConfirm: (key: String, value: String) -> Unit
+    onAdd: (key: String, value: String, alias: String) -> Unit
 ) {
     var query by remember { mutableStateOf("") }
-    var key by remember { mutableStateOf("") }
-    var value by remember { mutableStateOf("") }
+    var scan by remember { mutableStateOf<DocxPlaceholders.ScanResult?>(null) }
+    var showCustom by remember { mutableStateOf(false) }
+    var customKey by remember { mutableStateOf("") }
+    var customAlias by remember { mutableStateOf("") }
+    var customValue by remember { mutableStateOf("") }
 
-    val items = remember(defaults) {
-        val list = mutableListOf<DefaultFieldItem>()
-        var group: String? = null
+    // 打开即扫描模板（IO）
+    LaunchedEffect(Unit) {
+        scan = withContext(Dispatchers.IO) {
+            val docxBytes = templates.filter { it.isDocx }.mapNotNull { it.readBytes() }
+            DocxPlaceholders.scan(docxBytes, standardKeys)
+        }
+    }
+
+    // 默认字段分组
+    val groups = remember(defaults) {
+        val result = mutableListOf<DefaultGroup>()
+        var title: String? = null
+        var cur = mutableListOf<RuleLine>()
+        fun flush() {
+            if (cur.isNotEmpty()) result.add(DefaultGroup(title ?: "其他字段", cur))
+            cur = mutableListOf()
+        }
         defaults.forEach { l ->
             when {
-                l.isGroup -> group = l.text
-                l.isField -> list.add(DefaultFieldItem(group, l.key, FieldLabels.labelOf(l.key) ?: l.key))
+                l.isGroup -> { flush(); title = l.text }
+                l.isField -> cur.add(l)
+            }
+        }
+        flush()
+        result
+    }
+    val allItems = remember(defaults) {
+        val list = mutableListOf<DefaultFieldItem>()
+        var g: String? = null
+        defaults.forEach { l ->
+            when {
+                l.isGroup -> g = l.text
+                l.isField -> list.add(DefaultFieldItem(g, l.key, FieldLabels.displayName(l.key, l.alias)))
             }
         }
         list
     }
-    val filtered = items.filter {
-        query.isBlank() ||
-            it.key.contains(query, true) ||
-            it.label.contains(query, true) ||
-            (it.group?.contains(query, true) == true)
-    }
-    val keyValid = Regex("^[A-Za-z][A-Za-z0-9]*$").matches(key.trim())
-    val keyExists = key.trim() in existingKeys
 
+    var expandedGroups by remember {
+        mutableStateOf(buildSet {
+            add("委托授权"); add("授权")
+            if (initialGroup != null) add(initialGroup)
+        })
+    }
+
+    val q = query.trim()
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("添加字段") },
@@ -633,75 +754,287 @@ private fun AddFieldDialog(
                     value = query,
                     onValueChange = { query = it },
                     modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("搜索默认字段（标签 / key / 分组）", fontSize = 13.sp) },
+                    placeholder = { Text("搜索标签 / key / 分类", fontSize = 13.sp) },
                     leadingIcon = { Icon(Icons.Default.Search, null, Modifier.size(18.dp)) },
                     singleLine = true,
                     shape = RoundedCornerShape(10.dp)
                 )
-                Spacer(Modifier.height(6.dp))
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(220.dp)
-                ) {
-                    items(filtered, key = { it.key }) { item ->
-                        val exists = item.key in existingKeys
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable(enabled = !exists) {
-                                    key = item.key
-                                    value = ""
+                Spacer(Modifier.height(8.dp))
+                LazyColumn(modifier = Modifier.fillMaxWidth().height(380.dp)) {
+                    if (q.isNotEmpty()) {
+                        // ---- 搜索：跨来源扁平化 ----
+                        val matched = allItems.filter {
+                            it.key.contains(q, true) || it.label.contains(q, true) ||
+                                (it.group?.contains(q, true) == true)
+                        }
+                        val unknownMatched = (scan?.unknown ?: emptyList())
+                            .filter { it.contains(q, true) && it !in matched.map { m -> m.key } }
+                        items(matched, key = { "s-" + it.key }) { item ->
+                            PickerRow(
+                                label = item.label,
+                                key = item.key,
+                                subtitle = item.group ?: "",
+                                exists = item.key in existingKeys,
+                                onAdd = { onAdd(item.key, "", "") }
+                            )
+                        }
+                        items(unknownMatched, key = { "su-" + it }) { k ->
+                            PickerRow(
+                                label = k, key = k, subtitle = "疑似模板占位符",
+                                exists = k in existingKeys,
+                                onAdd = { onAdd(k, "", "") }
+                            )
+                        }
+                        if (matched.isEmpty() && unknownMatched.isEmpty()) {
+                            item { Text("没有匹配的字段", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline) }
+                        }
+                    } else {
+                        // ---- ① 模板需要 ----
+                        item {
+                            Text("模板需要（扫描自模板，未添加）",
+                                fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(top = 4.dp, bottom = 4.dp))
+                        }
+                        val needStandard = scan?.standard?.filter { it !in existingKeys } ?: emptyList()
+                        val needUnknown = scan?.unknown?.filter { it !in existingKeys } ?: emptyList()
+                        if (scan == null) {
+                            item {
+                                Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                                    Spacer(Modifier.size(8.dp))
+                                    Text("正在扫描模板…", fontSize = 12.sp)
                                 }
-                                .padding(vertical = 6.dp, horizontal = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    if (item.label == item.key) item.key else "${item.label}（${item.key}）",
-                                    fontSize = 13.sp,
-                                    color = if (exists) MaterialTheme.colorScheme.outline
-                                    else MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(item.group ?: "", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            if (exists) Text("已添加", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+                        } else if (needStandard.isEmpty() && needUnknown.isEmpty()) {
+                            item {
+                                Text("模板需要的字段都已添加（或未在模板中扫到占位符）",
+                                    fontSize = 11.sp, color = MaterialTheme.colorScheme.outline,
+                                    modifier = Modifier.padding(8.dp))
+                            }
+                        } else {
+                            items(needStandard, key = { "t-" + it }) { k ->
+                                val item = allItems.firstOrNull { it.key == k }
+                                PickerRow(
+                                    label = item?.label ?: k,
+                                    key = k,
+                                    subtitle = item?.group ?: "标准字段",
+                                    exists = false,
+                                    onAdd = { onAdd(k, "", "") }
+                                )
+                            }
+                            items(needUnknown, key = { "u-" + it }) { k ->
+                                PickerRow(
+                                    label = k, key = k, subtitle = "疑似自定义占位符",
+                                    exists = false,
+                                    onAdd = { onAdd(k, "", "") }
+                                )
+                            }
+                        }
+
+                        // ---- ② 标准字段（按分类） ----
+                        item {
+                            Text("标准字段（按分类）",
+                                fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(top = 10.dp, bottom = 2.dp))
+                        }
+                        groups.forEach { g ->
+                            item(key = "gh-" + g.title) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().clickable {
+                                        expandedGroups = if (g.title in expandedGroups)
+                                            expandedGroups - g.title else expandedGroups + g.title
+                                    }.padding(vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        if (g.title in expandedGroups) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                        null, Modifier.size(18.dp)
+                                    )
+                                    Text(g.title, fontSize = 13.sp, fontWeight = FontWeight.Medium,
+                                        modifier = Modifier.padding(start = 4.dp))
+                                }
+                            }
+                            if (g.title in expandedGroups) {
+                                items(g.fields, key = { "g-" + g.title + "-" + it.key }) { f ->
+                                    PickerRow(
+                                        label = FieldLabels.displayName(f.key, f.alias),
+                                        key = f.key,
+                                        subtitle = null,
+                                        exists = f.key in existingKeys,
+                                        onAdd = { onAdd(f.key, "", "") }
+                                    )
+                                }
+                            }
+                        }
+
+                        // ---- ③ 自定义（手动） ----
+                        item(key = "custom-head") {
+                            TextButton(onClick = { showCustom = !showCustom },
+                                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                                Icon(Icons.Default.Add, null, Modifier.size(18.dp))
+                                Spacer(Modifier.size(4.dp))
+                                Text(if (showCustom) "收起自定义字段" else "自定义字段（手动输入 key）")
+                            }
+                        }
+                        if (showCustom) {
+                            item(key = "custom-body") {
+                                Column {
+                                    val keyValid = KEY_REGEX.matches(customKey.trim())
+                                    val keyExists = customKey.trim() in existingKeys
+                                    OutlinedTextField(
+                                        value = customKey, onValueChange = { customKey = it },
+                                        label = { Text("字段名 key（字母开头）") },
+                                        singleLine = true,
+                                        isError = customKey.isNotEmpty() && (!keyValid || keyExists),
+                                        supportingText = {
+                                            when {
+                                                customKey.isNotBlank() && keyExists -> Text("该字段已存在")
+                                                customKey.isNotBlank() && !keyValid -> Text("需字母开头、仅字母数字，如 zdy1")
+                                                else -> Text("模板里没有、标准字段里也没有时使用")
+                                            }
+                                        },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(10.dp)
+                                    )
+                                    Spacer(Modifier.height(6.dp))
+                                    OutlinedTextField(
+                                        value = customAlias, onValueChange = { customAlias = it },
+                                        label = { Text("显示名（中文备注，可选）") },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(10.dp)
+                                    )
+                                    Spacer(Modifier.height(6.dp))
+                                    OutlinedTextField(
+                                        value = customValue, onValueChange = { customValue = it },
+                                        label = { Text("初始值（可留空）") },
+                                        minLines = 2,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(10.dp)
+                                    )
+                                    Spacer(Modifier.height(6.dp))
+                                    Button(
+                                        enabled = keyValid && !keyExists,
+                                        onClick = {
+                                            onAdd(customKey.trim(), customValue, customAlias.trim())
+                                            customKey = ""; customAlias = ""; customValue = ""
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) { Text("添加自定义字段") }
+                                }
+                            }
                         }
                     }
                 }
-                Spacer(Modifier.height(8.dp))
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } }
+    )
+}
+
+/** 添加弹窗里的一行：名称 + key + 已添加/＋ */
+@Composable
+private fun PickerRow(
+    label: String,
+    key: String,
+    subtitle: String?,
+    exists: Boolean,
+    onAdd: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                if (label == key) key else "$label（$key）",
+                fontSize = 13.sp,
+                color = if (exists) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onSurface
+            )
+            if (subtitle != null) {
+                Text(subtitle, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        if (exists) {
+            Text("已添加", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+        } else {
+            IconButton(onClick = onAdd, modifier = Modifier.size(32.dp)) {
+                Icon(Icons.Default.Add, contentDescription = "添加 $key", modifier = Modifier.size(18.dp))
+            }
+        }
+    }
+}
+
+// ==================== 编辑字段对话框 ====================
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun EditFieldDialog(
+    line: RuleLine,
+    originalIsStandard: Boolean,
+    isKeyDuplicate: (String) -> Boolean,
+    onDismiss: () -> Unit,
+    onSave: (key: String, value: String, alias: String) -> Unit
+) {
+    var key by remember { mutableStateOf(line.key) }
+    var value by remember { mutableStateOf(line.value) }
+    var alias by remember { mutableStateOf(line.alias) }
+
+    val keyValid = KEY_REGEX.matches(key.trim())
+    val keyChanged = key.trim() != line.key
+    val dup = keyChanged && isKeyDuplicate(key.trim())
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("编辑字段") },
+        text = {
+            Column {
                 OutlinedTextField(
-                    value = key,
-                    onValueChange = { key = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("字段名 key（可改）") },
+                    value = key, onValueChange = { key = it },
+                    label = { Text("字段名 key") },
                     singleLine = true,
-                    isError = key.isNotEmpty() && (!keyValid || keyExists),
+                    isError = key.isNotEmpty() && (!keyValid || dup),
                     supportingText = {
                         when {
-                            key.isNotBlank() && keyExists -> Text("该字段已存在")
-                            key.isNotBlank() && !keyValid -> Text("需字母开头、仅字母数字，如 gcsj10")
-                            else -> Text("点选上方默认字段，或直接输入自定义 key")
+                            key.isNotBlank() && dup -> Text("该 key 已存在")
+                            key.isNotBlank() && !keyValid -> Text("需字母开头、仅字母数字")
+                            else -> Text("修改 key 会影响模板占位符匹配")
                         }
                     },
+                    modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp)
                 )
                 Spacer(Modifier.height(6.dp))
                 OutlinedTextField(
-                    value = value,
-                    onValueChange = { value = it },
+                    value = alias, onValueChange = { alias = it },
+                    label = { Text("显示名（中文备注，可选）") },
+                    singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("初始值（可留空）") },
-                    minLines = 1,
                     shape = RoundedCornerShape(10.dp)
                 )
+                Spacer(Modifier.height(6.dp))
+                OutlinedTextField(
+                    value = value, onValueChange = { value = it },
+                    label = { Text("字段值") },
+                    minLines = 3,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp)
+                )
+                if (originalIsStandard && keyChanged) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "提示：这是标准字段，改 key 后将按自定义字段处理，模板里的原占位符将不再匹配。",
+                        fontSize = 11.sp, color = MaterialTheme.colorScheme.error
+                    )
+                }
             }
         },
         confirmButton = {
-            Button(
-                enabled = keyValid && !keyExists,
-                onClick = { onConfirm(key.trim(), value) }
-            ) { Text("添加") }
+            Button(enabled = keyValid && !dup, onClick = { onSave(key.trim(), value, alias.trim()) }) {
+                Text("保存")
+            }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
     )

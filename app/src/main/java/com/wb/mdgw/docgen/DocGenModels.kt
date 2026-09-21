@@ -19,13 +19,16 @@ import kotlinx.serialization.Serializable
  * @param key   字段 key（仅 TYPE_FIELD，如 "weitr"）
  * @param value 字段值（仅 TYPE_FIELD，可多行）
  * @param text  分组标题或注释正文（GROUP / COMMENT）
+ * @param alias 字段本地显示名（仅 TYPE_FIELD，用户自定义的中文备注，仅 App 内显示，
+ *              不参与模板替换、不写进导出的 shared_text.txt；旧数据缺省为空）
  */
 @Serializable
 data class RuleLine(
     val type: String,
     val key: String = "",
     var value: String = "",
-    val text: String = ""
+    val text: String = "",
+    val alias: String = ""
 ) {
     val isField get() = type == TYPE_FIELD
     val isGroup get() = type == TYPE_GROUP
@@ -39,7 +42,8 @@ data class RuleLine(
 
         fun group(title: String) = RuleLine(TYPE_GROUP, text = title)
         fun comment(text: String) = RuleLine(TYPE_COMMENT, text = text)
-        fun field(key: String, value: String) = RuleLine(TYPE_FIELD, key = key, value = value)
+        fun field(key: String, value: String, alias: String = "") =
+            RuleLine(TYPE_FIELD, key = key, value = value, alias = alias)
         fun blank() = RuleLine(TYPE_BLANK)
     }
 }

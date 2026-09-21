@@ -33,6 +33,8 @@ object FieldLabels {
         // 授权
         "wtxm" to "委托项目",
         "quanx" to "授权权限",
+        "sq1" to "授权1",
+        "sq2" to "授权2",
         "lsf" to "律师费",
         // 调证
         "cbdw" to "查证单位",
@@ -91,6 +93,12 @@ object FieldLabels {
         val suffix = key.substring(base.length)
         return "$baseLabel$suffix"
     }
+
+    /**
+     * 界面显示名优先级：用户自定义显示名 alias → 内置中文标签 → 原始 key。
+     */
+    fun displayName(key: String, alias: String = ""): String =
+        alias.ifBlank { labelOf(key) ?: key }
 
     /** 是否为长文本字段（多行输入框） */
     fun isLong(key: String): Boolean {

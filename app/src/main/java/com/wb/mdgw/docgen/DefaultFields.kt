@@ -47,7 +47,8 @@ object DefaultFields {
         current: List<RuleLine>,
         key: String,
         value: String,
-        defaults: List<RuleLine>
+        defaults: List<RuleLine>,
+        alias: String = ""
     ): List<RuleLine> {
         val trimmedKey = key.trim()
         if (trimmedKey.isEmpty() || current.any { it.isField && it.key == trimmedKey }) return current
@@ -75,7 +76,7 @@ object DefaultFields {
                 result.add(RuleLine.blank())
             }
             if (groupTitle != null) result.add(RuleLine.group(groupTitle))
-            result.add(RuleLine.field(trimmedKey, value))
+            result.add(RuleLine.field(trimmedKey, value, if (isDefault) "" else alias.trim()))
             return result
         }
 
@@ -99,7 +100,7 @@ object DefaultFields {
                 }
             }
         }
-        result.add(insertAt, RuleLine.field(trimmedKey, value))
+        result.add(insertAt, RuleLine.field(trimmedKey, value, if (isDefault) "" else alias.trim()))
         return result
     }
 }
