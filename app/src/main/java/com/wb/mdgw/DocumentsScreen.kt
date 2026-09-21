@@ -2,16 +2,12 @@
 
 package com.wb.mdgw
 
-import android.app.Activity
-import android.app.RecoverableSecurityException
 import android.content.Context
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.text.format.Formatter
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -66,7 +62,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.app.IntentSenderRequest
 import androidx.core.content.FileProvider
 import androidx.compose.material3.SnackbarHostState
 import kotlinx.coroutines.Dispatchers
@@ -207,44 +202,18 @@ fun DocumentsScreen(
 
     LaunchedEffect(Unit) { reload() }
 
-    // 删除被系统拦截（非本应用创建的文件）时，发起系统授权；授权后重试删除
-    var pendingDelete by remember { mutableStateOf<DocItem?>(null) }
-    val deleteSenderLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartIntentSenderForResult()
-    ) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            pendingDelete?.let { item ->
-                scope.launch {
-                    withContext(Dispatchers.IO) { runCatching { context.contentResolver.delete(item.uri, null, null) } }
-                    reload()
-                }
-            }
-        }
-        pendingDelete = null
-    }
-
     fun performDelete(item: DocItem) {
         scope.launch {
+            // 陈律文档目录下均为本应用生成的文件，Android 10+ 对自有 MediaStore 项可直接删除
             val ok = withContext(Dispatchers.IO) {
-                try {
-                    context.contentResolver.delete(item.uri, null, null) > 0
-                } catch (e: SecurityException) {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        val sender = (e as? RecoverableSecurityException)
-                            ?.userAction?.actionIntent?.intentSender
-                        if (sender != null) {
-                            pendingDelete = item
-                            deleteSenderLauncher.launch(
-                                IntentSenderRequest.Builder(sender).build()
-                            )
-                        }
-                    }
-                    false
-                }
+                runCatching { context.contentResolver.delete(item.uri, null, null) > 0 }
+                    .getOrDefault(false)
             }
             if (ok) {
                 snackbar.showSnackbar("已删除：${item.name}")
                 reload()
+            } else {
+                snackbar.showSnackbar("删除失败：该文件可能由其他应用创建，请在系统文件管理器中删除")
             }
         }
     }
