@@ -66,8 +66,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.app.IntentSenderRequest
 import androidx.core.content.FileProvider
-import androidx.core.content.IntentSenderRequest
 import androidx.compose.material3.SnackbarHostState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
