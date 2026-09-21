@@ -1,11 +1,11 @@
 --委托授权--
 leib::民事
-anyou::劳务合同纠纷
-weitr::周
-bianh::(2026)湘援0124民1号
+anyou::民间借贷纠纷
+weitr::张三
+bianh::(2026)湘援0124民126号
 badw::宁乡市人民法院
 jied::一审
-zprq::2026年1月1日
+zprq::2026年9月20日
 --委托人--
 wtrsfz::
 wtrdh::
