@@ -3,6 +3,7 @@ package com.wb.mdgw.injury
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -14,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -26,6 +28,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.wb.mdgw.FileUtils
+import java.nio.charset.Charset
 import java.text.DecimalFormat
 
 /** 顶部模式：残疾赔偿 / 死亡赔偿（死亡即工亡） */
@@ -93,11 +97,24 @@ fun InjuryScreen() {
     var hospitalDayText by remember {
         mutableStateOf(saved?.hospitalDay?.let { if (it > 0) it.toString() else "" } ?: "")
     }
+    // 5-6 级难以安排工作（发伤残津贴）
+    var difficultToArrange by remember { mutableStateOf(saved?.difficultToArrange ?: false) }
+    // 工亡供养亲属抚恤金
+    var pensionSpouse by remember { mutableStateOf(saved?.pensionSpouse ?: false) }
+    var pensionOtherText by remember {
+        mutableStateOf(saved?.pensionOther?.let { if (it > 0) it.toString() else "" } ?: "")
+    }
+    var pensionOrphanText by remember {
+        mutableStateOf(saved?.pensionOrphan?.let { if (it > 0) it.toString() else "" } ?: "")
+    }
     var fees by remember { mutableStateOf(buildInitialFees(saved)) }
+    // 核心参数（湖南 2025 默认，可本地覆盖）
+    var params by remember { mutableStateOf(InjuryParamsStore.load(context)) }
     var picker by remember { mutableStateOf<PickerRequest?>(null) }
 
     val isLevel1to4 = rank in LEVEL_1_TO_4
     val isDeath = mode == Mode.DEATH
+    val rankInt = runCatching { rank.toInt() }.getOrDefault(1)
 
     fun parseCase(): InjuryCase {
         val split = splitFees(fees)
@@ -114,14 +131,19 @@ fun InjuryScreen() {
             medicalCost = split.medical,
             rehabCost = split.rehab,
             assistCost = split.assist,
-            otherCosts = split.others
+            otherCosts = split.others,
+            difficultToArrange = !isDeath && difficultToArrange,
+            pensionSpouse = isDeath && pensionSpouse,
+            pensionOther = if (isDeath) pensionOtherText.toIntOrNull() ?: 0 else 0,
+            pensionOrphan = if (isDeath) pensionOrphanText.toIntOrNull() ?: 0 else 0
         )
     }
 
     val result = remember(
         mode, nameText, sexType, ageText, rank, wageText, breakRelation, careType,
-        stopMonthText, hospitalDayText, fees
-    ) { calculator.calculate(parseCase()) }
+        stopMonthText, hospitalDayText, fees, params, difficultToArrange,
+        pensionSpouse, pensionOtherText, pensionOrphanText
+    ) { calculator.calculate(parseCase(), params) }
 
     fun toast(msg: String) = Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
 
@@ -130,6 +152,8 @@ fun InjuryScreen() {
         nameText = ""; sexType = SexType.MALE; ageText = ""; rank = Rank.LEVEL_1
         wageText = ""; breakRelation = false; careType = CareType.NONE
         stopMonthText = ""; hospitalDayText = ""; fees = defaultFees()
+        difficultToArrange = false
+        pensionSpouse = false; pensionOtherText = ""; pensionOrphanText = ""
         InjuryStore.erase(context)
     }
 
@@ -161,32 +185,68 @@ fun InjuryScreen() {
                             }
                         }
                         NumberInputRow("本人月缴费工资", wageText, "元/月") { wageText = filterNum(it) }
+                        // 计薪工资封顶/保底透明展示
+                        val capped = wageText.toFloatOrNull() ?: 0f
+                        val lo = params.baseMonthlyWage * 0.6f
+                        val hi = params.baseMonthlyWage * 3f
+                        val eff = capped.coerceIn(lo, hi)
+                        Text(
+                            "计薪工资（封顶/保底后）：¥ ${"%,.0f".format(eff)}　本人工资 ¥ ${"%,.0f".format(capped)}（范围 ¥${lo.toInt()}~¥${hi.toInt()}）",
+                            fontSize = 11.sp, color = MaterialTheme.colorScheme.outline
+                        )
                         Text(
                             "本人工资，指工伤职工因工作遭受事故伤害或患职业病前 12 个月平均月缴费工资。",
                             fontSize = 11.sp, color = MaterialTheme.colorScheme.outline
                         )
-                        SelectRow(
-                            "劳动关系",
-                            if (breakRelation) "解除劳动关系" else "不解除",
-                            enabled = !isLevel1to4
-                        ) {
-                            if (!isLevel1to4) {
+                        // 劳动关系：1-4 级保留（不可解除）；5-10 级可明确选择
+                        if (isLevel1to4) {
+                            Row(
+                                Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("劳动关系", fontSize = 15.sp, modifier = Modifier.weight(1f))
+                                Text(
+                                    "保留劳动关系（依法不得解除）",
+                                    fontSize = 14.sp,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                            Text(
+                                "1-4 级伤残保留劳动关系、退出工作岗位，不得解除；按月领取伤残津贴。",
+                                fontSize = 11.sp, color = MaterialTheme.colorScheme.outline
+                            )
+                        } else {
+                            SelectRow(
+                                "劳动关系",
+                                if (breakRelation) "解除劳动关系" else "不解除劳动关系"
+                            ) {
                                 picker = PickerRequest(
                                     "劳动关系", BREAK_OPTIONS,
                                     if (breakRelation) "true" else "false"
                                 ) { breakRelation = it == "true" }
                             }
-                        }
-                        if (isLevel1to4) {
                             Text(
-                                "1-4级保留劳动关系，不得解除",
+                                "5-10 级解除劳动关系时，领取一次性医疗/就业补助金，并按距退休年龄扣减。",
                                 fontSize = 11.sp, color = MaterialTheme.colorScheme.outline
                             )
                         }
                         SelectRow("护理依赖", labelOf(CARE_OPTIONS, careType)) {
                             picker = PickerRequest("护理依赖", CARE_OPTIONS, careType) { careType = it }
                         }
+                        // 5-6 级：难以安排工作 → 按月发伤残津贴
+                        if (rankInt in 5..6) {
+                            val ratePct = (params.disabilityAllowanceRate[rankInt] ?: 0f) * 100
+                            SwitchRow(
+                                "难以安排工作（按月发伤残津贴 ${ratePct.toInt()}%）",
+                                difficultToArrange
+                            ) { difficultToArrange = it }
+                        }
                         NumberInputRow("停工留薪期", stopMonthText, "月") { stopMonthText = filterNum(it) }
+                        Text(
+                            "停工留薪期一般不超 ${params.stopWorkMaxMonth.toInt()} 个月（伤情严重可延长，不超 24 个月）。",
+                            fontSize = 11.sp, color = MaterialTheme.colorScheme.outline
+                        )
                         NumberInputRow("住院天数", hospitalDayText, "天", integer = true) {
                             hospitalDayText = filterNum(it, integer = true)
                         }
@@ -202,7 +262,32 @@ fun InjuryScreen() {
                             fontSize = 11.sp, color = MaterialTheme.colorScheme.outline
                         )
                     }
+                    // 工亡：供养亲属抚恤金（可选）
+                    FormCard("供养亲属抚恤金（可选）") {
+                        SwitchRow("有配偶（本人工资 40%）", pensionSpouse) { pensionSpouse = it }
+                        NumberInputRow("其他亲属人数", pensionOtherText, "人", integer = true) {
+                            pensionOtherText = filterNum(it, integer = true)
+                        }
+                        NumberInputRow("孤儿 / 孤寡人数", pensionOrphanText, "人", integer = true) {
+                            pensionOrphanText = filterNum(it, integer = true)
+                        }
+                        Text(
+                            "其他亲属每人 30%、孤儿或孤寡每人 +10%，各亲属抚恤金之和不超过本人工资，按月发放。",
+                            fontSize = 11.sp, color = MaterialTheme.colorScheme.outline
+                        )
+                    }
                 }
+
+                // ---------- 核心参数（湖南 2025 标准，可修改） ----------
+                ParamsCard(
+                    params = params,
+                    onChange = { params = it },
+                    onReset = {
+                        params = InjuryParams.DEFAULT
+                        InjuryParamsStore.reset(context)
+                        toast("已恢复湖南 2025 默认")
+                    }
+                )
 
                 // ---------- 各项费用（动态） ----------
                 FormCard("各项费用") {
@@ -232,10 +317,16 @@ fun InjuryScreen() {
                     }
                 }
 
-                // ---------- 结果 ----------
-                ResultGroupCard("工伤保险基金支付", result.fundItems, result.totalFund)
-                ResultGroupCard("用人单位支付", result.employerItems, result.totalEmployer)
+                // ---------- 结果：基金 / 单位 ----------
+                ResultGroupCard("工伤保险基金支付（一次性）", result.fundItems, result.totalFund)
+                ResultGroupCard("用人单位支付（一次性）", result.employerItems, result.totalEmployer)
 
+                // ---------- 结果：按月长期待遇 ----------
+                if (result.monthlyItems.isNotEmpty()) {
+                    MonthlyResultCard("按月长期待遇（不计入一次性总额）", result.monthlyItems)
+                }
+
+                // ---------- 一次性总额 ----------
                 Card(shape = MaterialTheme.shapes.large) {
                     Column(
                         Modifier.fillMaxWidth().padding(18.dp),
@@ -250,23 +341,55 @@ fun InjuryScreen() {
                             color = MaterialTheme.colorScheme.primary
                         )
                         Spacer(Modifier.height(10.dp))
-                        OutlinedButton(
-                            onClick = {
-                                val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                cm.setPrimaryClip(ClipData.newPlainText("工伤赔偿", buildResultText(result)))
-                                toast("结果已复制")
-                            },
-                            modifier = Modifier.fillMaxWidth()
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            Icon(Icons.Default.ContentCopy, contentDescription = null,
-                                modifier = Modifier.size(16.dp))
-                            Text(" 复制结果文本")
+                            OutlinedButton(
+                                onClick = {
+                                    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                    cm.setPrimaryClip(ClipData.newPlainText("工伤赔偿", buildResultText(result)))
+                                    toast("结果已复制")
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Default.ContentCopy, contentDescription = null,
+                                    modifier = Modifier.size(16.dp))
+                                Text(" 复制")
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    runCatching {
+                                        val text = buildExportText(parseCase(), result, params)
+                                        val uri = FileUtils.writeCache(
+                                            context, "工伤赔偿清单.txt",
+                                            text.toByteArray(Charset.forName("UTF-8"))
+                                        )
+                                        context.startActivity(
+                                            Intent.createChooser(
+                                                FileUtils.shareIntent(uri, "工伤赔偿清单.txt", "text/plain"),
+                                                "导出清单"
+                                            )
+                                        )
+                                    }.onFailure { toast("导出失败：${it.message}") }
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Default.Share, contentDescription = null,
+                                    modifier = Modifier.size(16.dp))
+                                Text(" 导出清单")
+                            }
                         }
                         if (result.note.isNotEmpty()) {
                             Spacer(Modifier.height(8.dp))
                             Text("备注：${result.note}", fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.outline)
                         }
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "计算口径依据《工伤保险条例》及湖南省实施办法（2025）。本结果仅供参考，以社保 / 仲裁 / 法院认定为准。",
+                            fontSize = 11.sp, color = MaterialTheme.colorScheme.outline
+                        )
                     }
                 }
                 Spacer(Modifier.height(72.dp))
@@ -284,7 +407,11 @@ fun InjuryScreen() {
                     modifier = Modifier.weight(1f)
                 ) { Text("重置") }
                 Button(
-                    onClick = { InjuryStore.saveCase(context, parseCase()); toast("案件已保存") },
+                    onClick = {
+                        InjuryStore.saveCase(context, parseCase())
+                        InjuryParamsStore.save(context, params)
+                        toast("案件与参数已保存")
+                    },
                     modifier = Modifier.weight(1f)
                 ) { Text("保存") }
             }
@@ -320,6 +447,83 @@ fun InjuryScreen() {
                 TextButton(onClick = { picker = null }) { Text("取消") }
             }
         )
+    }
+}
+
+/** 核心参数卡片：统筹工资 / 住院伙食补助 / 一次性工亡补助金可编辑，支持恢复默认 */
+@Composable
+private fun ParamsCard(
+    params: InjuryParams,
+    onChange: (InjuryParams) -> Unit,
+    onReset: () -> Unit
+) {
+    var baseText by remember(params.baseMonthlyWage) {
+        mutableStateOf(params.baseMonthlyWage.toInt().toString())
+    }
+    var foodText by remember(params.hospitalFoodPerDay) {
+        mutableStateOf(params.hospitalFoodPerDay.toInt().toString())
+    }
+    var deathText by remember(params.deathOneTime) {
+        mutableStateOf(params.deathOneTime.toInt().toString())
+    }
+    FormCard("赔偿标准参数（湖南 2025）") {
+        NumberInputRow("统筹工资 / 月", baseText, "元", integer = true) {
+            baseText = filterNum(it, integer = true)
+            baseText.toFloatOrNull()?.let { v -> onChange(params.copy(baseMonthlyWage = v)) }
+        }
+        Text(
+            "统筹地区上年度职工月平均工资，本人工资按 60%~300% 封顶保底。",
+            fontSize = 11.sp, color = MaterialTheme.colorScheme.outline
+        )
+        NumberInputRow("住院伙食补助 / 天", foodText, "元", integer = true) {
+            foodText = filterNum(it, integer = true)
+            foodText.toFloatOrNull()?.let { v -> onChange(params.copy(hospitalFoodPerDay = v)) }
+        }
+        NumberInputRow("一次性工亡补助金", deathText, "元", integer = true) {
+            deathText = filterNum(it, integer = true)
+            deathText.toFloatOrNull()?.let { v -> onChange(params.copy(deathOneTime = v)) }
+        }
+        Text(
+            "政策逐年更新时，在此修改保存即可，无需等待版本升级。",
+            fontSize = 11.sp, color = MaterialTheme.colorScheme.outline
+        )
+        TextButton(onClick = onReset) { Text("恢复湖南 2025 默认") }
+    }
+}
+
+/** 开关行 */
+@Composable
+private fun SwitchRow(label: String, checked: Boolean, onChecked: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, fontSize = 15.sp, modifier = Modifier.weight(1f))
+        Switch(checked = checked, onCheckedChange = onChecked)
+    }
+}
+
+/** 按月长期待遇卡片 */
+@Composable
+private fun MonthlyResultCard(title: String, items: Map<String, Float>) {
+    Card(shape = MaterialTheme.shapes.large) {
+        Column(
+            Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(title, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+            items.forEach { (k, v) ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(k, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                    Text("${"%,.2f".format(v)} 元/月", fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.primary)
+                }
+            }
+            Text(
+                "按月发放的长期待遇，未计入上方一次性总额。",
+                fontSize = 11.sp, color = MaterialTheme.colorScheme.outline
+            )
+        }
     }
 }
 
@@ -594,15 +798,52 @@ private fun numStr(v: Float): String =
 private fun buildResultText(r: CalcResult): String {
     val f = DecimalFormat("#,##0.00")
     return buildString {
-        append("【工伤保险基金支付】\n")
+        append("【工伤保险基金支付（一次性）】\n")
         if (r.fundItems.isEmpty()) append("  （无）\n")
         else r.fundItems.forEach { append("  ${it.key}：${f.format(it.value)} 元\n") }
         append("  小计：${f.format(r.totalFund)} 元\n\n")
-        append("【用人单位支付】\n")
+        append("【用人单位支付（一次性）】\n")
         if (r.employerItems.isEmpty()) append("  （无）\n")
         else r.employerItems.forEach { append("  ${it.key}：${f.format(it.value)} 元\n") }
         append("  小计：${f.format(r.totalEmployer)} 元\n\n")
+        if (r.monthlyItems.isNotEmpty()) {
+            append("【按月长期待遇（不计入一次性总额）】\n")
+            r.monthlyItems.forEach { append("  ${it.key}：${f.format(it.value)} 元/月\n") }
+            append("\n")
+        }
         append("【一次性赔偿总额】：${f.format(r.grandTotal)} 元\n")
         if (r.note.isNotEmpty()) append("\n备注：${r.note}")
+    }
+}
+
+/** 生成可分享/导出的完整清单文本（含参数口径与法律依据） */
+private fun buildExportText(case: InjuryCase, r: CalcResult, params: InjuryParams): String {
+    val f = DecimalFormat("#,##0.00")
+    return buildString {
+        append("工伤赔偿计算清单\n")
+        append("============================\n")
+        append("伤者/死者：${case.name.ifBlank { "（未填）" }}\n")
+        append("伤残等级：${if (case.rank == Rank.DEATH) "工亡" else "${case.rank} 级"}\n")
+        append("本人工资：${f.format(case.wage)} 元/月\n")
+        append("计薪工资（封顶保底后）：${f.format(r.effectiveWage)} 元/月\n")
+        append("劳动关系：${if (case.rank == Rank.DEATH) "—" else if (case.breakRelation) "解除" else "保留"}\n")
+        append("\n【工伤保险基金支付（一次性）】\n")
+        if (r.fundItems.isEmpty()) append("  （无）\n")
+        else r.fundItems.forEach { append("  ${it.key}：${f.format(it.value)} 元\n") }
+        append("  小计：${f.format(r.totalFund)} 元\n")
+        append("\n【用人单位支付（一次性）】\n")
+        if (r.employerItems.isEmpty()) append("  （无）\n")
+        else r.employerItems.forEach { append("  ${it.key}：${f.format(it.value)} 元\n") }
+        append("  小计：${f.format(r.totalEmployer)} 元\n")
+        if (r.monthlyItems.isNotEmpty()) {
+            append("\n【按月长期待遇（不计入一次性总额）】\n")
+            r.monthlyItems.forEach { append("  ${it.key}：${f.format(it.value)} 元/月\n") }
+        }
+        append("\n【一次性赔偿总额】：${f.format(r.grandTotal)} 元\n")
+        if (r.note.isNotEmpty()) append("\n备注：${r.note}\n")
+        append("\n计算口径：统筹工资 ${f.format(params.baseMonthlyWage)} 元/月，")
+        append("住院伙食补助 ${params.hospitalFoodPerDay.toInt()} 元/天；")
+        append("依据《工伤保险条例》及湖南省实施办法。结果仅供参考，以社保/仲裁/法院认定为准。\n")
+        append("生成时间：${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date())}\n")
     }
 }

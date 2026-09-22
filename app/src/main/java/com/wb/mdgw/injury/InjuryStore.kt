@@ -37,7 +37,11 @@ object InjuryStore : JsonFileStore<InjuryStore.InjuryCaseDto>() {
         val medicalCost: Float = 0f,
         val rehabCost: Float = 0f,
         val assistCost: Float = 0f,
-        val otherCosts: List<NamedCostDto> = emptyList()
+        val otherCosts: List<NamedCostDto> = emptyList(),
+        val difficultToArrange: Boolean = false,
+        val pensionSpouse: Boolean = false,
+        val pensionOther: Int = 0,
+        val pensionOrphan: Int = 0
     )
 
     /** 读取上次保存的案件；无则返回 null */
@@ -52,12 +56,14 @@ object InjuryStore : JsonFileStore<InjuryStore.InjuryCaseDto>() {
     private fun InjuryCase.toDto() = InjuryCaseDto(
         name, sexType, age, rank, wage, breakRelation, careType,
         stopMonth, hospitalDay, medicalCost, rehabCost, assistCost,
-        otherCosts.map { NamedCostDto(it.name, it.amount) }
+        otherCosts.map { NamedCostDto(it.name, it.amount) },
+        difficultToArrange, pensionSpouse, pensionOther, pensionOrphan
     )
 
     private fun InjuryCaseDto.toCase() = InjuryCase(
         name, sexType, age, rank, wage, breakRelation, careType,
         stopMonth, hospitalDay, medicalCost, rehabCost, assistCost,
-        otherCosts.map { NamedCost(it.name, it.amount) }
+        otherCosts.map { NamedCost(it.name, it.amount) },
+        difficultToArrange, pensionSpouse, pensionOther, pensionOrphan
     )
 }

@@ -1,45 +1,26 @@
 package com.wb.mdgw.injury
 
+import kotlin.math.min
+
 /**
- * 湖南工伤赔偿计算器（2025 湖南标准）
- * 计算依据：
- * - 本人工资：按 60%~300% 统筹地区上年度职工月平均工资封顶/保底（BASE_2025 = 7694 元）
- * - 一次性伤残补助金、一次性工伤医疗补助金、一次性伤残就业补助金：按对应月数 × 本人工资
- * - 生活护理费：统筹工资 × 护理等级比例，按月发放，不计入一次性总额
- * - 1-4 级保留劳动关系（不得解除）；5-10 级解除劳动关系时领取医疗/就业补助金，并按距退休年龄扣减
- * - 工亡：一次性工亡补助金（1083760 元）+ 丧葬补助金（6 个月统筹工资），供养亲属抚恤金按月发放不计入总额
+ * 湖南工伤赔偿计算器。
+ *
+ * 计算依据（口径以湖南 2025 标准、内置 [InjuryParams.DEFAULT] 为准，可在 UI 覆盖）：
+ * - 本人工资：按 60%~300% 统筹地区上年度职工月平均工资封顶/保底；
+ * - 一次性伤残补助金、一次性工伤医疗补助金、一次性伤残就业补助金：对应月数 × 本人工资；
+ * - 生活护理费：统筹工资 × 护理等级比例，按月发放，不计入一次性总额；
+ * - 伤残津贴：1-4 级保留劳动关系、退出岗位，法定按月（90/85/80/75%）；5-6 级难以安排
+ *   工作时由用人单位按月（70/60%）；均不计入一次性总额；
+ * - 1-4 级保留劳动关系（不得解除）；5-10 级解除劳动关系时领取医疗/就业补助金，并按距
+ *   退休年龄扣减；
+ * - 工亡：一次性工亡补助金 + 丧葬补助金（6 个月统筹工资）；供养亲属抚恤金按月发放，
+ *   不计入一次性总额；
+ * - 停工留薪期工资：按本人工资由单位支付。
  *
  * 本类为纯 Kotlin 计算逻辑，不依赖 Android，便于在 JVM 上直接单测。金额中间过程用
- * Double、最终统一四舍五入到「分」，避免 Float 误差出现 71,999.99 这类尾差；法律口径不变。
+ * Double、最终统一四舍五入到「分」，避免 Float 误差出现 71,999.99 这类尾差。
  */
 class InjuryCalculator {
-    companion object {
-        const val BASE_2025 = 7694f                      // 2025 年湖南统筹地区上年度职工月平均工资（元）
-        const val HOSPITAL_FOOD_PER_DAY = 20f            // 住院伙食补助标准（元/天）
-        const val INJURY_DEATH_ONE_TIME = 1083760f       // 一次性工亡补助金（元）
-        const val FUNERAL_SUBSIDY = 6 * BASE_2025        // 丧葬补助金 = 6 个月统筹工资
-
-        // 一次性伤残补助金对应月数（1-10 级）
-        val DISABILITY_ONCE = mapOf(
-            1 to 27f, 2 to 25f, 3 to 23f, 4 to 21f,
-            5 to 18f, 6 to 16f, 7 to 13f, 8 to 11f, 9 to 9f, 10 to 7f
-        )
-        // 一次性工伤医疗补助金对应月数（5-10 级，解除劳动关系时）
-        val MEDICAL_ONCE = mapOf(5 to 24f, 6 to 18f, 7 to 15f, 8 to 10f, 9 to 8f, 10 to 6f)
-        // 一次性伤残就业补助金对应月数（5-10 级，解除劳动关系时）
-        val EMPLOY_ONCE = mapOf(5 to 36f, 6 to 30f, 7 to 15f, 8 to 10f, 9 to 8f, 10 to 6f)
-        // 生活护理费比例（统筹工资）
-        val LIFE_CARE_RATE = mapOf(
-            CareType.NONE to 0f, CareType.FULL to 0.5f,
-            CareType.MOST to 0.4f, CareType.PART to 0.3f
-        )
-        // 法定退休年龄
-        val RETIRE_AGE = mapOf(
-            SexType.MALE to 60f,
-            SexType.FEMALE_WORKER to 50f,
-            SexType.FEMALE_CADRE to 55f
-        )
-    }
 
     /** 金额四舍五入到分（货币最小单位），消除浮点尾差 */
     private fun r2(v: Double): Float = (Math.round(v * 100.0) / 100.0).toFloat()
@@ -57,37 +38,67 @@ class InjuryCalculator {
         }
     }
 
-    fun calculate(case: InjuryCase): CalcResult {
-        val fundItems = linkedMapOf<String, Float>()      // 工伤保险基金支付
-        val employerItems = linkedMapOf<String, Float>() // 用人单位支付
+    /**
+     * 供养亲属抚恤金总比例：配偶 40%、其他亲属每人 30%、孤寡老人或孤儿每人 +10%，
+     * 各供养亲属抚恤金之和不得超过因工死亡职工生前的工资（即总比例封顶 100%）。
+     */
+    private fun pensionRatio(case: InjuryCase): Double {
+        var r = 0.0
+        if (case.pensionSpouse) r += 0.4
+        r += case.pensionOther * 0.3
+        r += case.pensionOrphan * 0.1
+        return min(r, 1.0)
+    }
+
+    fun calculate(case: InjuryCase, params: InjuryParams = InjuryParams.DEFAULT): CalcResult {
+        val fundItems = linkedMapOf<String, Float>()      // 工伤保险基金支付（一次性）
+        val employerItems = linkedMapOf<String, Float>() // 用人单位支付（一次性）
+        val monthlyItems = linkedMapOf<String, Float>()  // 按月发放，不计入一次性总额
         var note = ""
 
+        val base = params.baseMonthlyWage.toDouble()
         // 本人工资封顶/保底：60%~300% 统筹工资
-        val wageD = case.wage.coerceIn(BASE_2025 * 0.6f, BASE_2025 * 3f).toDouble()
+        val wageD = case.wage.coerceIn(params.baseMonthlyWage * 0.6f, params.baseMonthlyWage * 3f).toDouble()
+        val effectiveWage = wageD.toFloat()
 
         if (case.rank == Rank.DEATH) {
-            fundItems["一次性工亡补助金"] = r2(INJURY_DEATH_ONE_TIME.toDouble())
-            fundItems["丧葬补助金"] = r2(FUNERAL_SUBSIDY.toDouble())
-            note = "供养亲属抚恤金按月发放，不计入一次性总额"
+            fundItems["一次性工亡补助金"] = r2(params.deathOneTime.toDouble())
+            fundItems["丧葬补助金"] = r2(6.0 * base)
+            // 供养亲属抚恤金（可选，按月）
+            val ratio = pensionRatio(case)
+            if (ratio > 0) {
+                monthlyItems["供养亲属抚恤金(按月)"] = r2(ratio * wageD)
+                note += "供养亲属抚恤金按月发放，不计入一次性总额；"
+            }
+            note += "一次性工亡补助金=上年度全国城镇居民人均可支配收入×20；丧葬补助金=6个月统筹工资。"
         } else {
             val rankInt = case.rank.toInt()
 
             // 一次性伤残补助金（基金）
-            fundItems["一次性伤残补助金"] = r2(DISABILITY_ONCE[rankInt]!!.toDouble() * wageD)
+            fundItems["一次性伤残补助金"] = r2((params.disabilityOnceMonths[rankInt] ?: 0f).toDouble() * wageD)
 
             // 生活护理费（基金，按月）
-            val careRate = LIFE_CARE_RATE[case.careType]!!
+            val careRate = params.lifeCareRate[case.careType] ?: 0f
             if (careRate > 0) {
-                fundItems["生活护理费(按月)"] = r2(careRate.toDouble() * BASE_2025)
+                monthlyItems["生活护理费(按月)"] = r2(careRate.toDouble() * base)
                 note += "生活护理费按月发放，不计入一次性总额；"
+            }
+
+            // 伤残津贴（按月）：1-4 级法定保留劳动关系、退出岗位，自动按月；
+            // 5-6 级难以安排工作时由用人单位按月发放（需勾选 difficultToArrange）
+            val allowRate = params.disabilityAllowanceRate[rankInt] ?: 0f
+            val allowEligible = rankInt in 1..4 || (rankInt in 5..6 && case.difficultToArrange)
+            if (allowRate > 0 && allowEligible) {
+                monthlyItems["伤残津贴(按月)"] = r2(allowRate.toDouble() * wageD)
+                note += "伤残津贴按月发放，不计入一次性总额；"
             }
 
             // 解除劳动关系时的一次性医疗/就业补助金（仅 5-10 级）
             if (case.breakRelation && rankInt in 5..10) {
-                val retireAge = RETIRE_AGE[case.sexType]!!
+                val retireAge = params.retireAge[case.sexType] ?: 60f
                 val rate = deductRate(case.age, retireAge)
-                fundItems["一次性医疗补助金"] = r2(MEDICAL_ONCE[rankInt]!!.toDouble() * wageD * rate)
-                employerItems["一次性就业补助金"] = r2(EMPLOY_ONCE[rankInt]!!.toDouble() * wageD * rate)
+                fundItems["一次性医疗补助金"] = r2((params.medicalOnceMonths[rankInt] ?: 0f).toDouble() * wageD * rate)
+                employerItems["一次性就业补助金"] = r2((params.employOnceMonths[rankInt] ?: 0f).toDouble() * wageD * rate)
                 note += "年龄扣减比例:${"%.0f".format(rate * 100)}%"
             }
 
@@ -97,7 +108,7 @@ class InjuryCalculator {
         }
 
         // 住院伙食补助费（基金）
-        val hospitalFood = case.hospitalDay * HOSPITAL_FOOD_PER_DAY
+        val hospitalFood = case.hospitalDay * params.hospitalFoodPerDay
         if (hospitalFood > 0) fundItems["住院伙食补助费"] = r2(hospitalFood.toDouble())
 
         // 实报实销项目（基金）
@@ -113,14 +124,16 @@ class InjuryCalculator {
             }
         }
 
-        // 一次性总额不含按月发放的生活护理费
-        val totalFund = r2(fundItems.filterKeys { it != "生活护理费(按月)" }.values.sum().toDouble())
+        // 一次性总额不含按月发放的项目
+        val totalFund = r2(fundItems.values.sum().toDouble())
         val totalEmployer = r2(employerItems.values.sum().toDouble())
         val grandTotal = r2(totalFund.toDouble() + totalEmployer.toDouble())
 
         return CalcResult(
             fundItems = fundItems,
             employerItems = employerItems,
+            monthlyItems = monthlyItems,
+            effectiveWage = effectiveWage,
             totalFund = totalFund,
             totalEmployer = totalEmployer,
             grandTotal = grandTotal,
