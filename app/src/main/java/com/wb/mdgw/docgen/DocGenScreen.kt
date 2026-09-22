@@ -1237,7 +1237,10 @@ private fun TypeManageDialog(
     )
 }
 
-/** 字段行：输入框 + 编辑 + 删除 */
+/**
+ * 字段行：输入框 + 单个「⋮」操作菜单。
+ * 上移/下移/编辑/删除默认折叠进菜单，把横向空间让给输入框；搜索态不提供移动项。
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun FieldRow(
@@ -1250,47 +1253,53 @@ private fun FieldRow(
     onMoveUp: (() -> Unit)? = null,
     onMoveDown: (() -> Unit)? = null
 ) {
-    Row(verticalAlignment = Alignment.Top) {
+    var menuOpen by remember { mutableStateOf(false) }
+    val movable = onMoveUp != null && onMoveDown != null
+    Row(verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.weight(1f)) { FieldInput(line, onChange) }
-        // 同分组内排序（仅分组视图提供；搜索态不显示）
-        if (onMoveUp != null && onMoveDown != null) {
-            Column(
-                modifier = Modifier.padding(top = 6.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+        Box {
+            IconButton(
+                onClick = { menuOpen = true },
+                modifier = Modifier.size(30.dp)
             ) {
-                IconButton(
-                    onClick = onMoveUp,
-                    enabled = canMoveUp,
-                    modifier = Modifier.size(28.dp)
-                ) {
-                    Icon(
-                        Icons.Default.KeyboardArrowUp,
-                        contentDescription = "上移",
-                        modifier = Modifier.size(18.dp),
-                        tint = if (canMoveUp) MaterialTheme.colorScheme.onSurfaceVariant
-                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
-                    )
-                }
-                IconButton(
-                    onClick = onMoveDown,
-                    enabled = canMoveDown,
-                    modifier = Modifier.size(28.dp)
-                ) {
-                    Icon(
-                        Icons.Default.KeyboardArrowDown,
-                        contentDescription = "下移",
-                        modifier = Modifier.size(18.dp),
-                        tint = if (canMoveDown) MaterialTheme.colorScheme.onSurfaceVariant
-                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
-                    )
-                }
+                Icon(
+                    Icons.Default.MoreVert,
+                    contentDescription = "字段操作",
+                    modifier = Modifier.size(20.dp)
+                )
             }
-        }
-        IconButton(onClick = onEdit, modifier = Modifier.padding(top = 10.dp).size(38.dp)) {
-            Icon(Icons.Default.Edit, contentDescription = "编辑字段", modifier = Modifier.size(18.dp))
-        }
-        IconButton(onClick = onDelete, modifier = Modifier.padding(top = 10.dp).size(38.dp)) {
-            Icon(Icons.Default.Delete, contentDescription = "删除字段", modifier = Modifier.size(18.dp))
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                if (movable) {
+                    DropdownMenuItem(
+                        text = { Text("上移") },
+                        onClick = { menuOpen = false; onMoveUp?.invoke() },
+                        enabled = canMoveUp,
+                        leadingIcon = { Icon(Icons.Default.KeyboardArrowUp, contentDescription = null) }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("下移") },
+                        onClick = { menuOpen = false; onMoveDown?.invoke() },
+                        enabled = canMoveDown,
+                        leadingIcon = { Icon(Icons.Default.KeyboardArrowDown, contentDescription = null) }
+                    )
+                }
+                DropdownMenuItem(
+                    text = { Text("编辑") },
+                    onClick = { menuOpen = false; onEdit() },
+                    leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) }
+                )
+                DropdownMenuItem(
+                    text = { Text("删除", color = MaterialTheme.colorScheme.error) },
+                    onClick = { menuOpen = false; onDelete() },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                    }
+                )
+            }
         }
     }
 }
@@ -1305,16 +1314,27 @@ private fun FieldInput(line: RuleLine, onChange: (String) -> Unit) {
         onValueChange = onChange,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 3.dp),
+            .padding(vertical = 2.dp),
+        textStyle = androidx.compose.ui.text.TextStyle(
+            fontSize = 14.sp,
+            lineHeight = 19.sp
+        ),
         label = {
             Text(
                 if (display == line.key) line.key else "$display（${line.key}）",
-                maxLines = 1, overflow = TextOverflow.Ellipsis
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                fontSize = 12.sp
             )
         },
         singleLine = !isLong,
         minLines = if (isLong) 3 else 1,
-        shape = RoundedCornerShape(10.dp)
+        shape = RoundedCornerShape(10.dp),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+            start = 12.dp,
+            end = 12.dp,
+            top = if (isLong) 8.dp else 6.dp,
+            bottom = if (isLong) 8.dp else 6.dp
+        )
     )
 }
 
