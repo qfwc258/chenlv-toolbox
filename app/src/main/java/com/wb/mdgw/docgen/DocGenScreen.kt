@@ -1314,10 +1314,11 @@ private fun FieldInput(line: RuleLine, onChange: (String) -> Unit) {
         onValueChange = onChange,
         modifier = Modifier
             .fillMaxWidth()
+            .then(if (isLong) Modifier else Modifier.heightIn(min = 44.dp))
             .padding(vertical = 2.dp),
         textStyle = androidx.compose.ui.text.TextStyle(
             fontSize = 14.sp,
-            lineHeight = 19.sp
+            lineHeight = 18.sp
         ),
         label = {
             Text(
@@ -1328,13 +1329,7 @@ private fun FieldInput(line: RuleLine, onChange: (String) -> Unit) {
         },
         singleLine = !isLong,
         minLines = if (isLong) 3 else 1,
-        shape = RoundedCornerShape(10.dp),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(
-            start = 12.dp,
-            end = 12.dp,
-            top = if (isLong) 8.dp else 6.dp,
-            bottom = if (isLong) 8.dp else 6.dp
-        )
+        shape = RoundedCornerShape(10.dp)
     )
 }
 
