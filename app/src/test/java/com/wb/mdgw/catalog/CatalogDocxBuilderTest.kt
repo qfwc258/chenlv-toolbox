@@ -62,9 +62,10 @@ class CatalogDocxBuilderTest {
         val widths = gridColWidths(xml)
         assertEquals("证据目录应有 5 列", 5, widths.size)
 
-        // 列宽总和 = A4 可用宽度 16.6cm
-        val usable = Math.round(16.6 * 566.929).toInt()
-        assertEquals("列宽之和应等于可用宽度", usable, widths.sum())
+        // 列宽总和复刻原模板（8611 dxa）
+        assertEquals("证据目录列宽和应为 8611", 8611, widths.sum())
+        assertEquals("证据目录列宽应复刻模板",
+            listOf(711, 1632, 876, 3989, 1403), widths)
 
         // 行数 = 表头 1 + 数据 10（补空行到 10）
         assertEquals("应含表头+10 行", 11, count(xml, "<w:tr>"))
@@ -121,6 +122,9 @@ class CatalogDocxBuilderTest {
         // 3 列
         val widths = gridColWidths(xml)
         assertEquals("归档目录应有 3 列", 3, widths.size)
+        assertEquals("归档目录列宽和应为 9433", 9433, widths.sum())
+        assertEquals("归档目录列宽应复刻模板",
+            listOf(934, 7346, 1153), widths)
 
         // 行数 = 表头 1 + 21 项
         assertEquals("应含表头+21 项", 22, count(xml, "<w:tr>"))

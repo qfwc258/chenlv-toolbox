@@ -20,13 +20,13 @@ enum class CatalogAlign(val xml: String) {
 /**
  * 表格列定义。
  *
- * @param header    表头文字
- * @param weight    列宽权重，按比例分配页面可用宽度（各列权重之和不强制为 100）
- * @param dataAlign 数据单元格对齐方式（表头始终居中加粗）
+ * @param header    表头文字（可含空格，与原模板一致）
+ * @param widthDxa  列宽（缇 dxa，1 cm ≈ 567 缇），直接复刻原模板固定列宽
+ * @param dataAlign 数据单元格对齐方式（表头始终居中）
  */
 data class CatalogColumn(
     val header: String,
-    val weight: Int,
+    val widthDxa: Int,
     val dataAlign: CatalogAlign = CatalogAlign.CENTER
 )
 

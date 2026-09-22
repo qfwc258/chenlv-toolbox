@@ -1,27 +1,27 @@
 package com.wb.mdgw.catalog
 
 /**
- * 内置目录模板：列定义、列宽权重、归档目录固定项目。
+ * 内置目录模板：列定义（固定列宽，单位缇 dxa）与归档目录固定项目。
  *
- * 列宽按截图比例设置权重；生成时按权重分配 A4 可用宽度。
+ * 列宽、表头文字均复刻自所里原 Word 模板，保证生成结果与原表格式一致。
  * 以后新增「送达回证」「费用清单」等同类目录，只需在此追加一份配置。
  */
 object CatalogTemplates {
 
-    /** 证据目录：编号 | 证据名称 | 页数 | 证明目的 | 证据来源 */
+    /** 证据目录：编号 | 证据名称 | 页数 | 证明目的 | 证据来源（原模板列宽，总宽 8611） */
     val EVIDENCE_COLUMNS = listOf(
-        CatalogColumn("编号", 7),
-        CatalogColumn("证据名称", 24),
-        CatalogColumn("页数", 10),
-        CatalogColumn("证明目的", 39, CatalogAlign.LEFT),
-        CatalogColumn("证据来源", 20)
+        CatalogColumn("编 号", 711),
+        CatalogColumn("证 据 名 称", 1632),
+        CatalogColumn("页 数", 876),
+        CatalogColumn("证 明 目 的", 3989, CatalogAlign.LEFT),
+        CatalogColumn("证据来源", 1403)
     )
 
-    /** 归档目录：序号 | 项目 | 页码 */
+    /** 归档目录：序号 | 项目 | 页码（原模板列宽，总宽 9433） */
     val ARCHIVE_COLUMNS = listOf(
-        CatalogColumn("序号", 10),
-        CatalogColumn("项目", 76, CatalogAlign.LEFT),
-        CatalogColumn("页码", 14)
+        CatalogColumn("序号", 934),
+        CatalogColumn("项  目", 7346, CatalogAlign.LEFT),
+        CatalogColumn("页码", 1153)
     )
 
     /** 归档目录固定项目（民事卷，按内置目录顺序）；名称可在 App 内修改 */
