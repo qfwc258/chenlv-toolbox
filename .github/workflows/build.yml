@@ -4,19 +4,6 @@ on:
   push:
     branches: [ main, master ]
   workflow_dispatch:
-    inputs:
-      release_type:
-        description: 'Release type'
-        required: true
-        default: 'draft'
-        type: choice
-        options:
-          - 'draft'
-          - 'published'
-      notes:
-        description: 'Release notes'
-        required: false
-        default: ''
 
 permissions:
   contents: write
@@ -24,6 +11,13 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    # secrets 不能直接用于 step 的 if，先桥接到 job 级 env，再用 env 判断是否配置了发布令牌。
+    # XCCAPK：对公开分发仓库 qfwc258/xccapk 具备 Contents 写权限的令牌。
+    env:
+      XCCAPK_TOKEN: ${{ secrets.XCCAPK }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -91,7 +85,8 @@ jobs:
             echo "::error::无法从 output-metadata.json 读取 versionName"
             exit 1
           fi
-          APK_NEW_NAME="chenlv-toolbox-v${VERSION_NAME}-${SHORT_SHA}.apk"
+          # 统一命名 chenlv-toolbox-<版本>.apk，发布到公开分发仓库 xccapk
+          APK_NEW_NAME="chenlv-toolbox-${VERSION_NAME}.apk"
           mkdir -p release-out
           cp "$APK_PATH" "release-out/${APK_NEW_NAME}"
           echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
@@ -107,25 +102,23 @@ jobs:
           path: ${{ steps.version_info.outputs.apk_path }}
           retention-days: 30
 
-      - name: Create GitHub Release
+      - name: Publish APK to xccapk
+        # 跨仓发布到公开的 APK 分发仓库；需在本仓库 Settings→Secrets→Actions 配置
+        # 名为 XCCAPK 的密钥（对 qfwc258/xccapk 有 Contents 写权限）。未配置时跳过，不阻断构建。
+        if: ${{ env.XCCAPK_TOKEN != '' }}
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.version_info.outputs.version_name }}-${{ steps.version_info.outputs.short_sha }}
+          repository: qfwc258/xccapk
+          tag_name: chenlv-toolbox-v${{ steps.version_info.outputs.version_name }}
           name: 陈律工具箱 v${{ steps.version_info.outputs.version_name }}
           body: |
-            ## 更新日志
-            
-            - 版本：${{ steps.version_info.outputs.version_name }}
-            - 提交：${{ steps.version_info.outputs.short_sha }}
-            - 提交数：${{ steps.version_info.outputs.commit_count }}
-            
-            ${{ github.event.inputs.notes || '自动构建版本' }}
-            
-            ## 下载
-            
-            - 下载下方 Assets 中的 `chenlv-toolbox-v<版本>-<提交>.apk`
+            ## 陈律工具箱 自动构建
+
+            - Word / PPTX / PDF / 公众号排版，法援目录与证据目录填报
+            - 法律查询（国家法规库 OFD 阅读器自适应手机）
+            - 工伤赔偿计算（湖南标准，残疾/死亡双模式）
+            - 生成文书（按模板批量替换）、FTP 传文件、应用内检查更新
           files: ${{ steps.version_info.outputs.apk_path }}
-          draft: ${{ github.event.inputs.release_type == 'draft' }}
-          prerelease: false
+          make_latest: true
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ env.XCCAPK_TOKEN }}

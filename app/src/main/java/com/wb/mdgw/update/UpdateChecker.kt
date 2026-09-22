@@ -11,13 +11,24 @@ import java.net.URL
 /**
  * GitHub Release 最新版本查询与版本比较。
  *
- * 零新依赖：HttpURLConnection + kotlinx.serialization，匿名访问公开仓库的
- * `/releases/latest`（单用户检查频率远低于 60 次/小时的匿名限额）。
+ * 零新依赖：HttpURLConnection + kotlinx.serialization，匿名访问公开的 APK 分发仓库
+ * [RELEASES_REPO]。该仓库同时承载多个 App 的 Release，因此本 App 的 Release tag 统一带
+ * [TAG_PREFIX] 前缀（形如 `chenlv-toolbox-v3.1.0`），[fetchLatest] 拉取最近 Release
+ * 列表后，只取第一个带本 App 前缀的正式版，避免被其他 App 的发布顶掉。
+ *
+ * 本项目为单一通用 APK（不按 ABI 拆分），直接取该 Release 下的 APK 资产。
  */
 object UpdateChecker {
 
-    private const val API_URL =
-        "https://api.github.com/repos/qfwc258/chenlv-toolbox/releases/latest"
+    /** 公开的 APK 分发仓库（发布产物统一放到这里） */
+    private const val RELEASES_REPO = "qfwc258/xccapk"
+
+    /** 本 App 在分发仓库中的 Release tag 前缀 */
+    private const val TAG_PREFIX = "chenlv-toolbox-v"
+
+    /** 拉取最近若干条 Release（列表按创建时间倒序），从中筛出本 App 的最新版 */
+    private const val RELEASES_URL =
+        "https://api.github.com/repos/$RELEASES_REPO/releases?per_page=50"
 
     private val json = Json { ignoreUnknownKeys = true }
     private val VERSION_REGEX = Regex("(\\d+)\\.(\\d+)\\.(\\d+)")
@@ -50,10 +61,10 @@ object UpdateChecker {
         val apkSize: Long,
     )
 
-    /** 查询最新正式 Release；网络失败 / 草稿 / 预发布 / 无 APK 资产时返回 null */
+    /** 查询本 App 最新正式 Release；网络失败 / 无匹配 / 无 APK 资产时返回 null */
     suspend fun fetchLatest(): ReleaseInfo? = withContext(Dispatchers.IO) {
         runCatching {
-            val conn = (URL(API_URL).openConnection() as HttpURLConnection).apply {
+            val conn = (URL(RELEASES_URL).openConnection() as HttpURLConnection).apply {
                 connectTimeout = 10_000
                 readTimeout = 15_000
                 instanceFollowRedirects = true
@@ -63,8 +74,13 @@ object UpdateChecker {
             try {
                 if (conn.responseCode != HttpURLConnection.HTTP_OK) return@runCatching null
                 val text = conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
-                val rel = json.decodeFromString(GithubRelease.serializer(), text)
-                if (rel.draft || rel.prerelease) return@runCatching null
+                val releases = json.decodeFromString<List<GithubRelease>>(text)
+                // 列表按创建时间倒序，取第一个带本 App 前缀的正式版（跳过草稿/预发布）
+                val rel = releases
+                    .filter { !it.draft && !it.prerelease }
+                    .firstOrNull { it.tag_name?.startsWith(TAG_PREFIX) == true }
+                    ?: return@runCatching null
+                // 单一通用 APK，直接取第一个 APK 资产
                 val apk = rel.assets.firstOrNull { it.name?.endsWith(".apk", true) == true }
                     ?: return@runCatching null
                 val url = apk.browser_download_url?.takeIf { it.isNotBlank() }
@@ -101,7 +117,7 @@ object UpdateChecker {
         latestVersion: String,
         currentVersion: String = BuildConfig.VERSION_NAME,
     ): Boolean {
-        val l = parseVersion(latestVersion) ?: return false
+        val l = parseVersion(latest) ?: return false
         val c = parseVersion(currentVersion) ?: return false
         for (i in 0..2) {
             if (l[i] != c[i]) return l[i] > c[i]
