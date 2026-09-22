@@ -72,9 +72,9 @@ data class TfTable(
     val dataRows: List<TfRow>
         get() = if (headerRow in rows.indices) rows.drop(headerRow + 1) else rows
 
-    /** 逻辑列 -> 表头文字（CARD 字段名） */
-    fun headerLabels(): Map<Int, String> {
-        val h = header ?: return emptyMap()
+    /** 逻辑列 -> 表头文字（CARD 字段名）；默认取推断的表头行，可指定 */
+    fun headerLabels(row: Int = headerRow): Map<Int, String> {
+        val h = rows.getOrNull(row) ?: return emptyMap()
         return h.cells.filter { !it.vMergeCont }.associate { it.logicalCol to it.text.trim() }
     }
 

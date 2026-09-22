@@ -19,7 +19,7 @@ data class TableFormDraft(
     val mode: String = "",
     val headerRow: Int = 0,
     val cardRecords: List<Map<String, String>> = emptyList(),
-    val cellValues: Map<String, String> = emptyList()
+    val cellValues: Map<String, String> = emptyMap()
 ) {
     fun matches(name: String): Boolean = name.isNotBlank() && name == fileName
 }
