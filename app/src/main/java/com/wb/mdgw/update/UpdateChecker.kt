@@ -117,7 +117,7 @@ object UpdateChecker {
         latestVersion: String,
         currentVersion: String = BuildConfig.VERSION_NAME,
     ): Boolean {
-        val l = parseVersion(latest) ?: return false
+        val l = parseVersion(latestVersion) ?: return false
         val c = parseVersion(currentVersion) ?: return false
         for (i in 0..2) {
             if (l[i] != c[i]) return l[i] > c[i]
