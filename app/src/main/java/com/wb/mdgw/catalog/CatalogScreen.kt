@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.wb.mdgw.FileUtils
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
@@ -40,7 +41,7 @@ import java.util.Locale
 /** 目录种类 */
 enum class CatalogKind(val screenTitle: String) {
     EVIDENCE("证据目录"),
-    ARCHIVE("案卷归档目录")
+    ARCHIVE("法援目录")
 }
 
 @Composable
@@ -74,13 +75,42 @@ private fun EvidenceScreen(onBack: () -> Unit) {
     val snackbar = remember { SnackbarHostState() }
 
     val prefs = remember { CatalogPrefs.load(context) }
-    var title by remember { mutableStateOf(prefs.evidenceTitle) }
-    var submitter by remember { mutableStateOf(prefs.submitter) }
-    var date by remember { mutableStateOf(todayString()) }
-    var minRows by remember { mutableStateOf(prefs.minRows.toString()) }
-    var items by remember { mutableStateOf(listOf(EvidenceItem())) }
+    val draft = remember { EvidenceDraftStore.load(context) }
+    var title by remember { mutableStateOf(draft?.title ?: prefs.evidenceTitle) }
+    var submitter by remember { mutableStateOf(draft?.submitter ?: prefs.submitter) }
+    var date by remember {
+        mutableStateOf(draft?.date?.ifBlank { todayString() } ?: todayString())
+    }
+    var minRows by remember { mutableStateOf(draft?.minRows ?: prefs.minRows.toString()) }
+    var items by remember {
+        mutableStateOf(
+            draft?.items?.map { EvidenceItem(it.name, it.pages, it.purpose, it.source) }
+                ?.ifEmpty { listOf(EvidenceItem()) }
+                ?: listOf(EvidenceItem())
+        )
+    }
     var busy by remember { mutableStateOf(false) }
     var result by remember { mutableStateOf<CatalogResult?>(null) }
+    var confirmClear by remember { mutableStateOf(false) }
+
+    // 输入停顿 0.5 秒自动保存草稿（含全部证据条目）
+    LaunchedEffect(title, submitter, date, minRows, items) {
+        delay(500)
+        val d = EvidenceDraft(
+            title = title, submitter = submitter, date = date, minRows = minRows,
+            items = items.map { EvidenceDraftItem(it.name, it.pages, it.purpose, it.source) }
+        )
+        withContext(Dispatchers.IO) { EvidenceDraftStore.save(context, d) }
+    }
+
+    fun clearAll() {
+        title = "证 据 目 录"
+        submitter = ""
+        date = todayString()
+        minRows = "10"
+        items = listOf(EvidenceItem())
+        scope.launch { withContext(Dispatchers.IO) { EvidenceDraftStore.clear(context) } }
+    }
 
     fun update(i: Int, block: EvidenceItem.() -> EvidenceItem) {
         items = items.mapIndexed { idx, it -> if (idx == i) it.block() else it }
@@ -142,6 +172,11 @@ private fun EvidenceScreen(onBack: () -> Unit) {
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { confirmClear = true }) {
+                        Icon(Icons.Default.Delete, contentDescription = "清空重填")
                     }
                 }
             )
@@ -215,6 +250,20 @@ private fun EvidenceScreen(onBack: () -> Unit) {
                 }
             }
         }
+    }
+
+    if (confirmClear) {
+        AlertDialog(
+            onDismissRequest = { confirmClear = false },
+            title = { Text("清空重填") },
+            text = { Text("将清空当前全部证据条目与已填信息，且不可恢复，确定吗？") },
+            confirmButton = {
+                TextButton(onClick = { clearAll(); confirmClear = false }) {
+                    Text("清空", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("取消") } }
+        )
     }
 
     result?.let { CatalogResultDialog(it, onDismiss = { result = null }) }
@@ -299,11 +348,35 @@ private fun ArchiveScreen(onBack: () -> Unit) {
     val focusManager = LocalFocusManager.current
 
     val prefs = remember { CatalogPrefs.load(context) }
-    var title by remember { mutableStateOf(prefs.archiveTitle) }
-    var items by remember { mutableStateOf(CatalogTemplates.newArchiveItems()) }
+    val archiveDraft = remember { ArchiveDraftStore.load(context) }
+    var title by remember { mutableStateOf(archiveDraft?.title ?: prefs.archiveTitle) }
+    var items by remember {
+        mutableStateOf(
+            archiveDraft?.items?.takeIf { it.isNotEmpty() }
+                ?.map { ArchiveItem(it.name, it.page) }
+                ?: CatalogTemplates.newArchiveItems()
+        )
+    }
     var busy by remember { mutableStateOf(false) }
     var result by remember { mutableStateOf<CatalogResult?>(null) }
     var editing by remember { mutableStateOf<Int?>(null) }
+    var confirmClear by remember { mutableStateOf(false) }
+
+    // 输入停顿 0.5 秒自动保存草稿（项目名改动 + 页码）
+    LaunchedEffect(title, items) {
+        delay(500)
+        val d = ArchiveDraft(
+            title = title,
+            items = items.map { ArchiveDraftItem(it.name, it.page) }
+        )
+        withContext(Dispatchers.IO) { ArchiveDraftStore.save(context, d) }
+    }
+
+    fun clearAll() {
+        title = "宁乡市法律援助案卷归档目录"
+        items = CatalogTemplates.newArchiveItems()
+        scope.launch { withContext(Dispatchers.IO) { ArchiveDraftStore.clear(context) } }
+    }
 
     val focusRequesters = remember { List(CatalogTemplates.ARCHIVE_ITEMS.size) { FocusRequester() } }
 
@@ -316,7 +389,7 @@ private fun ArchiveScreen(onBack: () -> Unit) {
 
     fun doGenerate() {
         val form = ArchiveForm(title = title.ifBlank { "宁乡市法律援助案卷归档目录" }, items = items)
-        val fileName = "案卷归档目录_${dateStamp()}.docx"
+        val fileName = "法援目录_${dateStamp()}.docx"
         scope.launch {
             busy = true
             val res = withContext(Dispatchers.IO) {
@@ -334,10 +407,15 @@ private fun ArchiveScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("案卷归档目录", fontWeight = FontWeight.SemiBold) },
+                title = { Text("法援目录", fontWeight = FontWeight.SemiBold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { confirmClear = true }) {
+                        Icon(Icons.Default.Delete, contentDescription = "清空重填")
                     }
                 }
             )
@@ -446,6 +524,20 @@ private fun ArchiveScreen(onBack: () -> Unit) {
                 TextButton(onClick = { name(i, draft.trim()); editing = null }) { Text("保存") }
             },
             dismissButton = { TextButton(onClick = { editing = null }) { Text("取消") } }
+        )
+    }
+
+    if (confirmClear) {
+        AlertDialog(
+            onDismissRequest = { confirmClear = false },
+            title = { Text("清空重填") },
+            text = { Text("将恢复为默认 21 个项目并清空全部页码，确定吗？") },
+            confirmButton = {
+                TextButton(onClick = { clearAll(); confirmClear = false }) {
+                    Text("清空", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("取消") } }
         )
     }
 

@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Gavel
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Inventory
 import androidx.compose.material.icons.filled.PictureAsPdf
@@ -52,6 +53,7 @@ import com.wb.mdgw.law.LawSearchScreen
 import com.wb.mdgw.docgen.DocGenScreen
 import com.wb.mdgw.catalog.CatalogKind
 import com.wb.mdgw.catalog.CatalogScreen
+import com.wb.mdgw.tableform.TableFormScreen
 import com.wb.mdgw.ftp.FtpScreen
 import com.wb.mdgw.update.UpdateManager
 
@@ -105,7 +107,7 @@ fun MdGwTheme(darkTheme: Boolean = false, content: @Composable () -> Unit) {
 /** 顶层路由：主页宫格 + 各功能页（平铺，不再有底部 Tab） */
 private enum class Route {
     HOME, WORD, PDF, WECHAT, PPTX, SETTINGS, SCREENSHOT, LAW_SEARCH, DOC_GEN,
-    EVIDENCE_CATALOG, ARCHIVE_CATALOG, DOCUMENTS, FTP
+    EVIDENCE_CATALOG, ARCHIVE_CATALOG, TABLE_FORM, DOCUMENTS, FTP
 }
 
 /** 宫格功能项 */
@@ -122,7 +124,8 @@ private val HOME_FEATURES = listOf(
     Feature(Route.WECHAT, "公众号排版", Icons.Default.ChatBubble),
     Feature(Route.DOC_GEN, "生成文书", Icons.Default.EditNote),
     Feature(Route.EVIDENCE_CATALOG, "证据目录", Icons.Default.Article),
-    Feature(Route.ARCHIVE_CATALOG, "归档目录", Icons.Default.Inventory),
+    Feature(Route.ARCHIVE_CATALOG, "法援目录", Icons.Default.Inventory),
+    Feature(Route.TABLE_FORM, "表格填报", Icons.Default.GridView),
     Feature(Route.SCREENSHOT, "截图排版", Icons.Default.Camera),
     Feature(Route.LAW_SEARCH, "法律查询", Icons.Default.Gavel),
     Feature(Route.DOCUMENTS, "我的文档", Icons.Default.Folder),
@@ -204,6 +207,10 @@ fun AppScreen(initialUri: Uri? = null) {
                 }
                 AnimatedVisibility(route == Route.ARCHIVE_CATALOG, enter = fadeIn(), exit = fadeOut()) {
                     CatalogScreen(kind = CatalogKind.ARCHIVE, onBack = { route = Route.HOME })
+                }
+                // 通用表格填报（导入任意含表格的 docx，手机填报，原位回填）
+                AnimatedVisibility(route == Route.TABLE_FORM, enter = fadeIn(), exit = fadeOut()) {
+                    TableFormScreen(onBack = { route = Route.HOME })
                 }
 
                 // 无自带标题栏的页面：统一套一个带返回的标题栏
