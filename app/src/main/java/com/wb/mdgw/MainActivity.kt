@@ -22,9 +22,11 @@ import androidx.compose.material.icons.filled.Article
 import androidx.compose.material.icons.filled.Camera
 import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.EditNote
+import androidx.compose.material.icons.filled.Fact
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Gavel
 import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.Inventory
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Slideshow
@@ -49,6 +51,8 @@ import com.wb.mdgw.law.Law
 import com.wb.mdgw.law.LawDetailScreen
 import com.wb.mdgw.law.LawSearchScreen
 import com.wb.mdgw.docgen.DocGenScreen
+import com.wb.mdgw.catalog.CatalogKind
+import com.wb.mdgw.catalog.CatalogScreen
 import com.wb.mdgw.ftp.FtpScreen
 import com.wb.mdgw.update.UpdateManager
 
@@ -101,7 +105,8 @@ fun MdGwTheme(darkTheme: Boolean = false, content: @Composable () -> Unit) {
 
 /** 顶层路由：主页宫格 + 各功能页（平铺，不再有底部 Tab） */
 private enum class Route {
-    HOME, WORD, PDF, WECHAT, PPTX, SETTINGS, SCREENSHOT, LAW_SEARCH, DOC_GEN, DOCUMENTS, FTP
+    HOME, WORD, PDF, WECHAT, PPTX, SETTINGS, SCREENSHOT, LAW_SEARCH, DOC_GEN,
+    EVIDENCE_CATALOG, ARCHIVE_CATALOG, DOCUMENTS, FTP
 }
 
 /** 宫格功能项 */
@@ -117,6 +122,8 @@ private val HOME_FEATURES = listOf(
     Feature(Route.PDF, "PDF 处理", Icons.Default.PictureAsPdf),
     Feature(Route.WECHAT, "公众号排版", Icons.Default.ChatBubble),
     Feature(Route.DOC_GEN, "生成文书", Icons.Default.EditNote),
+    Feature(Route.EVIDENCE_CATALOG, "证据目录", Icons.Default.Fact),
+    Feature(Route.ARCHIVE_CATALOG, "归档目录", Icons.Default.Inventory),
     Feature(Route.SCREENSHOT, "截图排版", Icons.Default.Camera),
     Feature(Route.LAW_SEARCH, "法律查询", Icons.Default.Gavel),
     Feature(Route.DOCUMENTS, "我的文档", Icons.Default.Folder),
@@ -190,6 +197,14 @@ fun AppScreen(initialUri: Uri? = null) {
                 // 自带顶部栏的子页
                 AnimatedVisibility(route == Route.DOC_GEN, enter = fadeIn(), exit = fadeOut()) {
                     DocGenScreen(onBack = { route = Route.HOME })
+                }
+
+                // 目录文书：证据目录 / 案卷归档目录（自带顶部栏）
+                AnimatedVisibility(route == Route.EVIDENCE_CATALOG, enter = fadeIn(), exit = fadeOut()) {
+                    CatalogScreen(kind = CatalogKind.EVIDENCE, onBack = { route = Route.HOME })
+                }
+                AnimatedVisibility(route == Route.ARCHIVE_CATALOG, enter = fadeIn(), exit = fadeOut()) {
+                    CatalogScreen(kind = CatalogKind.ARCHIVE, onBack = { route = Route.HOME })
                 }
 
                 // 无自带标题栏的页面：统一套一个带返回的标题栏
