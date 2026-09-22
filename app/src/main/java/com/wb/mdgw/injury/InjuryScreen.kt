@@ -7,6 +7,7 @@ import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -422,7 +423,6 @@ private fun NumberInputRow(
             keyboardOptions = KeyboardOptions(
                 keyboardType = if (integer) KeyboardType.Number else KeyboardType.Decimal
             ),
-            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
             modifier = Modifier.width(124.dp)
         )
         Text(" $unit", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline,
@@ -449,7 +449,6 @@ private fun TextInputRow(
             singleLine = true,
             placeholder = { Text(placeholder, fontSize = 13.sp) },
             textStyle = TextStyle(fontSize = 14.sp, textAlign = TextAlign.End),
-            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
             modifier = Modifier.width(160.dp)
         )
     }
@@ -473,7 +472,6 @@ private fun FeeRow(
             singleLine = true,
             placeholder = { Text("费用名称", fontSize = 12.sp) },
             textStyle = TextStyle(fontSize = 13.sp),
-            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
             modifier = Modifier.weight(1f)
         )
         Spacer(Modifier.width(8.dp))
@@ -484,7 +482,6 @@ private fun FeeRow(
             placeholder = { Text("金额", fontSize = 12.sp) },
             textStyle = TextStyle(fontSize = 13.sp, textAlign = TextAlign.End),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp),
             modifier = Modifier.width(92.dp)
         )
         IconButton(onClick = onRemove, modifier = Modifier.size(36.dp)) {
