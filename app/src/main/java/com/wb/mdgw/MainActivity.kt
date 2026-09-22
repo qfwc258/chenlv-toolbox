@@ -22,7 +22,6 @@ import androidx.compose.material.icons.filled.Article
 import androidx.compose.material.icons.filled.Camera
 import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.EditNote
-import androidx.compose.material.icons.filled.Fact
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Gavel
 import androidx.compose.material.icons.filled.Dns
@@ -122,7 +121,7 @@ private val HOME_FEATURES = listOf(
     Feature(Route.PDF, "PDF 处理", Icons.Default.PictureAsPdf),
     Feature(Route.WECHAT, "公众号排版", Icons.Default.ChatBubble),
     Feature(Route.DOC_GEN, "生成文书", Icons.Default.EditNote),
-    Feature(Route.EVIDENCE_CATALOG, "证据目录", Icons.Default.Fact),
+    Feature(Route.EVIDENCE_CATALOG, "证据目录", Icons.Default.Article),
     Feature(Route.ARCHIVE_CATALOG, "归档目录", Icons.Default.Inventory),
     Feature(Route.SCREENSHOT, "截图排版", Icons.Default.Camera),
     Feature(Route.LAW_SEARCH, "法律查询", Icons.Default.Gavel),
