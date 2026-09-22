@@ -70,6 +70,40 @@ object FileUtils {
         return if (dot > 0) n.substring(0, dot) else n
     }
 
+    /**
+     * 申请 SAF uri 的长期读权限，使进程重启后仍可通过该 uri 打开文件（「最近打开」依赖它）。
+     * 个别来源（如部分第三方分享）的 uri 不支持持久化，静默失败即可，不影响本次打开。
+     */
+    fun persistRead(context: Context, uri: Uri) {
+        runCatching {
+            context.contentResolver.takePersistableUriPermission(
+                uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+        }
+    }
+
+    /**
+     * 是否为旧版二进制 Word（Word 97-2003 的 .doc，OLE2 复合文档，魔数 D0CF11E0）。
+     * 本应用只解析 .docx（zip/OOXML），旧版 .doc 需引导用户用 WPS/Word 另存为 .docx。
+     */
+    fun isLegacyDoc(bytes: ByteArray): Boolean {
+        if (bytes.size < 8) return false
+        return bytes[0] == 0xD0.toByte() && bytes[1] == 0xCF.toByte() &&
+            bytes[2] == 0x11.toByte() && bytes[3] == 0xE0.toByte() &&
+            bytes[4] == 0xA1.toByte() && bytes[5] == 0xB1.toByte() &&
+            bytes[6] == 0x1A.toByte() && bytes[7] == 0xE1.toByte()
+    }
+
+    /** 用系统应用（WPS / Word 等）打开 uri，用于引导用户把旧版 .doc 另存为 .docx */
+    fun openExternally(context: Context, uri: Uri, name: String) {
+        val mime = when {
+            name.lowercase().endsWith(".doc") -> "application/msword"
+            name.lowercase().endsWith(".docx") -> DOCX_MIME
+            else -> "*/*"
+        }
+        runCatching { context.startActivity(openIntent(uri, mime)) }
+    }
+
     const val DOCX_MIME =
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     const val PDF_MIME = "application/pdf"

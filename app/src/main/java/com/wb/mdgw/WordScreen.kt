@@ -80,6 +80,9 @@ private const val DOCX_MIME =
  */
 private enum class SubView { EDIT, PREVIEW }
 
+/** 旧版二进制 .doc（Word 97-2003），本应用只支持 .docx / 文本 */
+private class LegacyWordException(val uri: Uri, val name: String) : Exception("legacy .doc")
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WordScreen(
@@ -115,6 +118,13 @@ fun WordScreen(
     // 跨编辑器（PPTX / 公众号）互传的 Markdown
     var incomingMd by remember { mutableStateOf<MarkdownExchange.Payload?>(null) }
 
+    // 旧版 .doc 引导 + 最近打开
+    var legacyDoc by remember { mutableStateOf<Pair<Uri, String>?>(null) }
+    var wordRecent by remember {
+        mutableStateOf(RecentFilesStore.list(context, RecentFile.KIND_WORD))
+    }
+    var recentHidden by remember { mutableStateOf(false) }
+
     // ---------- 公文模型（生成后预览 / 就地编辑 / 导出） ----------
     var govDoc by remember { mutableStateOf<GovDoc?>(null) }
     var govBusy by remember { mutableStateOf(false) }
@@ -126,6 +136,9 @@ fun WordScreen(
     var findReplaceOpen by remember { mutableStateOf(false) }
     var findText by remember { mutableStateOf("") }
     var replaceText by remember { mutableStateOf("") }
+
+    // 空白编辑态：无正文、未打开文件、无公文模型时，用于在编辑区展示「最近打开」
+    val isBlankEditor = tfv.text.isBlank() && originalUri == null && govDoc == null
 
     // 公文撤销 / 重做（内存快照，覆盖生成 / 编辑 / 打开 / 关闭）
     var govUndoStack by remember { mutableStateOf<List<GovDoc?>>(emptyList()) }
@@ -251,17 +264,25 @@ fun WordScreen(
         scope.launch {
             busy = true
             runCatching {
-                context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                FileUtils.persistRead(context, uri)
                 withContext(Dispatchers.IO) {
                     val name = FileUtils.displayName(context, uri)
                     val lower = name.lowercase()
                     if (lower.endsWith(".docx") || lower.endsWith(".doc")) {
-                        name to DocxReader.read(FileUtils.readBytes(context, uri), selectedSpec)
+                        val bytes = FileUtils.readBytes(context, uri)
+                        if (FileUtils.isLegacyDoc(bytes)) throw LegacyWordException(uri, name)
+                        name to DocxReader.read(bytes, selectedSpec)
                     } else {
                         name to FileUtils.readText(context, uri)
                     }
                 }
             }.onSuccess { (name, payload) ->
+                RecentFilesStore.touch(
+                    context, RecentFile.KIND_WORD, uri, name,
+                    if (payload is GovDoc) "Word 文档" else "文本"
+                )
+                wordRecent = RecentFilesStore.list(context, RecentFile.KIND_WORD)
+                recentHidden = false
                 if (payload is GovDoc) {
                     val md = payload.toMarkdown()
                     commitGov(payload)
@@ -283,8 +304,16 @@ fun WordScreen(
                     subView = SubView.EDIT
                     snackbar.showSnackbar("已打开：$name")
                 }
-            }.onFailure {
-                snackbar.showSnackbar("打开失败：${it.message ?: "未知错误"}")
+            }.onFailure { e ->
+                when (e) {
+                    is LegacyWordException -> { legacyDoc = e.uri to e.name }
+                    is SecurityException, is java.io.FileNotFoundException -> {
+                        RecentFilesStore.remove(context, RecentFile.KIND_WORD, uri.toString())
+                        wordRecent = RecentFilesStore.list(context, RecentFile.KIND_WORD)
+                        snackbar.showSnackbar("文件已移动、删除或授权失效，请重新选择")
+                    }
+                    else -> snackbar.showSnackbar("打开失败：${e.message ?: "未知错误"}")
+                }
             }
             busy = false
         }
@@ -835,6 +864,44 @@ fun WordScreen(
                         onWebViewReady = { webView = it }
                     )
                 }
+
+                // 空白编辑态：在编辑区覆盖「最近打开」，点「新建空白」或打开文件后隐藏
+                if (isBlankEditor && subView == SubView.EDIT && !recentHidden && wordRecent.isNotEmpty()) {
+                    Surface(
+                        Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.background
+                    ) {
+                        Column(
+                            Modifier.fillMaxSize()
+                                .verticalScroll(rememberScrollState())
+                                .padding(16.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    "最近打开",
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 16.sp,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                TextButton(onClick = { recentHidden = true }) {
+                                    Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("新建空白")
+                                }
+                            }
+                            Spacer(Modifier.height(6.dp))
+                            RecentFilesSection(
+                                items = wordRecent,
+                                onOpen = { rf -> runCatching { openFile(Uri.parse(rf.uri)) } },
+                                onRemove = { rf ->
+                                    RecentFilesStore.remove(context, RecentFile.KIND_WORD, rf.uri)
+                                    wordRecent = RecentFilesStore.list(context, RecentFile.KIND_WORD)
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -916,6 +983,28 @@ fun WordScreen(
             onNameChange = { saveName = it },
             onConfirm = { performSave(it) },
             onDismiss = { showSaveDialog = false }
+        )
+    }
+
+    // ---------- 旧版 .doc 引导 ----------
+    val legacy = legacyDoc
+    if (legacy != null) {
+        AlertDialog(
+            onDismissRequest = { legacyDoc = null },
+            title = { Text("旧版 .doc 格式") },
+            text = {
+                Text("该文件是旧版 Word 97-2003（.doc）格式，本应用仅支持 .docx 与文本。\n\n请用 WPS/Word 打开后「另存为 .docx」，再重新打开。")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val (u, n) = legacy
+                    legacyDoc = null
+                    FileUtils.openExternally(context, u, n)
+                }) { Text("用 WPS 打开") }
+            },
+            dismissButton = {
+                TextButton(onClick = { legacyDoc = null }) { Text("知道了") }
+            }
         )
     }
 

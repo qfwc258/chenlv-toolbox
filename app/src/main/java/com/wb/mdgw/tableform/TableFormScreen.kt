@@ -6,6 +6,7 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -23,12 +24,20 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.wb.mdgw.FileUtils
+import com.wb.mdgw.RecentFile
+import com.wb.mdgw.RecentFilesSection
+import com.wb.mdgw.RecentFilesStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.FileNotFoundException
 
 private enum class TfPhase { EMPTY, PICK, FILL }
+
+/** 旧版二进制 .doc（Word 97-2003），本应用只支持 .docx */
+private class LegacyDocException(val uri: Uri, val name: String) : Exception("legacy .doc")
+private class NoTableException : Exception("no table")
 
 /**
  * 通用表格填报：导入任意含表格的 .docx，自动识别表头 / 空白格 / 合并，
@@ -44,6 +53,7 @@ fun TableFormScreen(onBack: () -> Unit) {
     var phase by remember { mutableStateOf(TfPhase.EMPTY) }
     var busy by remember { mutableStateOf(false) }
     var fileName by remember { mutableStateOf("") }
+    var currentUri by remember { mutableStateOf<Uri?>(null) }
     var origBytes by remember { mutableStateOf<ByteArray?>(null) }
     var parsed by remember { mutableStateOf<TfDoc?>(null) }
     var tableIndex by remember { mutableStateOf(0) }
@@ -56,8 +66,14 @@ fun TableFormScreen(onBack: () -> Unit) {
     var result by remember { mutableStateOf<FileUtils.SavedFile?>(null) }
     var shareUri by remember { mutableStateOf<Uri?>(null) }
     var resultName by remember { mutableStateOf("") }
+    var legacy by remember { mutableStateOf<Pair<Uri, String>?>(null) }
+    var recent by remember {
+        mutableStateOf(RecentFilesStore.list(context, RecentFile.KIND_TABLEFORM))
+    }
 
-    val lastDraft = remember { TableFormDraftStore.load(context) }
+    fun refreshRecent() {
+        recent = RecentFilesStore.list(context, RecentFile.KIND_TABLEFORM)
+    }
 
     fun curTable(): TfTable? = parsed?.tables?.getOrNull(tableIndex)
 
@@ -76,11 +92,13 @@ fun TableFormScreen(onBack: () -> Unit) {
     fun initFromTable(t: TfTable, restore: TableFormDraft?) {
         headerRow = t.headerRow
         mode = t.mode
-        if (restore != null && restore.matches(fileName) && restore.tableIndex == tableIndex) {
+        if (restore != null && restore.tableIndex == tableIndex) {
             runCatching { TfMode.valueOf(restore.mode) }.onSuccess { mode = it }
             headerRow = restore.headerRow
             cardRecords = restore.cardRecords.map { m ->
                 m.mapNotNull { (k, v) -> k.toIntOrNull()?.let { it to v } }.toMap()
+            }.ifEmpty {
+                if (mode == TfMode.CARD) listOf(emptyMap()) else emptyList()
             }
             cellValues = restore.cellValues.mapNotNull { (k, v) ->
                 val a = k.split("_")
@@ -101,32 +119,60 @@ fun TableFormScreen(onBack: () -> Unit) {
         }
     }
 
-    fun import(uri: Uri) {
+    /** 从 SAF uri 或「最近打开」载入：持久化权限 → 旧版 .doc 拦截 → 解析 → 进填报 */
+    fun loadFrom(uri: Uri) {
         scope.launch {
             busy = true
+            var name = ""
             runCatching {
                 withContext(Dispatchers.IO) {
-                    val name = FileUtils.displayName(context, uri)
+                    name = FileUtils.displayName(context, uri)
                     val bytes = FileUtils.readBytes(context, uri)
+                    if (FileUtils.isLegacyDoc(bytes)) throw LegacyDocException(uri, name)
                     val doc = TableFormParser.parse(bytes)
-                    Triple(name, bytes, doc)
+                    if (doc.tables.isEmpty()) throw NoTableException()
+                    bytes to doc
                 }
-            }.onSuccess { (name, bytes, doc) ->
-                fileName = name; origBytes = bytes; parsed = doc
-                if (doc.tables.isEmpty()) {
-                    phase = TfPhase.EMPTY
-                    snackbar.showSnackbar("未在该文档中找到表格")
+            }.onSuccess { (bytes, doc) ->
+                FileUtils.persistRead(context, uri)
+                currentUri = uri
+                fileName = name
+                origBytes = bytes
+                parsed = doc
+                RecentFilesStore.touch(
+                    context, RecentFile.KIND_TABLEFORM, uri, name, "${doc.tables.size} 个表格"
+                )
+                refreshRecent()
+                val draft = TableFormDraftStore.loadFor(context, uri.toString(), name)
+                if (doc.tables.size == 1) {
+                    tableIndex = 0
+                    initFromTable(doc.tables[0], draft)
+                    phase = TfPhase.FILL
                 } else {
-                    if (doc.tables.size == 1) {
-                        tableIndex = 0
-                        initFromTable(doc.tables[0], TableFormDraftStore.load(context))
+                    val savedIdx = draft?.tableIndex?.takeIf { it in doc.tables.indices }
+                    if (savedIdx != null) {
+                        tableIndex = savedIdx
+                        initFromTable(doc.tables[savedIdx], draft)
                         phase = TfPhase.FILL
                     } else {
                         phase = TfPhase.PICK
                     }
                 }
-            }.onFailure {
-                snackbar.showSnackbar("打开失败：${it.message ?: "文件无法解析"}")
+            }.onFailure { e ->
+                when (e) {
+                    is LegacyDocException -> { legacy = e.uri to e.name }
+                    is NoTableException -> snackbar.showSnackbar("未在该文档中找到表格")
+                    else -> {
+                        val dead = e is SecurityException || e is FileNotFoundException
+                        if (dead) {
+                            RecentFilesStore.remove(context, RecentFile.KIND_TABLEFORM, uri.toString())
+                            refreshRecent()
+                            snackbar.showSnackbar("文件已移动、删除或授权失效，请重新选择")
+                        } else {
+                            snackbar.showSnackbar("打开失败：${e.message ?: "文件无法解析"}")
+                        }
+                    }
+                }
             }
             busy = false
         }
@@ -134,6 +180,7 @@ fun TableFormScreen(onBack: () -> Unit) {
 
     fun persistDraft() {
         val d = TableFormDraft(
+            uri = currentUri?.toString().orEmpty(),
             fileName = fileName,
             tableIndex = tableIndex,
             mode = mode.name,
@@ -204,7 +251,7 @@ fun TableFormScreen(onBack: () -> Unit) {
     }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        uri?.let { import(it) }
+        uri?.let { loadFrom(it) }
     }
 
     Scaffold(
@@ -272,9 +319,15 @@ fun TableFormScreen(onBack: () -> Unit) {
         Box(Modifier.padding(pad).fillMaxSize()) {
             when (phase) {
                 TfPhase.EMPTY -> EmptyState(
-                    hasDraft = lastDraft != null && lastDraft.fileName.isNotBlank(),
-                    draftName = lastDraft?.fileName.orEmpty(),
-                    onImport = { picker.launch(arrayOf(FileUtils.DOCX_MIME, "application/octet-stream", "*/*")) }
+                    busy = busy,
+                    recent = recent,
+                    onImport = { picker.launch(arrayOf(FileUtils.DOCX_MIME, "application/octet-stream", "*/*")) },
+                    onOpenRecent = { rf -> runCatching { loadFrom(Uri.parse(rf.uri)) } },
+                    onRemoveRecent = { rf ->
+                        RecentFilesStore.remove(context, RecentFile.KIND_TABLEFORM, rf.uri)
+                        TableFormDraftStore.remove(context, rf.uri)
+                        refreshRecent()
+                    }
                 )
                 TfPhase.PICK -> {
                     val doc = parsed
@@ -293,7 +346,10 @@ fun TableFormScreen(onBack: () -> Unit) {
                                 ElevatedCard(
                                     onClick = {
                                         tableIndex = i
-                                        initFromTable(t, TableFormDraftStore.load(context))
+                                        val u = currentUri
+                                        val d = if (u != null)
+                                            TableFormDraftStore.loadFor(context, u.toString(), fileName) else null
+                                        initFromTable(t, d)
                                         phase = TfPhase.FILL
                                     },
                                     modifier = Modifier.fillMaxWidth()
@@ -392,6 +448,28 @@ fun TableFormScreen(onBack: () -> Unit) {
             }
         )
     }
+
+    // 旧版 .doc 引导：用 WPS/Word 打开后另存为 .docx
+    val lg = legacy
+    if (lg != null) {
+        AlertDialog(
+            onDismissRequest = { legacy = null },
+            title = { Text("旧版 .doc 格式") },
+            text = {
+                Text("该文件是旧版 Word 97-2003（.doc）格式，本应用仅支持 .docx。\n\n请用 WPS/Word 打开后「另存为 .docx」，再回到表格填报导入。")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val (u, n) = lg
+                    legacy = null
+                    FileUtils.openExternally(context, u, n)
+                }) { Text("用 WPS 打开") }
+            },
+            dismissButton = {
+                TextButton(onClick = { legacy = null }) { Text("知道了") }
+            }
+        )
+    }
 }
 
 /** 用新表头行重新初始化卡片数据（保留原文件值） */
@@ -402,12 +480,18 @@ private fun TfTable.dataRowsLet(newHeader: Int): List<Map<Int, String>> =
     }.ifEmpty { listOf(emptyMap()) }
 
 @Composable
-private fun EmptyState(hasDraft: Boolean, draftName: String, onImport: () -> Unit) {
+private fun EmptyState(
+    busy: Boolean,
+    recent: List<RecentFile>,
+    onImport: () -> Unit,
+    onOpenRecent: (RecentFile) -> Unit,
+    onRemoveRecent: (RecentFile) -> Unit
+) {
     Column(
-        Modifier.fillMaxSize().padding(28.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        Spacer(Modifier.height(36.dp))
         Icon(Icons.Default.GridView, null, modifier = Modifier.size(64.dp),
             tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f))
         Spacer(Modifier.height(16.dp))
@@ -417,16 +501,27 @@ private fun EmptyState(hasDraft: Boolean, draftName: String, onImport: () -> Uni
             fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
             lineHeight = 20.sp)
         Spacer(Modifier.height(24.dp))
-        Button(onClick = onImport, modifier = Modifier.heightIn(min = 48.dp).fillMaxWidth()) {
-            Icon(Icons.Default.FileUpload, null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("选择 Word 文档")
+        Button(
+            onClick = onImport,
+            enabled = !busy,
+            modifier = Modifier.heightIn(min = 48.dp).fillMaxWidth()
+        ) {
+            if (busy) CircularProgressIndicator(
+                modifier = Modifier.size(18.dp), strokeWidth = 2.dp,
+                color = MaterialTheme.colorScheme.onPrimary
+            ) else {
+                Icon(Icons.Default.FileUpload, null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("选择 Word 文档")
+            }
         }
-        if (hasDraft) {
-            Spacer(Modifier.height(14.dp))
-            Text("上次填写：$draftName\n重新导入同名文件可继续编辑",
-                fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
+        Spacer(Modifier.height(20.dp))
+        RecentFilesSection(
+            items = recent,
+            onOpen = onOpenRecent,
+            onRemove = onRemoveRecent,
+            modifier = Modifier.fillMaxWidth()
+        )
     }
 }
 

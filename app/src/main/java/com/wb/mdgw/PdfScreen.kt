@@ -136,6 +136,11 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
     var errorMessage by remember { mutableStateOf("") }
     var showLargeFileWarning by remember { mutableStateOf(false) }
 
+    // 最近打开
+    var pdfRecent by remember {
+        mutableStateOf(RecentFilesStore.list(context, RecentFile.KIND_PDF))
+    }
+
     // 功能页签：加页码 / 盖章
     var tab by remember { mutableStateOf(PdfTab.PAGE_NUM) }
 
@@ -149,6 +154,7 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
     fun loadUri(uri: Uri) {
         scope.launch {
             busy = true
+            FileUtils.persistRead(context, uri)
             runCatching {
                 withContext(Dispatchers.IO) {
                     val name = FileUtils.displayName(context, uri)
@@ -160,8 +166,16 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                 pdfBytes = bytes
                 stage = PdfStage.LOADED
                 savedPath = ""
-            }.onFailure {
-                errorMessage = friendlyError(it)
+                RecentFilesStore.touch(context, RecentFile.KIND_PDF, uri, name, "PDF")
+                pdfRecent = RecentFilesStore.list(context, RecentFile.KIND_PDF)
+            }.onFailure { e ->
+                if (e is SecurityException || e is java.io.FileNotFoundException) {
+                    RecentFilesStore.remove(context, RecentFile.KIND_PDF, uri.toString())
+                    pdfRecent = RecentFilesStore.list(context, RecentFile.KIND_PDF)
+                    errorMessage = "文件已移动、删除或授权失效，请重新选择"
+                } else {
+                    errorMessage = friendlyError(e)
+                }
                 showErrorDialog = true
             }
             busy = false
@@ -175,14 +189,7 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
     val pdfPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
-        uri?.let {
-            runCatching {
-                context.contentResolver.takePersistableUriPermission(
-                    it, Intent.FLAG_GRANT_READ_URI_PERMISSION
-                )
-            }
-            loadUri(it)
-        }
+        uri?.let { loadUri(it) }
     }
 
     /** 加页码：实际执行处理 */
@@ -386,6 +393,18 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                     }
                 }
             }
+        }
+
+        // ---------- 最近打开（仅未载入时） ----------
+        if (stage == PdfStage.IDLE && pdfRecent.isNotEmpty()) {
+            RecentFilesSection(
+                items = pdfRecent,
+                onOpen = { rf -> runCatching { loadUri(Uri.parse(rf.uri)) } },
+                onRemove = { rf ->
+                    RecentFilesStore.remove(context, RecentFile.KIND_PDF, rf.uri)
+                    pdfRecent = RecentFilesStore.list(context, RecentFile.KIND_PDF)
+                }
+            )
         }
 
         // ---------- 功能内容 ----------
