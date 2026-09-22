@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Article
+import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Camera
 import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.EditNote
@@ -55,6 +56,7 @@ import com.wb.mdgw.catalog.CatalogKind
 import com.wb.mdgw.catalog.CatalogScreen
 import com.wb.mdgw.tableform.TableFormScreen
 import com.wb.mdgw.ftp.FtpScreen
+import com.wb.mdgw.injury.InjuryScreen
 import com.wb.mdgw.update.UpdateManager
 
 class MainActivity : ComponentActivity() {
@@ -107,7 +109,7 @@ fun MdGwTheme(darkTheme: Boolean = false, content: @Composable () -> Unit) {
 /** 顶层路由：主页宫格 + 各功能页（平铺，不再有底部 Tab） */
 private enum class Route {
     HOME, WORD, PDF, WECHAT, PPTX, SETTINGS, SCREENSHOT, LAW_SEARCH, DOC_GEN,
-    EVIDENCE_CATALOG, ARCHIVE_CATALOG, TABLE_FORM, DOCUMENTS, FTP
+    EVIDENCE_CATALOG, ARCHIVE_CATALOG, TABLE_FORM, DOCUMENTS, FTP, INJURY
 }
 
 /** 宫格功能项 */
@@ -128,6 +130,7 @@ private val HOME_FEATURES = listOf(
     Feature(Route.TABLE_FORM, "表格填报", Icons.Default.GridView),
     Feature(Route.SCREENSHOT, "截图排版", Icons.Default.Camera),
     Feature(Route.LAW_SEARCH, "法律查询", Icons.Default.Gavel),
+    Feature(Route.INJURY, "工伤赔偿", Icons.Default.Calculate),
     Feature(Route.DOCUMENTS, "我的文档", Icons.Default.Folder),
     Feature(Route.FTP, "FTP 服务", Icons.Default.Dns)
 )
@@ -237,6 +240,11 @@ fun AppScreen(initialUri: Uri? = null) {
                 AnimatedVisibility(route == Route.LAW_SEARCH, enter = fadeIn(), exit = fadeOut()) {
                     SimpleScreenFrame("法律查询", onBack = { route = Route.HOME }) {
                         LawSearchScreen(onLawClick = { law -> selectedLaw = law })
+                    }
+                }
+                AnimatedVisibility(route == Route.INJURY, enter = fadeIn(), exit = fadeOut()) {
+                    SimpleScreenFrame("工伤赔偿", onBack = { route = Route.HOME }) {
+                        InjuryScreen()
                     }
                 }
                 AnimatedVisibility(route == Route.DOCUMENTS, enter = fadeIn(), exit = fadeOut()) {
