@@ -50,7 +50,7 @@ object CatalogDocxBuilder {
         headerFont = FONT_FANGSONG, headerSizePt = 16.0, headerBold = true,
         bodyFont = FONT_FANGSONG, bodySizePt = 12.0,
         footerFont = FONT_FANGSONG, footerSizePt = 12.0,
-        headerRowHeight = null, dataRowHeight = null
+        headerRowHeight = null, dataRowHeight = cmToTwips(0.88)
     )
 
     // ================= 对外入口 =================
