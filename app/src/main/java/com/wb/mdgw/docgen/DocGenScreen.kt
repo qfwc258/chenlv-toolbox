@@ -437,7 +437,7 @@ fun DocGenScreen(onBack: () -> Unit) {
                     },
                     colors = com.wb.mdgw.BrandTokens.BrandTopAppBarColors
                 )
-                Divider(
+                HorizontalDivider(
                     color = com.wb.mdgw.BrandTokens.BrandBronze.copy(alpha = 0.35f),
                     thickness = 1.dp
                 )
@@ -1203,7 +1203,7 @@ private fun TypeManageDialog(
                         }
                     }
                 }
-                HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                HorizontalHorizontalDivider(Modifier.padding(vertical = 4.dp))
                 Text("新增类型", fontSize = 12.sp, fontWeight = FontWeight.Medium)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
@@ -1927,7 +1927,7 @@ private fun DefaultValuesDialog(
                         entries.forEach { e -> values[e.key] = builtin[e.key] ?: "" }
                     }) { Text("全部恢复内置", fontSize = 12.sp) }
                 }
-                HorizontalDivider()
+                HorizontalHorizontalDivider()
                 Column(
                     Modifier
                         .fillMaxWidth()

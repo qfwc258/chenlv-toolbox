@@ -300,7 +300,7 @@ fun TableFormScreen(onBack: () -> Unit) {
                     },
                     colors = com.wb.mdgw.BrandTokens.BrandTopAppBarColors
                 )
-                Divider(
+                HorizontalDivider(
                     color = com.wb.mdgw.BrandTokens.BrandBronze.copy(alpha = 0.35f),
                     thickness = 1.dp
                 )

@@ -59,8 +59,8 @@ object BrandTokens {
      * 各屏统一调用 `TopAppBar(..., colors = BrandTokens.BrandTopAppBarColors)`
      * 即可，省去在每个屏重复写 TopAppBarDefaults 配置。
      */
+    @OptIn(ExperimentalMaterial3Api::class)
     val BrandTopAppBarColors: TopAppBarColors
-        @OptIn(ExperimentalMaterial3Api::class)
         @Composable
         get() = TopAppBarDefaults.topAppBarColors(
             containerColor = BrandPaper,

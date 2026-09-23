@@ -146,7 +146,7 @@ fun FtpScreen(onBack: () -> Unit) {
                     },
                     colors = com.wb.mdgw.BrandTokens.BrandTopAppBarColors
                 )
-                Divider(
+                HorizontalDivider(
                     color = com.wb.mdgw.BrandTokens.BrandBronze.copy(alpha = 0.35f),
                     thickness = 1.dp
                 )
@@ -244,7 +244,7 @@ fun FtpScreen(onBack: () -> Unit) {
                     SettingsRow(label = "本机 IP", value = detectedIps.joinToString("、").ifEmpty { "未检测到网络" }, actionLabel = "设置") {
                         showIpDialog = true
                     }
-                    SettingsDivider()
+                    SettingsHorizontalDivider()
                     SettingsRow(label = "端口", value = portText)
                     OutlinedTextField(
                         value = portText,
@@ -254,7 +254,7 @@ fun FtpScreen(onBack: () -> Unit) {
                         enabled = !running,
                         modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp)
                     )
-                    SettingsDivider()
+                    SettingsHorizontalDivider()
                     SettingsRow(label = "根目录", value = rootDir.substringAfterLast('/'))
                     OutlinedTextField(
                         value = rootDir,
@@ -410,7 +410,7 @@ private fun SettingsRow(
 
 /** 设置行之间的细分隔线 */
 @Composable
-private fun SettingsDivider() {
+private fun SettingsHorizontalDivider() {
     Box(
         Modifier
             .fillMaxWidth()
