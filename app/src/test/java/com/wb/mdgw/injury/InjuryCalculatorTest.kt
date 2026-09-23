@@ -1,6 +1,7 @@
 package com.wb.mdgw.injury
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -64,5 +65,14 @@ class InjuryCalculatorTest {
         val custom = InjuryParams(baseMonthlyWage = 5000f)
         val r = calc.calculate(InjuryCase(rank = Rank.LEVEL_10, wage = 5000f), custom)
         assertEquals(7f * 5000f, r.fundItems["一次性伤残补助金"]!!, 0.01f)
+    }
+
+    @Test
+    fun 伤残等级一至十级月数表完整() {
+        val months = InjuryParams.DEFAULT.disabilityOnceMonths
+        (1..10).forEach { lvl -> assertTrue("缺等级 $lvl", months.containsKey(lvl)) }
+        // 一级 27 个月、十级 7 个月，与《工伤保险条例》附表一致
+        assertEquals(27f, months[1]!!, 0.01f)
+        assertEquals(7f, months[10]!!, 0.01f)
     }
 }

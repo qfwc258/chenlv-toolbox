@@ -111,6 +111,7 @@ fun InjuryScreen() {
     // 核心参数（湖南 2025 默认，可本地覆盖）
     var params by remember { mutableStateOf(InjuryParamsStore.load(context)) }
     var picker by remember { mutableStateOf<PickerRequest?>(null) }
+    var showRankGrid by remember { mutableStateOf(false) }
 
     val isLevel1to4 = rank in LEVEL_1_TO_4
     val isDeath = mode == Mode.DEATH
@@ -179,10 +180,7 @@ fun InjuryScreen() {
                         }
                         NumberInputRow("年龄", ageText, "岁") { ageText = filterNum(it) }
                         SelectRow("伤残等级", labelOf(DISABILITY_RANK_OPTIONS, rank)) {
-                            picker = PickerRequest("伤残等级", DISABILITY_RANK_OPTIONS, rank) {
-                                rank = it
-                                if (it in LEVEL_1_TO_4) breakRelation = false
-                            }
+                            showRankGrid = true
                         }
                         NumberInputRow("本人月缴费工资", wageText, "元/月") { wageText = filterNum(it) }
                         // 计薪工资封顶/保底透明展示
@@ -392,6 +390,9 @@ fun InjuryScreen() {
                         )
                     }
                 }
+
+                // ---------- 计算方式说明（可折叠，按当前选择动态生成） ----------
+                CalcMethodCard(parseCase(), params, isDeath)
                 Spacer(Modifier.height(72.dp))
             }
         }
@@ -448,6 +449,65 @@ fun InjuryScreen() {
             }
         )
     }
+
+    // ---------- 伤残等级选择（两列紧凑网格：1-10 级两列、工亡整行，十级可见无需滚动） ----------
+    if (showRankGrid) {
+        AlertDialog(
+            onDismissRequest = { showRankGrid = false },
+            title = { Text("伤残等级", fontSize = 16.sp) },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    DISABILITY_RANK_OPTIONS.chunked(2).forEach { pair ->
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            pair.forEach { (v, l) ->
+                                RankChip(l, v == rank, Modifier.weight(1f)) {
+                                    rank = v
+                                    if (v in LEVEL_1_TO_4) breakRelation = false
+                                    showRankGrid = false
+                                }
+                            }
+                            if (pair.size == 1) Spacer(Modifier.weight(1f))
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(Modifier.fillMaxWidth()) {
+                        RankChip("工亡", rank == Rank.DEATH, Modifier.fillMaxWidth()) {
+                            rank = Rank.DEATH
+                            showRankGrid = false
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showRankGrid = false }) { Text("取消") }
+            }
+        )
+    }
+}
+
+/** 等级选择小卡片（选中高亮），用于紧凑网格，避免 RadioButton 占高导致十级被裁切 */
+@Composable
+private fun RankChip(
+    label: String,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = {
+            Text(
+                label, fontSize = 14.sp, textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        modifier = modifier,
+        shape = RoundedCornerShape(10.dp)
+    )
 }
 
 /** 核心参数卡片：统筹工资 / 住院伙食补助 / 一次性工亡补助金可编辑，支持恢复默认 */
@@ -460,6 +520,9 @@ private fun ParamsCard(
     var baseText by remember(params.baseMonthlyWage) {
         mutableStateOf(params.baseMonthlyWage.toInt().toString())
     }
+    var yearText by remember(params.baseMonthlyWage) {
+        mutableStateOf((params.baseMonthlyWage * 12f).toInt().toString())
+    }
     var foodText by remember(params.hospitalFoodPerDay) {
         mutableStateOf(params.hospitalFoodPerDay.toInt().toString())
     }
@@ -471,8 +534,12 @@ private fun ParamsCard(
             baseText = filterNum(it, integer = true)
             baseText.toFloatOrNull()?.let { v -> onChange(params.copy(baseMonthlyWage = v)) }
         }
+        NumberInputRow("统筹工资 / 年", yearText, "元", integer = true) {
+            yearText = filterNum(it, integer = true)
+            yearText.toFloatOrNull()?.let { v -> onChange(params.copy(baseMonthlyWage = v / 12f)) }
+        }
         Text(
-            "统筹地区上年度职工月平均工资，本人工资按 60%~300% 封顶保底。",
+            "统筹地区上年度职工平均工资，本人工资按 60%~300% 封顶保底；年 = 月 × 12，两栏任改其一，另一栏自动换算。",
             fontSize = 11.sp, color = MaterialTheme.colorScheme.outline
         )
         NumberInputRow("住院伙食补助 / 天", foodText, "元", integer = true) {
@@ -559,6 +626,95 @@ private fun ModeTab(label: String, selected: Boolean, modifier: Modifier, onClic
             else MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
+}
+
+/**
+ * 计算方式简要说明（可折叠）：按当前案件与参数**动态**列出实际采用的公式，
+ * 与 [InjuryCalculator] 的口径一致（医疗/就业补助金以本人工资为基数）。
+ */
+@Composable
+private fun CalcMethodCard(case: InjuryCase, params: InjuryParams, isDeath: Boolean) {
+    var expanded by remember { mutableStateOf(false) }
+    val lines = remember(case, params) { buildCalcMethodLines(case, params) }
+    Card(shape = MaterialTheme.shapes.large) {
+        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+            Row(
+                Modifier.fillMaxWidth().clickable { expanded = !expanded },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "计算方式说明", fontWeight = FontWeight.SemiBold, fontSize = 15.sp,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    if (expanded) "收起" else "展开",
+                    fontSize = 12.sp, color = MaterialTheme.colorScheme.primary
+                )
+            }
+            if (expanded) {
+                Spacer(Modifier.height(8.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(8.dp))
+                if (lines.isEmpty()) {
+                    Text("请先填写伤残等级 / 工亡相关项。", fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.outline)
+                } else {
+                    lines.forEach {
+                        Text(
+                            "· $it", fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = 3.dp)
+                        )
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "本人工资指工伤前 12 个月平均月缴费工资，按统筹工资 60%~300% 封顶保底。",
+                    fontSize = 11.sp, color = MaterialTheme.colorScheme.outline
+                )
+            }
+        }
+    }
+}
+
+/** 生成计算方式说明条目（与实际计算口径一致） */
+private fun buildCalcMethodLines(case: InjuryCase, params: InjuryParams): List<String> {
+    val f = DecimalFormat("#,##0")
+    val base = params.baseMonthlyWage
+    val lo = base * 0.6f
+    val hi = base * 3f
+    val wage = case.wage.coerceIn(lo, hi)
+    val list = mutableListOf<String>()
+    if (case.rank == Rank.DEATH) {
+        list += "一次性工亡补助金 = 上年度全国城镇居民人均可支配收入 × 20（¥ ${f.format(params.deathOneTime)}）"
+        list += "丧葬补助金 = 统筹工资 ¥${f.format(base)} × 6 个月"
+        if (case.pensionSpouse || case.pensionOther > 0 || case.pensionOrphan > 0) {
+            list += "供养亲属抚恤金 = 本人工资 ¥${f.format(wage)} ×（配偶40% + 其他亲属30%×人数 + 孤寡10%×人数），封顶100%，按月发放"
+        }
+        return list
+    }
+    val r = case.rank.toIntOrNull() ?: return list
+    list += "一次性伤残补助金 = 本人工资 ¥${f.format(wage)} × ${params.disabilityOnceMonths[r]?.toInt() ?: 0} 个月"
+    if (case.careType != CareType.NONE) {
+        val rate = ((params.lifeCareRate[case.careType] ?: 0f) * 100).toInt()
+        list += "生活护理费 = 统筹工资 ¥${f.format(base)} × $rate%（按月发放）"
+    }
+    val allowRate = params.disabilityAllowanceRate[r] ?: 0f
+    val allowEligible = r in 1..4 || (r in 5..6 && case.difficultToArrange)
+    if (allowRate > 0 && allowEligible) {
+        list += "伤残津贴 = 本人工资 ¥${f.format(wage)} × ${(allowRate * 100).toInt()}%（按月发放）"
+    }
+    if (case.breakRelation && r in 5..10) {
+        list += "一次性工伤医疗补助金 = 本人工资 ¥${f.format(wage)} × ${params.medicalOnceMonths[r]?.toInt() ?: 0} 个月（解除时，按距退休扣减）"
+        list += "一次性伤残就业补助金 = 本人工资 ¥${f.format(wage)} × ${params.employOnceMonths[r]?.toInt() ?: 0} 个月（解除时，按距退休扣减）"
+    }
+    if (case.hospitalDay > 0) {
+        list += "住院伙食补助费 = ¥${params.hospitalFoodPerDay.toInt()} /天 × ${case.hospitalDay} 天"
+    }
+    if (case.stopMonth > 0) {
+        list += "停工留薪期工资 = 本人工资 ¥${f.format(wage)} × ${case.stopMonth.toInt()} 个月（原待遇不变）"
+    }
+    return list
 }
 
 /** 分组卡片：标题 + 分隔线 + 内容 */
@@ -844,6 +1000,11 @@ private fun buildExportText(case: InjuryCase, r: CalcResult, params: InjuryParam
         append("\n计算口径：统筹工资 ${f.format(params.baseMonthlyWage)} 元/月，")
         append("住院伙食补助 ${params.hospitalFoodPerDay.toInt()} 元/天；")
         append("依据《工伤保险条例》及湖南省实施办法。结果仅供参考，以社保/仲裁/法院认定为准。\n")
+        val method = buildCalcMethodLines(case, params)
+        if (method.isNotEmpty()) {
+            append("\n【计算方式】\n")
+            method.forEach { append("  · $it\n") }
+        }
         append("生成时间：${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date())}\n")
     }
 }
