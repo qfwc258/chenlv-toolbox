@@ -68,6 +68,17 @@ class InjuryCalculatorTest {
     }
 
     @Test
+    fun 补助月数可覆盖以计算外地案件() {
+        // 外地口径：十级一次性伤残补助金月数改为 20（非湖南默认 7）
+        val custom = InjuryParams(
+            disabilityOnceMonths = InjuryParams.DEFAULT.disabilityOnceMonths
+                .toMutableMap().apply { put(10, 20f) }
+        )
+        val r = calc.calculate(InjuryCase(rank = Rank.LEVEL_10, wage = W), custom)
+        assertEquals(20f * W, r.fundItems["一次性伤残补助金"]!!, 0.01f)
+    }
+
+    @Test
     fun 伤残等级一至十级月数表完整() {
         val months = InjuryParams.DEFAULT.disabilityOnceMonths
         (1..10).forEach { lvl -> assertTrue("缺等级 $lvl", months.containsKey(lvl)) }

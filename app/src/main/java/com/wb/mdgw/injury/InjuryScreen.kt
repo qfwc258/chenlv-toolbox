@@ -510,7 +510,7 @@ private fun RankChip(
     )
 }
 
-/** 核心参数卡片：统筹工资 / 住院伙食补助 / 一次性工亡补助金可编辑，支持恢复默认 */
+/** 核心参数卡片：统筹工资、住院伙食补助（单价）、工亡补助金、各项补助月数均可编辑 */
 @Composable
 private fun ParamsCard(
     params: InjuryParams,
@@ -530,6 +530,8 @@ private fun ParamsCard(
         mutableStateOf(params.deathOneTime.toInt().toString())
     }
     FormCard("赔偿标准参数（湖南 2025）") {
+        // ---------- 统筹与单价标准 ----------
+        SectionTitle("统筹与单价标准")
         NumberInputRow("统筹工资 / 月", baseText, "元", integer = true) {
             baseText = filterNum(it, integer = true)
             baseText.toFloatOrNull()?.let { v -> onChange(params.copy(baseMonthlyWage = v)) }
@@ -551,10 +553,92 @@ private fun ParamsCard(
             deathText.toFloatOrNull()?.let { v -> onChange(params.copy(deathOneTime = v)) }
         }
         Text(
-            "政策逐年更新时，在此修改保存即可，无需等待版本升级。",
+            "单价与标准均可在政策更新时修改保存，无需等待版本升级。",
             fontSize = 11.sp, color = MaterialTheme.colorScheme.outline
         )
-        TextButton(onClick = onReset) { Text("恢复湖南 2025 默认") }
+
+        HorizontalDivider(Modifier.padding(vertical = 10.dp))
+
+        // ---------- 补助月数标准（默认湖南 2025，可改以适配外地） ----------
+        SectionTitle("补助月数标准（默认湖南 2025）")
+        Text(
+            "各地补助月数不同，可在此修改以计算外地案件；留空或 0 视为该项不发放。",
+            fontSize = 11.sp, color = MaterialTheme.colorScheme.outline
+        )
+        Spacer(Modifier.height(4.dp))
+        MonthEditor("一次性伤残补助金（1-10 级）", params.disabilityOnceMonths, (1..10).toList()) { lv, v ->
+            onChange(params.copy(disabilityOnceMonths = params.disabilityOnceMonths.toMutableMap().apply { put(lv, v) }))
+        }
+        MonthEditor("一次性工伤医疗补助金（5-10 级）", params.medicalOnceMonths, (5..10).toList()) { lv, v ->
+            onChange(params.copy(medicalOnceMonths = params.medicalOnceMonths.toMutableMap().apply { put(lv, v) }))
+        }
+        MonthEditor("一次性伤残就业补助金（5-10 级）", params.employOnceMonths, (5..10).toList()) { lv, v ->
+            onChange(params.copy(employOnceMonths = params.employOnceMonths.toMutableMap().apply { put(lv, v) }))
+        }
+
+        TextButton(onClick = onReset, modifier = Modifier.align(Alignment.End)) {
+            Text("恢复湖南 2025 默认")
+        }
+    }
+}
+
+/** 参数卡片内的分组小标题 */
+@Composable
+private fun SectionTitle(text: String) {
+    Text(text, fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
+        color = MaterialTheme.colorScheme.primary)
+    Spacer(Modifier.height(4.dp))
+}
+
+/**
+ * 补助月数编辑器：按等级在 2 列紧凑网格中逐个编辑月数。
+ * [levels] 决定显示哪些等级（如 1-10 级或 5-10 级）。
+ */
+@Composable
+private fun MonthEditor(
+    title: String,
+    months: Map<Int, Float>,
+    levels: List<Int>,
+    onLevelChange: (Int, Float) -> Unit
+) {
+    Text(title, fontSize = 12.sp, fontWeight = FontWeight.Medium,
+        modifier = Modifier.padding(top = 6.dp, bottom = 2.dp))
+        levels.chunked(2).forEach { pair ->
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                pair.forEach { lv ->
+                    LevelMonthField(lv, months[lv] ?: 0f, Modifier.weight(1f)) { onLevelChange(lv, it) }
+                }
+                if (pair.size == 1) Spacer(Modifier.weight(1f))
+            }
+        }
+}
+
+/** 单个等级的月数输入框（紧凑：等级标签 + 小数字框） */
+@Composable
+private fun LevelMonthField(level: Int, value: Float, modifier: Modifier = Modifier, onValue: (Float) -> Unit) {
+    var text by remember(value) { mutableStateOf(if (value > 0f) value.toInt().toString() else "") }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier.padding(vertical = 2.dp)
+    ) {
+        Text("${level}级", fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.outline,
+            modifier = Modifier.width(30.dp))
+        OutlinedTextField(
+            value = text,
+            onValueChange = {
+                text = filterNum(it, integer = true)
+                onValue(text.toFloatOrNull() ?: 0f)
+            },
+            singleLine = true,
+            placeholder = { Text("月", fontSize = 11.sp) },
+            textStyle = TextStyle(fontSize = 13.sp, textAlign = TextAlign.End),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            modifier = Modifier.weight(1f)
+        )
     }
 }
 
