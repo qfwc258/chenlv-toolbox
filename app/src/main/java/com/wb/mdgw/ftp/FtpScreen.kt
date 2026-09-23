@@ -131,29 +131,26 @@ fun FtpScreen(onBack: () -> Unit) {
     Scaffold(
         containerColor = com.wb.mdgw.BrandTokens.BrandPaper,
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        "FTP 服务",
-                        style = com.wb.mdgw.BrandTokens.BrandTopBarTitleStyle.copy(fontSize = 20.sp)
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回主页")
-                    }
-                },
-                colors = com.wb.mdgw.BrandTokens.BrandTopAppBarColors,
-                bottomBar = {
-                    // P2：1dp 金色细线作为顶栏与 body 的视觉分隔
-                    Box(
-                        Modifier
-                            .fillMaxWidth()
-                            .height(1.dp)
-                            .background(com.wb.mdgw.BrandTokens.BrandBronze.copy(alpha = 0.35f))
-                    )
-                }
-            )
+            Column {
+                TopAppBar(
+                    title = {
+                        Text(
+                            "FTP 服务",
+                            style = com.wb.mdgw.BrandTokens.BrandTopBarTitleStyle.copy(fontSize = 20.sp)
+                        )
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回主页")
+                        }
+                    },
+                    colors = com.wb.mdgw.BrandTokens.BrandTopAppBarColors
+                )
+                Divider(
+                    color = com.wb.mdgw.BrandTokens.BrandBronze.copy(alpha = 0.35f),
+                    thickness = 1.dp
+                )
+            }
         },
         snackbarHost = { SnackbarHost(snackbar) }
     ) { pad ->

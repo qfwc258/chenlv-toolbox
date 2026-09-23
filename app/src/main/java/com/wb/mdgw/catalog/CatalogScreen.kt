@@ -169,33 +169,31 @@ private fun EvidenceScreen(onBack: () -> Unit) {
     Scaffold(
         containerColor = com.wb.mdgw.BrandTokens.BrandPaper,
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        "证据目录",
-                        style = com.wb.mdgw.BrandTokens.BrandTopBarTitleStyle.copy(fontSize = 20.sp)
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { confirmClear = true }) {
-                        Icon(Icons.Default.Delete, contentDescription = "清空重填")
-                    }
-                },
-                colors = com.wb.mdgw.BrandTokens.BrandTopAppBarColors,
-            bottomBar = {
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .height(1.dp)
-                        .background(com.wb.mdgw.BrandTokens.BrandBronze.copy(alpha = 0.35f))
+            Column {
+                TopAppBar(
+                    title = {
+                        Text(
+                            "证据目录",
+                            style = com.wb.mdgw.BrandTokens.BrandTopBarTitleStyle.copy(fontSize = 20.sp)
+                        )
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = { confirmClear = true }) {
+                            Icon(Icons.Default.Delete, contentDescription = "清空重填")
+                        }
+                    },
+                    colors = com.wb.mdgw.BrandTokens.BrandTopAppBarColors
+                )
+                Divider(
+                    color = com.wb.mdgw.BrandTokens.BrandBronze.copy(alpha = 0.35f),
+                    thickness = 1.dp
                 )
             }
-            )
         },
         bottomBar = {
             Button(
@@ -423,33 +421,31 @@ private fun ArchiveScreen(onBack: () -> Unit) {
     Scaffold(
         containerColor = com.wb.mdgw.BrandTokens.BrandPaper,
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        "法援目录",
-                        style = com.wb.mdgw.BrandTokens.BrandTopBarTitleStyle.copy(fontSize = 20.sp)
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { confirmClear = true }) {
-                        Icon(Icons.Default.Delete, contentDescription = "清空重填")
-                    }
-                },
-                colors = com.wb.mdgw.BrandTokens.BrandTopAppBarColors,
-            bottomBar = {
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .height(1.dp)
-                        .background(com.wb.mdgw.BrandTokens.BrandBronze.copy(alpha = 0.35f))
+            Column {
+                TopAppBar(
+                    title = {
+                        Text(
+                            "法援目录",
+                            style = com.wb.mdgw.BrandTokens.BrandTopBarTitleStyle.copy(fontSize = 20.sp)
+                        )
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = { confirmClear = true }) {
+                            Icon(Icons.Default.Delete, contentDescription = "清空重填")
+                        }
+                    },
+                    colors = com.wb.mdgw.BrandTokens.BrandTopAppBarColors
+                )
+                Divider(
+                    color = com.wb.mdgw.BrandTokens.BrandBronze.copy(alpha = 0.35f),
+                    thickness = 1.dp
                 )
             }
-            )
         },
         bottomBar = {
             Button(

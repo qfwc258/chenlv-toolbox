@@ -62,7 +62,6 @@ object BrandTokens {
     val BrandTopAppBarColors: TopAppBarColors
         @OptIn(ExperimentalMaterial3Api::class)
         @Composable
-        @ReadOnlyComposable
         get() = TopAppBarDefaults.topAppBarColors(
             containerColor = BrandPaper,
             scrolledContainerColor = BrandPaper,
@@ -75,7 +74,6 @@ object BrandTokens {
      *  给所有屏的 `Text(title, ...)` 直接套用 */
     val BrandTopBarTitleStyle: TextStyle
         @Composable
-        @ReadOnlyComposable
         get() = TextStyle(
             fontFamily = FontFamily.Serif,
             fontWeight = FontWeight.SemiBold,

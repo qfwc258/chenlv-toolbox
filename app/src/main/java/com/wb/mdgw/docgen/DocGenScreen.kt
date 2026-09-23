@@ -422,28 +422,26 @@ fun DocGenScreen(onBack: () -> Unit) {
     Scaffold(
         containerColor = com.wb.mdgw.BrandTokens.BrandPaper,
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        "生成文书",
-                        style = com.wb.mdgw.BrandTokens.BrandTopBarTitleStyle.copy(fontSize = 20.sp)
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                },
-                colors = com.wb.mdgw.BrandTokens.BrandTopAppBarColors,
-                bottomBar = {
-                    Box(
-                        Modifier
-                            .fillMaxWidth()
-                            .height(1.dp)
-                            .background(com.wb.mdgw.BrandTokens.BrandBronze.copy(alpha = 0.35f))
-                    )
-                }
-            )
+            Column {
+                TopAppBar(
+                    title = {
+                        Text(
+                            "生成文书",
+                            style = com.wb.mdgw.BrandTokens.BrandTopBarTitleStyle.copy(fontSize = 20.sp)
+                        )
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        }
+                    },
+                    colors = com.wb.mdgw.BrandTokens.BrandTopAppBarColors
+                )
+                Divider(
+                    color = com.wb.mdgw.BrandTokens.BrandBronze.copy(alpha = 0.35f),
+                    thickness = 1.dp
+                )
+            }
         },
         bottomBar = {
             Button(
@@ -1223,8 +1221,15 @@ private fun TypeManageDialog(
                         singleLine = true,
                         modifier = Modifier.weight(1f)
                     )
-                    FilledTonalIconButton(onClick = { addType() }) {
-                        Icon(Icons.Default.Add, contentDescription = "添加类型")
+                    Surface(
+                        onClick = { addType() },
+                        shape = androidx.compose.foundation.shape.CircleShape,
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.Add, contentDescription = "添加类型")
+                        }
                     }
                 }
                 if (error.isNotEmpty()) {

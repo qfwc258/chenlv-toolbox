@@ -63,30 +63,28 @@ fun LawDetailScreen(
     Scaffold(
         containerColor = com.wb.mdgw.BrandTokens.BrandPaper,
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        law.title,
-                        style = com.wb.mdgw.BrandTokens.BrandTopBarTitleStyle.copy(fontSize = 20.sp),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                },
-                colors = com.wb.mdgw.BrandTokens.BrandTopAppBarColors,
-                bottomBar = {
-                    Box(
-                        Modifier
-                            .fillMaxWidth()
-                            .height(1.dp)
-                            .background(com.wb.mdgw.BrandTokens.BrandBronze.copy(alpha = 0.35f))
-                    )
-                }
-            )
+            Column {
+                TopAppBar(
+                    title = {
+                        Text(
+                            law.title,
+                            style = com.wb.mdgw.BrandTokens.BrandTopBarTitleStyle.copy(fontSize = 20.sp),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        }
+                    },
+                    colors = com.wb.mdgw.BrandTokens.BrandTopAppBarColors
+                )
+                Divider(
+                    color = com.wb.mdgw.BrandTokens.BrandBronze.copy(alpha = 0.35f),
+                    thickness = 1.dp
+                )
+            }
         }
     ) { paddingValues ->
         Box(

@@ -258,46 +258,53 @@ fun TableFormScreen(onBack: () -> Unit) {
     Scaffold(
         containerColor = com.wb.mdgw.BrandTokens.BrandPaper,
         topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(
-                            "通用表格填报",
-                            style = com.wb.mdgw.BrandTokens.BrandTopBarTitleStyle.copy(fontSize = 20.sp),
-                            maxLines = 1
-                        )
-                        if (phase == TfPhase.FILL && fileName.isNotBlank())
-                            Text(fileName, fontSize = 11.sp, maxLines = 1,
-                                overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "返回")
-                    }
-                },
-                actions = {
-                    if (phase == TfPhase.FILL) {
-                        Box {
-                            IconButton(onClick = { menuOpen = true }) {
-                                Icon(Icons.Default.MoreVert, contentDescription = "更多")
-                            }
-                            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                                DropdownMenuItem(
-                                    text = { Text("重新导入") },
-                                    leadingIcon = { Icon(Icons.Default.FileUpload, null) },
-                                    onClick = { menuOpen = false; picker.launch(arrayOf(FileUtils.DOCX_MIME, "application/octet-stream", "*/*")) }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("清空已填") },
-                                    leadingIcon = { Icon(Icons.Default.DeleteSweep, null) },
-                                    onClick = { menuOpen = false; confirmClear = true }
-                                )
+            Column {
+                TopAppBar(
+                    title = {
+                        Column {
+                            Text(
+                                "通用表格填报",
+                                style = com.wb.mdgw.BrandTokens.BrandTopBarTitleStyle.copy(fontSize = 20.sp),
+                                maxLines = 1
+                            )
+                            if (phase == TfPhase.FILL && fileName.isNotBlank())
+                                Text(fileName, fontSize = 11.sp, maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                        }
+                    },
+                    actions = {
+                        if (phase == TfPhase.FILL) {
+                            Box {
+                                IconButton(onClick = { menuOpen = true }) {
+                                    Icon(Icons.Default.MoreVert, contentDescription = "更多")
+                                }
+                                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                                    DropdownMenuItem(
+                                        text = { Text("重新导入") },
+                                        leadingIcon = { Icon(Icons.Default.FileUpload, null) },
+                                        onClick = { menuOpen = false; picker.launch(arrayOf(FileUtils.DOCX_MIME, "application/octet-stream", "*/*")) }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("清空已填") },
+                                        leadingIcon = { Icon(Icons.Default.DeleteSweep, null) },
+                                        onClick = { menuOpen = false; confirmClear = true }
+                                    )
+                                }
                             }
                         }
-                    }
-                }
-            )
+                    },
+                    colors = com.wb.mdgw.BrandTokens.BrandTopAppBarColors
+                )
+                Divider(
+                    color = com.wb.mdgw.BrandTokens.BrandBronze.copy(alpha = 0.35f),
+                    thickness = 1.dp
+                )
+            }
         },
         bottomBar = {
             if (phase == TfPhase.FILL) {
@@ -317,17 +324,8 @@ fun TableFormScreen(onBack: () -> Unit) {
                             Text("生成 Word（保留原格式）")
                         }
                     }
-                },
-                colors = com.wb.mdgw.BrandTokens.BrandTopAppBarColors,
-                bottomBar = {
-                    Box(
-                        Modifier
-                            .fillMaxWidth()
-                            .height(1.dp)
-                            .background(com.wb.mdgw.BrandTokens.BrandBronze.copy(alpha = 0.35f))
-                    )
                 }
-            )
+            }
         },
         snackbarHost = { SnackbarHost(snackbar) }
     ) { pad ->

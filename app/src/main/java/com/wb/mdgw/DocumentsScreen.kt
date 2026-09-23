@@ -242,34 +242,31 @@ fun DocumentsScreen(
     Scaffold(
         containerColor = com.wb.mdgw.BrandTokens.BrandPaper,
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        "我的文档",
-                        style = com.wb.mdgw.BrandTokens.BrandTopBarTitleStyle.copy(fontSize = 20.sp)
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { reload() }) {
-                        Icon(Icons.Default.Refresh, contentDescription = "刷新")
-                    }
-                },
-                colors = com.wb.mdgw.BrandTokens.BrandTopAppBarColors,
-                bottomBar = {
-                    // P2：1dp 金色细线作为 TopAppBar 与 body 的视觉分隔
-                    Box(
-                        Modifier
-                            .fillMaxWidth()
-                            .height(1.dp)
-                            .background(com.wb.mdgw.BrandTokens.BrandBronze.copy(alpha = 0.35f))
-                    )
-                }
-            )
+            Column {
+                TopAppBar(
+                    title = {
+                        Text(
+                            "我的文档",
+                            style = com.wb.mdgw.BrandTokens.BrandTopBarTitleStyle.copy(fontSize = 20.sp)
+                        )
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = { reload() }) {
+                            Icon(Icons.Default.Refresh, contentDescription = "刷新")
+                        }
+                    },
+                    colors = com.wb.mdgw.BrandTokens.BrandTopAppBarColors
+                )
+                Divider(
+                    color = com.wb.mdgw.BrandTokens.BrandBronze.copy(alpha = 0.35f),
+                    thickness = 1.dp
+                )
+            }
         }
     ) { pad ->
         Box(Modifier.fillMaxSize().padding(pad)) {
