@@ -27,20 +27,30 @@ object TableFormParser {
         val doc = buildDocument(xml)
         val body = doc.documentElement.getElementsByTagName("w:body").item(0) as Element
 
-        val tables = mutableListOf<TfTable>()
+        // B 级段落支持：遍历 body.children，同时抓 w:p 和 w:tbl，保持原顺序
+        val blocks = mutableListOf<TfBlock>()
         var tableIndex = 0
-        for (child in children(body)) {
-            if (child.nodeName == "w:tbl") {
-                tables += parseTable(child as Element, tableIndex)
-                tableIndex++
+        val bodyChildren = children(body)
+        for ((domIdx, child) in bodyChildren.withIndex()) {
+            when (child.nodeName) {
+                "w:tbl" -> {
+                    blocks += parseTable(child as Element, domIdx, tableIndex)
+                    tableIndex++
+                }
+                "w:p" -> {
+                    val text = paraText(child as Element).trim()
+                    // 只保留非空段落；空段落、列表项中间空行也存（B 级需要完整顺序）
+                    blocks += TfPara(domBodyIdx = domIdx, text = text)
+                }
+                // sectPr 等尾部元素忽略
             }
         }
-        return TfDoc(tables)
+        return TfDoc(blocks)
     }
 
     // ---------------- 表单表解析 ----------------
 
-    private fun parseTable(tbl: Element, tableIndex: Int): TfTable {
+    private fun parseTable(tbl: Element, domBodyIdx: Int, tableIndex: Int): TfTable {
         // 逻辑列数：优先 tblGrid/gridCol 数量
         val gridColsFromGrid = firstChild(tbl, "w:tblGrid")
             ?.let { children(it).count { c -> c.nodeName == "w:gridCol" } } ?: 0
@@ -140,6 +150,7 @@ object TableFormParser {
         val infer = inferMode(rowsWithSample, gridCols)
 
         return TfTable(
+            domBodyIdx = domBodyIdx,
             tableIndex = tableIndex,
             gridCols = gridCols,
             rows = rowsWithSample,

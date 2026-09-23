@@ -199,7 +199,7 @@ fun InjuryScreen() {
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
                     .padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 if (!isDeath) {
                     FormCard("伤残信息") {
@@ -348,13 +348,13 @@ fun InjuryScreen() {
                         Modifier.fillMaxWidth().padding(14.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text("一次性赔偿总额", fontSize = 13.sp,
+                        Text("一次性赔偿总额", fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.outline)
                         Spacer(Modifier.height(6.dp))
                         Text(
                             "¥ ${"%,.2f".format(result.grandTotal)}",
-                            fontSize = 26.sp, fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
+                            fontSize = 30.sp, fontWeight = FontWeight.Bold,
+                            color = com.wb.mdgw.BrandTokens.BrandRed
                         )
                         Spacer(Modifier.height(10.dp))
                         Row(
@@ -371,7 +371,7 @@ fun InjuryScreen() {
                             ) {
                                 Icon(Icons.Default.ContentCopy, contentDescription = null,
                                     modifier = Modifier.size(16.dp))
-                                Text(" 复制")
+                                Text(" 复制", fontSize = 13.sp)
                             }
                             OutlinedButton(
                                 onClick = {
@@ -393,18 +393,18 @@ fun InjuryScreen() {
                             ) {
                                 Icon(Icons.Default.Share, contentDescription = null,
                                     modifier = Modifier.size(16.dp))
-                                Text(" 导出清单")
+                                Text(" 导出", fontSize = 13.sp)
                             }
                         }
                         if (result.note.isNotEmpty()) {
                             Spacer(Modifier.height(8.dp))
-                            Text("备注：${result.note}", fontSize = 12.sp,
+                            Text("备注：${result.note}", fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.outline)
                         }
                         Spacer(Modifier.height(4.dp))
                         Text(
                             "计算口径依据《工伤保险条例》及湖南省实施办法（2025）。本结果仅供参考，以社保 / 仲裁 / 法院认定为准。",
-                            fontSize = 11.sp, color = MaterialTheme.colorScheme.outline
+                            fontSize = 10.sp, color = MaterialTheme.colorScheme.outline
                         )
                     }
                 }
@@ -416,21 +416,22 @@ fun InjuryScreen() {
         // ---------- 底部固定操作 ----------
         Surface(tonalElevation = 3.dp) {
             Row(
-                Modifier.fillMaxWidth().padding(12.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 OutlinedButton(
                     onClick = { resetAll(); toast("已重置") },
-                    modifier = Modifier.weight(1f)
-                ) { Text("重置") }
+                    modifier = Modifier.heightIn(min = 42.dp)
+                ) { Text("重置", fontSize = 13.sp) }
                 Button(
                     onClick = {
                         InjuryStore.saveCase(context, parseCase())
                         InjuryParamsStore.save(context, params)
                         toast("案件与参数已保存")
                     },
-                    modifier = Modifier.weight(1f)
-                ) { Text("保存") }
+                    modifier = Modifier.weight(1f).heightIn(min = 42.dp)
+                ) { Text("保存案件", fontSize = 14.sp) }
             }
         }
     }
@@ -853,13 +854,17 @@ private fun buildCalcMethodLines(case: InjuryCase, params: InjuryParams): List<S
 @Composable
 private fun FormCard(title: String, content: @Composable ColumnScope.() -> Unit) {
     Card(shape = MaterialTheme.shapes.large) {
-        Column(
-            Modifier.fillMaxWidth().padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(3.dp)
-        ) {
-            Text(title, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-            HorizontalDivider(Modifier.padding(bottom = 4.dp))
-            content()
+        Row(Modifier.fillMaxWidth()) {
+            // 1dp 金色左线（品牌语言）
+            Box(Modifier.width(1.dp).fillMaxHeight().padding(vertical = 8.dp)
+                .background(com.wb.mdgw.BrandTokens.BrandBronze.copy(alpha = 0.5f)))
+            Column(
+                Modifier.fillMaxWidth().padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(title, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                content()
+            }
         }
     }
 }
@@ -903,22 +908,22 @@ private fun NumberInputRow(
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.padding(vertical = 4.dp)
+        modifier = Modifier.padding(vertical = 2.dp)
     ) {
         Text(label, fontSize = 14.sp, modifier = Modifier.weight(1f))
         OutlinedTextField(
             value = value,
             onValueChange = onValue,
             singleLine = true,
-            placeholder = { Text("输入", fontSize = 13.sp) },
+            placeholder = { Text("输入", fontSize = 12.sp) },
             textStyle = TextStyle(fontSize = 14.sp, textAlign = TextAlign.End),
             keyboardOptions = KeyboardOptions(
                 keyboardType = if (integer) KeyboardType.Number else KeyboardType.Decimal
             ),
-            modifier = Modifier.width(112.dp)
+            modifier = Modifier.width(100.dp)
         )
-        Text(" $unit", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline,
-            modifier = Modifier.width(48.dp))
+        Text(" $unit", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline,
+            modifier = Modifier.width(44.dp))
     }
 }
 
@@ -932,16 +937,16 @@ private fun TextInputRow(
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.padding(vertical = 4.dp)
+        modifier = Modifier.padding(vertical = 2.dp)
     ) {
         Text(label, fontSize = 14.sp, modifier = Modifier.weight(1f))
         OutlinedTextField(
             value = value,
             onValueChange = onValue,
             singleLine = true,
-            placeholder = { Text(placeholder, fontSize = 13.sp) },
+            placeholder = { Text(placeholder, fontSize = 12.sp) },
             textStyle = TextStyle(fontSize = 14.sp, textAlign = TextAlign.End),
-            modifier = Modifier.width(160.dp)
+            modifier = Modifier.width(140.dp)
         )
     }
 }

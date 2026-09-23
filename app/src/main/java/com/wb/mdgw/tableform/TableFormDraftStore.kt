@@ -21,7 +21,9 @@ data class TableFormDraft(
     val mode: String = "",
     val headerRow: Int = 0,
     val cardRecords: List<Map<String, String>> = emptyList(),
-    val cellValues: Map<String, String> = emptyMap()
+    val cellValues: Map<String, String> = emptyMap(),
+    /** 段落正文编辑值，键为 domBodyIdx 的字符串形式 */
+    val paraValues: Map<String, String> = emptyMap()
 )
 
 /**

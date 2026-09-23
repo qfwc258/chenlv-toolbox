@@ -53,7 +53,13 @@ object TableFormFiller {
 
     private const val DOC_PATH = "word/document.xml"
 
-    fun fill(original: ByteArray, parsed: TfDoc, fills: List<TableFill>): ByteArray {
+    fun fill(
+        original: ByteArray,
+        parsed: TfDoc,
+        fills: List<TableFill>,
+        /** B 级段落支持：段落 domBodyIdx -> 新文字；null 表示不改 */
+        paraWrites: Map<Int, String> = emptyMap()
+    ): ByteArray {
         val entries = LinkedHashMap<String, ByteArray>()
         val dirs = LinkedHashSet<String>()
         ZipInputStream(ByteArrayInputStream(original)).use { zis ->
@@ -68,6 +74,17 @@ object TableFormFiller {
 
         val doc = buildDocument(originalXml)
         val body = doc.documentElement.getElementsByTagName("w:body").item(0) as Element
+
+        // B 级段落回填：按 domBodyIdx 定位 body.children 里的 w:p
+        if (paraWrites.isNotEmpty()) {
+            val bodyChildren = children(body)
+            for ((idx, newText) in paraWrites) {
+                val child = bodyChildren.getOrNull(idx) ?: continue
+                if (child.nodeName != "w:p") continue
+                setParaText(doc, child as Element, newText)
+            }
+        }
+
         val topTables = children(body).filter { it.nodeName == "w:tbl" }.map { it as Element }
 
         for (fill in fills) {
@@ -197,6 +214,35 @@ object TableFormFiller {
         }
         return null
     }
+
+    /**
+     * B 级段落回填：清空段落内容，只保留 pPr（格式），再写入新文字。
+     * 若段原本无文字，则不写入（避免制造空白段落）。
+     */
+    private fun setParaText(doc: Document, para: Element, value: String) {
+        // 保留段落内原首个 run 的 rPr，作为字体样本
+        val sampleRPr = firstRunRPr(para)
+        // 清空所有非 pPr 子元素（run、br、hyperlink、ins 等）
+        children(para).filter { it.nodeName != "w:pPr" }
+            .forEach { para.removeChild(it) }
+        if (value.isEmpty()) return
+
+        val r = doc.createElement("w:r")
+        if (sampleRPr != null) r.appendChild(sampleRPr.cloneNode(true))
+        // 段落若原本没有 run 格式，退化为无 rPr；Word/WPS 仍可正常显示，字体回落到文档默认
+        val lines = value.split('\n')
+        for ((i, line) in lines.withIndex()) {
+            if (i > 0) r.appendChild(doc.createElement("w:br"))
+            val t = doc.createElement("w:t")
+            t.setAttribute("xml:space", "preserve")
+            t.textContent = line
+            r.appendChild(t)
+        }
+        para.appendChild(r)
+    }
+
+    /** 取段落首个含文字 run 的 rPr */
+    private fun firstRunRPrInPara(para: Element): Element? = firstRunRPr(para)
 
     /**
      * 查找空白格的字体样本：优先表头行同 domCell，其次该列任意有字格。

@@ -63,6 +63,8 @@ fun TableFormScreen(onBack: () -> Unit) {
     var headerRow by remember { mutableStateOf(0) }
     var cardRecords by remember { mutableStateOf(listOf<Map<Int, String>>()) }
     var cellValues by remember { mutableStateOf(mapOf<Pair<Int, Int>, String>()) }
+    /** B 级段落支持：domBodyIdx -> 当前编辑中的段落文字 */
+    var paraValues by remember { mutableStateOf(mapOf<Int, String>()) }
     var menuOpen by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
     var result by remember { mutableStateOf<FileUtils.SavedFile?>(null) }
@@ -141,6 +143,16 @@ fun TableFormScreen(onBack: () -> Unit) {
                 fileName = name
                 origBytes = bytes
                 parsed = doc
+                // B 级段落支持：初始化所有非空段落为原始文字（trim 避免空白段占位）
+                paraValues = doc.paras.filter { it.text.isNotBlank() }
+                    .associate { it.domBodyIdx to it.text }
+                // 草稿段落恢复（若有）
+                val draft = TableFormDraftStore.loadFor(context, uri.toString(), name)
+                if (!draft?.paraValues.isNullOrEmpty()) {
+                    paraValues = draft.paraValues.mapNotNull { (k, v) ->
+                        k.toIntOrNull()?.let { it to v }
+                    }.toMap()
+                }
                 RecentFilesStore.touch(
                     context, RecentFile.KIND_TABLEFORM, uri, name, "${doc.tables.size} 个表格"
                 )
@@ -188,7 +200,8 @@ fun TableFormScreen(onBack: () -> Unit) {
             mode = mode.name,
             headerRow = headerRow,
             cardRecords = cardRecords.map { m -> m.mapKeys { it.key.toString() } },
-            cellValues = cellValues.mapKeys { "${it.key.first}_${it.key.second}" }
+            cellValues = cellValues.mapKeys { "${it.key.first}_${it.key.second}" },
+            paraValues = paraValues.mapKeys { it.key.toString() }
         )
         TableFormDraftStore.save(context, d)
     }
@@ -202,6 +215,8 @@ fun TableFormScreen(onBack: () -> Unit) {
             }).ifEmpty { listOf(emptyMap()) }
         else emptyList()
         cellValues = emptyMap()
+        paraValues = (parsed?.paras.orEmpty()).filter { it.text.isNotBlank() }
+            .associate { it.domBodyIdx to it.text }
     }
 
     fun generate() {
@@ -228,7 +243,10 @@ fun TableFormScreen(onBack: () -> Unit) {
                             headerRow = headerRow
                         )
                     }
-                    TableFormFiller.fill(bytes, doc, listOf(fill))
+                    TableFormFiller.fill(
+                        bytes, doc, listOf(fill),
+                        paraWrites = paraValues  // B 级段落支持
+                    )
                 }
             }.onSuccess { out ->
                 val outName = "${FileUtils.baseName(fileName)}_已填.docx"
@@ -415,7 +433,11 @@ fun TableFormScreen(onBack: () -> Unit) {
                         onDeleteCard = { idx ->
                             cardRecords = cardRecords.toMutableList().also { it.removeAt(idx) }
                         },
-                        onCellValue = { r, c, v -> cellValues = cellValues + ((r to c) to v) }
+                        onCellValue = { r, c, v -> cellValues = cellValues + ((r to c) to v) },
+                        // B 级段落支持：把所有段落（表格前后/中间的 w:p）和当前编辑值传下去
+                        paras = parsed?.paras.orEmpty(),
+                        paraValues = paraValues,
+                        onParaChange = { idx, v -> paraValues = paraValues + (idx to v) }
                     )
                 }
             }
@@ -557,9 +579,54 @@ private fun FillArea(
     onAddCard: () -> Unit,
     onCopyCard: (Int) -> Unit,
     onDeleteCard: (Int) -> Unit,
-    onCellValue: (Int, Int, String) -> Unit
+    onCellValue: (Int, Int, String) -> Unit,
+    // B 级段落支持
+    paras: List<TfPara>,
+    paraValues: Map<Int, String>,
+    onParaChange: (Int, String) -> Unit
 ) {
     Column(Modifier.fillMaxSize()) {
+        // ============== B 级段落编辑区（表格外的文字） ==============
+        if (paras.isNotEmpty()) {
+            Surface(tonalElevation = 1.dp) {
+                Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.EditNote, null,
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.width(6.dp))
+                        Text("文档正文（${paraValues.size}/${paras.size} 段）",
+                            fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        Spacer(Modifier.weight(1f))
+                        Text("格式保留", fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.outline)
+                    }
+                    val visibleParas = paras.filter {
+                        val v = paraValues[it.domBodyIdx] ?: it.text
+                        v.isNotBlank() || it.text.isNotBlank()  // 跳过始终为空的段落
+                    }
+                    visibleParas.forEachIndexed { i, p ->
+                        val current = paraValues[p.domBodyIdx] ?: p.text
+                        OutlinedTextField(
+                            value = current,
+                            onValueChange = { onParaChange(p.domBodyIdx, it) },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = false,
+                            minLines = 1,
+                            maxLines = 6,
+                            label = { Text("段落 ${i + 1}") },
+                            textStyle = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                }
+            }
+            HorizontalDivider(
+                color = com.wb.mdgw.BrandTokens.BrandBronze.copy(alpha = 0.35f),
+                thickness = 1.dp
+            )
+        }
+        // ============== 表格部分 ==============
         // 模式切换 + 表头行
         Surface(tonalElevation = 1.dp) {
             Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {

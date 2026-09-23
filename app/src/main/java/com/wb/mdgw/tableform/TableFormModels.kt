@@ -12,7 +12,26 @@ package com.wb.mdgw.tableform
  *    `<w:tbl>`、该表内第几个 `<w:tr>`、该行内第几个 `<w:tc>`。
  *  - 回填只依赖 DOM 顺序，不依赖逻辑网格，因此合并单元格也能稳定定位。
  *  - 逻辑列（gridSpan / vMerge 展开后）仅用于 UI 布局、表头对齐与同列字体克隆。
+ *
+ * 段落模型（B 级段落支持）：
+ *  - body 中的 `w:p`（段落）也会被解析为 [TfPara]，与表格一起挂在 [TfDoc.blocks]
+ *    里，保持原文档顺序；
+ *  - 段落文字可编辑，但**格式（字体/加粗/对齐）在手机端只读**；回填时写回纯文字，
+ *    格式按首 run 的 rPr 原样保留（与单元格相同策略）；
+ *  - 段落用 `domBodyIdx` 定位：它在 body.children 中的索引（跳过 sectPr 等尾部元素）。
  */
+
+/** body 里的一个子节点：表格或段落（B 级段落支持） */
+sealed interface TfBlock {
+    /** 在 body.children 中的 DOM 索引，回填时定位 */
+    val domBodyIdx: Int
+}
+
+/** 非表格段落：只存纯文字，格式由 docx 自身保留 */
+data class TfPara(
+    override val domBodyIdx: Int,
+    val text: String
+) : TfBlock
 
 /** 单元格水平对齐 */
 enum class TfAlign { LEFT, CENTER, RIGHT }
@@ -53,6 +72,8 @@ data class TfRow(val domRow: Int, val cells: List<TfCell>)
 
 /** 一张解析出的表 */
 data class TfTable(
+    /** 在 body.children 中的 DOM 索引，回填时定位 w:tbl */
+    val domBodyIdx: Int,
     val tableIndex: Int,
     val gridCols: Int,
     val rows: List<TfRow>,
@@ -61,7 +82,7 @@ data class TfTable(
     val headerRow: Int,
     /** 序号逻辑列（CARD 模式加行 / 重排用），null 表示无 */
     val seqLogicalCol: Int?
-) {
+) : TfBlock {
     /** 按 domRow 取行 */
     fun row(domRow: Int): TfRow? = rows.getOrNull(domRow)
 
@@ -82,7 +103,11 @@ data class TfTable(
     val allCells: List<TfCell> get() = rows.flatMap { it.cells }
 }
 
-/** 一个文档的解析结果 */
-data class TfDoc(val tables: List<TfTable>) {
+/** 一个文档的解析结果：blocks 保持原 docx 中表格/段落顺序 */
+data class TfDoc(val blocks: List<TfBlock>) {
+    /** 所有表格（按原顺序） */
+    val tables: List<TfTable> get() = blocks.filterIsInstance<TfTable>()
+    /** 所有非表格段落（按原顺序） */
+    val paras: List<TfPara> get() = blocks.filterIsInstance<TfPara>()
     fun table(i: Int): TfTable? = tables.getOrNull(i)
 }
