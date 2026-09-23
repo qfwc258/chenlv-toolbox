@@ -488,11 +488,14 @@ fun TableFormScreen(onBack: () -> Unit) {
 }
 
 /** 用新表头行重新初始化卡片数据（保留原文件值） */
-private fun TfTable.dataRowsLet(newHeader: Int): List<Map<Int, String>> =
-    rows.drop(newHeader + 1).map { row ->
-        row.cells.filter { !it.vMergeCont && it.logicalCol != seqLogicalCol && it.text.isNotEmpty() }
+private fun TfTable.dataRowsLet(newHeader: Int): List<Map<Int, String>> {
+    val mapped: List<Map<Int, String>> = rows.drop(newHeader + 1).map { row ->
+        row.cells
+            .filter { !it.vMergeCont && it.logicalCol != seqLogicalCol && it.text.isNotEmpty() }
             .associate { it.domCell to it.text }
-    }.ifEmpty { listOf(emptyMap()) }
+    }
+    return if (mapped.isEmpty()) listOf<Map<Int, String>>(emptyMap()) else mapped
+}
 
 @Composable
 private fun EmptyState(
