@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -28,12 +29,17 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.wb.mdgw.FileUtils
 import java.nio.charset.Charset
 import java.text.DecimalFormat
 
 /** 顶部模式：残疾赔偿 / 死亡赔偿（死亡即工亡） */
 private enum class Mode { DISABILITY, DEATH }
+
+/** 右上角三点菜单打开的面板：赔偿参数 / 计算方式 / 政策说明 */
+private enum class Panel { NONE, PARAMS, METHOD, POLICY }
 
 /** 动态费用行草稿 */
 private data class FeeDraft(val id: Long, val name: String, val amountText: String)
@@ -112,6 +118,7 @@ fun InjuryScreen() {
     var params by remember { mutableStateOf(InjuryParamsStore.load(context)) }
     var picker by remember { mutableStateOf<PickerRequest?>(null) }
     var showRankGrid by remember { mutableStateOf(false) }
+    var panel by remember { mutableStateOf(Panel.NONE) }
 
     val isLevel1to4 = rank in LEVEL_1_TO_4
     val isDeath = mode == Mode.DEATH
@@ -159,8 +166,30 @@ fun InjuryScreen() {
     }
 
     Column(Modifier.fillMaxSize()) {
-        // ---------- 顶部模式 Tab（固定） ----------
-        ModeTabs(mode) { mode = it }
+        // ---------- 顶部：模式 Tab + 右上角三点菜单 ----------
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f)) { ModeTabs(mode) { mode = it } }
+            var menuOpen by remember { mutableStateOf(false) }
+            Box {
+                IconButton(onClick = { menuOpen = true }) {
+                    Icon(Icons.Default.MoreVert, contentDescription = "更多：参数 / 计算方式 / 政策说明")
+                }
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    DropdownMenuItem(
+                        text = { Text("赔偿标准参数") },
+                        onClick = { menuOpen = false; panel = Panel.PARAMS }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("计算方式说明") },
+                        onClick = { menuOpen = false; panel = Panel.METHOD }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("政策说明与适用规定") },
+                        onClick = { menuOpen = false; panel = Panel.POLICY }
+                    )
+                }
+            }
+        }
         HorizontalDivider()
 
         // ---------- 中间滚动内容 ----------
@@ -169,8 +198,8 @@ fun InjuryScreen() {
                 Modifier
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 if (!isDeath) {
                     FormCard("伤残信息") {
@@ -276,17 +305,6 @@ fun InjuryScreen() {
                     }
                 }
 
-                // ---------- 核心参数（湖南 2025 标准，可修改） ----------
-                ParamsCard(
-                    params = params,
-                    onChange = { params = it },
-                    onReset = {
-                        params = InjuryParams.DEFAULT
-                        InjuryParamsStore.reset(context)
-                        toast("已恢复湖南 2025 默认")
-                    }
-                )
-
                 // ---------- 各项费用（动态） ----------
                 FormCard("各项费用") {
                     fees.forEach { f ->
@@ -327,7 +345,7 @@ fun InjuryScreen() {
                 // ---------- 一次性总额 ----------
                 Card(shape = MaterialTheme.shapes.large) {
                     Column(
-                        Modifier.fillMaxWidth().padding(18.dp),
+                        Modifier.fillMaxWidth().padding(14.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text("一次性赔偿总额", fontSize = 13.sp,
@@ -391,11 +409,6 @@ fun InjuryScreen() {
                     }
                 }
 
-                // ---------- 计算方式说明（可折叠，按当前选择动态生成） ----------
-                CalcMethodCard(parseCase(), params, isDeath)
-
-                // ---------- 政策说明（可折叠，静态规定） ----------
-                PolicyNoteCard()
                 Spacer(Modifier.height(72.dp))
             }
         }
@@ -489,6 +502,70 @@ fun InjuryScreen() {
             }
         )
     }
+
+    // ---------- 三点菜单：全屏面板（参数 / 计算方式 / 政策说明） ----------
+    if (panel != Panel.NONE) {
+        val title = when (panel) {
+            Panel.PARAMS -> "赔偿标准参数"
+            Panel.METHOD -> "计算方式说明"
+            Panel.POLICY -> "政策说明与适用规定"
+            Panel.NONE -> ""
+        }
+        Dialog(
+            onDismissRequest = { panel = Panel.NONE },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Surface(Modifier.fillMaxSize()) {
+                Column(Modifier.fillMaxSize()) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(title, fontSize = 17.sp, fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.weight(1f))
+                        IconButton(onClick = { panel = Panel.NONE }) {
+                            Icon(Icons.Default.Close, contentDescription = "关闭")
+                        }
+                    }
+                    HorizontalDivider()
+                    Column(
+                        Modifier
+                            .weight(1f)
+                            .verticalScroll(rememberScrollState())
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        when (panel) {
+                            Panel.PARAMS -> ParamsPanel(
+                                params = params,
+                                onChange = { params = it },
+                                onReset = {
+                                    params = InjuryParams.DEFAULT
+                                    InjuryParamsStore.reset(context)
+                                    toast("已恢复湖南 2025 默认")
+                                }
+                            )
+                            Panel.METHOD -> {
+                                val lines = buildCalcMethodLines(parseCase(), params)
+                                if (lines.isEmpty()) {
+                                    Text("请先填写伤残等级 / 工亡相关项。", fontSize = 13.sp,
+                                        color = MaterialTheme.colorScheme.outline)
+                                } else lines.forEach {
+                                    Text("· $it", fontSize = 13.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                            Panel.POLICY -> POLICY_NOTES.forEach {
+                                Text("· $it", fontSize = 13.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Panel.NONE -> {}
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 /** 等级选择小卡片（选中高亮），用于紧凑网格，避免 RadioButton 占高导致十级被裁切 */
@@ -513,9 +590,12 @@ private fun RankChip(
     )
 }
 
-/** 核心参数卡片：统筹工资、住院伙食补助（单价）、工亡补助金、各项补助月数均可编辑 */
+/**
+ * 赔偿标准参数面板（在全屏弹窗中展示）：统筹工资、住院伙食、人均可支配收入、
+ * 各项补助月数均可编辑；弹窗已提供标题与滚动，这里只放内容。
+ */
 @Composable
-private fun ParamsCard(
+private fun ParamsPanel(
     params: InjuryParams,
     onChange: (InjuryParams) -> Unit,
     onReset: () -> Unit
@@ -532,7 +612,7 @@ private fun ParamsCard(
     var urbanText by remember(params.urbanIncome) {
         mutableStateOf(params.urbanIncome.toInt().toString())
     }
-    FormCard("赔偿标准参数（湖南 2025）") {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         // ---------- 统筹与单价标准 ----------
         SectionTitle("统筹与单价标准")
         NumberInputRow("统筹工资 / 月", baseText, "元", integer = true) {
@@ -560,7 +640,7 @@ private fun ParamsCard(
             fontSize = 11.sp, color = MaterialTheme.colorScheme.outline
         )
 
-        HorizontalDivider(Modifier.padding(vertical = 10.dp))
+        HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
         // ---------- 补助月数标准（默认湖南 2025，可改以适配外地） ----------
         SectionTitle("补助月数标准（默认湖南 2025）")
@@ -568,7 +648,6 @@ private fun ParamsCard(
             "各地补助月数不同，可在此修改以计算外地案件；留空或 0 视为该项不发放。",
             fontSize = 11.sp, color = MaterialTheme.colorScheme.outline
         )
-        Spacer(Modifier.height(4.dp))
         MonthEditor("一次性伤残补助金（1-10 级）", params.disabilityOnceMonths, (1..10).toList()) { lv, v ->
             onChange(params.copy(disabilityOnceMonths = params.disabilityOnceMonths.toMutableMap().apply { put(lv, v) }))
         }
@@ -649,10 +728,10 @@ private fun LevelMonthField(level: Int, value: Float, modifier: Modifier = Modif
 @Composable
 private fun SwitchRow(label: String, checked: Boolean, onChecked: (Boolean) -> Unit) {
     Row(
-        Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        Modifier.fillMaxWidth().padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(label, fontSize = 15.sp, modifier = Modifier.weight(1f))
+        Text(label, fontSize = 14.sp, modifier = Modifier.weight(1f))
         Switch(checked = checked, onCheckedChange = onChecked)
     }
 }
@@ -662,14 +741,14 @@ private fun SwitchRow(label: String, checked: Boolean, onChecked: (Boolean) -> U
 private fun MonthlyResultCard(title: String, items: Map<String, Float>) {
     Card(shape = MaterialTheme.shapes.large) {
         Column(
-            Modifier.fillMaxWidth().padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            Modifier.fillMaxWidth().padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             Text(title, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
             items.forEach { (k, v) ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(k, fontSize = 13.sp, modifier = Modifier.weight(1f))
-                    Text("${"%,.2f".format(v)} 元/月", fontSize = 13.sp,
+                    Text(k, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                    Text("${"%,.2f".format(v)} 元/月", fontSize = 12.sp,
                         fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.primary)
                 }
             }
@@ -705,7 +784,7 @@ private fun ModeTab(label: String, selected: Boolean, modifier: Modifier, onClic
     ) {
         Text(
             label,
-            Modifier.fillMaxWidth().padding(vertical = 12.dp),
+            Modifier.fillMaxWidth().padding(vertical = 10.dp),
             textAlign = TextAlign.Center,
             fontSize = 16.sp,
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
@@ -715,104 +794,19 @@ private fun ModeTab(label: String, selected: Boolean, modifier: Modifier, onClic
     }
 }
 
-/**
- * 计算方式简要说明（可折叠）：按当前案件与参数**动态**列出实际采用的公式，
- * 与 [InjuryCalculator] 的口径一致（医疗/就业补助金以本人工资为基数）。
- */
-@Composable
-private fun CalcMethodCard(case: InjuryCase, params: InjuryParams, isDeath: Boolean) {
-    var expanded by remember { mutableStateOf(false) }
-    val lines = remember(case, params) { buildCalcMethodLines(case, params) }
-    Card(shape = MaterialTheme.shapes.large) {
-        Column(Modifier.fillMaxWidth().padding(16.dp)) {
-            Row(
-                Modifier.fillMaxWidth().clickable { expanded = !expanded },
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    "计算方式说明", fontWeight = FontWeight.SemiBold, fontSize = 15.sp,
-                    modifier = Modifier.weight(1f)
-                )
-                Text(
-                    if (expanded) "收起" else "展开",
-                    fontSize = 12.sp, color = MaterialTheme.colorScheme.primary
-                )
-            }
-            if (expanded) {
-                Spacer(Modifier.height(8.dp))
-                HorizontalDivider()
-                Spacer(Modifier.height(8.dp))
-                if (lines.isEmpty()) {
-                    Text("请先填写伤残等级 / 工亡相关项。", fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.outline)
-                } else {
-                    lines.forEach {
-                        Text(
-                            "· $it", fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(vertical = 3.dp)
-                        )
-                    }
-                }
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    "本人工资指工伤前 12 个月平均月缴费工资，按统筹工资 60%~300% 封顶保底。",
-                    fontSize = 11.sp, color = MaterialTheme.colorScheme.outline
-                )
-            }
-        }
-    }
-}
-
-/**
- * 政策说明（可折叠，静态）：集中列出《工伤保险待遇简明表》中的备注与适用规定，
- * 不参与计算，仅作口径参考。
- */
-@Composable
-private fun PolicyNoteCard() {
-    var expanded by remember { mutableStateOf(false) }
-    Card(shape = MaterialTheme.shapes.large) {
-        Column(Modifier.fillMaxWidth().padding(16.dp)) {
-            Row(
-                Modifier.fillMaxWidth().clickable { expanded = !expanded },
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    "政策说明与适用规定", fontWeight = FontWeight.SemiBold, fontSize = 15.sp,
-                    modifier = Modifier.weight(1f)
-                )
-                Text(
-                    if (expanded) "收起" else "展开",
-                    fontSize = 12.sp, color = MaterialTheme.colorScheme.primary
-                )
-            }
-            if (expanded) {
-                Spacer(Modifier.height(8.dp))
-                HorizontalDivider()
-                Spacer(Modifier.height(8.dp))
-                val notes = listOf(
-                    "伤残津贴：1-4 级由工伤保险基金按月发放；5-6 级难以安排工作的，由用人单位按月发放。",
-                    "1-4 级办理退休手续后停发伤残津贴，基本养老保险待遇低于伤残津贴的，由工伤保险基金补足差额。",
-                    "5-10 级解除劳动关系时，一次性医疗/就业补助金距退休不足 5 年每少 1 年减 20%，最高减除 90%。",
-                    "生活护理费由基金按月支付：全部不能自理 50%、大部分 40%、部分 30%（按统筹工资）。",
-                    "住院伙食补助：2022 年 1 月 1 日前住院为 10 元/天，之后为 20 元/天。",
-                    "一次性工亡补助金 = 上年度全国城镇居民人均可支配收入 × 20；丧葬补助金 = 6 个月统筹工资。",
-                    "供养亲属抚恤金：配偶 40%、其他亲属每人 30%、孤儿/孤寡每人 40%，总和不超过生前本人工资。",
-                    "应参保而未参保的，由用人单位按《工伤保险条例》规定的项目和标准支付全部费用。",
-                    "本人工资指工伤前 12 个月平均月缴费工资，高于统筹工资 300% 按 300%、低于 60% 按 60% 计算。",
-                    "2011 年 1 月 1 日以后发生并认定的工伤，按现行标准执行。"
-                )
-                notes.forEach {
-                    Text(
-                        "· $it", fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(vertical = 3.dp)
-                    )
-                }
-            }
-        }
-    }
-}
+/** 政策说明与适用规定条目（在全屏弹窗中展示，静态口径参考，不参与计算） */
+private val POLICY_NOTES = listOf(
+    "伤残津贴：1-4 级由工伤保险基金按月发放；5-6 级难以安排工作的，由用人单位按月发放。",
+    "1-4 级办理退休手续后停发伤残津贴，基本养老保险待遇低于伤残津贴的，由工伤保险基金补足差额。",
+    "5-10 级解除劳动关系时，一次性医疗/就业补助金距退休不足 5 年每少 1 年减 20%，最高减除 90%。",
+    "生活护理费由基金按月支付：全部不能自理 50%、大部分 40%、部分 30%（按统筹工资）。",
+    "住院伙食补助：2022 年 1 月 1 日前住院为 10 元/天，之后为 20 元/天。",
+    "一次性工亡补助金 = 上年度全国城镇居民人均可支配收入 × 20；丧葬补助金 = 6 个月统筹工资。",
+    "供养亲属抚恤金：配偶 40%、其他亲属每人 30%、孤儿/孤寡每人 40%，总和不超过生前本人工资。",
+    "应参保而未参保的，由用人单位按《工伤保险条例》规定的项目和标准支付全部费用。",
+    "本人工资指工伤前 12 个月平均月缴费工资，高于统筹工资 300% 按 300%、低于 60% 按 60% 计算。",
+    "2011 年 1 月 1 日以后发生并认定的工伤，按现行标准执行。"
+)
 
 /** 生成计算方式说明条目（与实际计算口径一致） */
 private fun buildCalcMethodLines(case: InjuryCase, params: InjuryParams): List<String> {
@@ -860,8 +854,8 @@ private fun buildCalcMethodLines(case: InjuryCase, params: InjuryParams): List<S
 private fun FormCard(title: String, content: @Composable ColumnScope.() -> Unit) {
     Card(shape = MaterialTheme.shapes.large) {
         Column(
-            Modifier.fillMaxWidth().padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+            Modifier.fillMaxWidth().padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp)
         ) {
             Text(title, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
             HorizontalDivider(Modifier.padding(bottom = 4.dp))
@@ -883,7 +877,7 @@ private fun SelectRow(
         Modifier
             .fillMaxWidth()
             .let { if (enabled) it.clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick) else it }
-            .padding(vertical = 12.dp),
+            .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(label, fontSize = 15.sp, modifier = Modifier.weight(1f),
@@ -911,7 +905,7 @@ private fun NumberInputRow(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.padding(vertical = 4.dp)
     ) {
-        Text(label, fontSize = 15.sp, modifier = Modifier.weight(1f))
+        Text(label, fontSize = 14.sp, modifier = Modifier.weight(1f))
         OutlinedTextField(
             value = value,
             onValueChange = onValue,
@@ -921,7 +915,7 @@ private fun NumberInputRow(
             keyboardOptions = KeyboardOptions(
                 keyboardType = if (integer) KeyboardType.Number else KeyboardType.Decimal
             ),
-            modifier = Modifier.width(124.dp)
+            modifier = Modifier.width(112.dp)
         )
         Text(" $unit", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline,
             modifier = Modifier.width(48.dp))
@@ -940,7 +934,7 @@ private fun TextInputRow(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.padding(vertical = 4.dp)
     ) {
-        Text(label, fontSize = 15.sp, modifier = Modifier.weight(1f))
+        Text(label, fontSize = 14.sp, modifier = Modifier.weight(1f))
         OutlinedTextField(
             value = value,
             onValueChange = onValue,
@@ -993,24 +987,24 @@ private fun FeeRow(
 private fun ResultGroupCard(title: String, items: Map<String, Float>, subtotal: Float) {
     Card(shape = MaterialTheme.shapes.large) {
         Column(
-            Modifier.fillMaxWidth().padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            Modifier.fillMaxWidth().padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             Text(title, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
             if (items.isEmpty()) {
-                Text("（无）", fontSize = 13.sp, color = MaterialTheme.colorScheme.outline)
+                Text("（无）", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
             } else {
                 items.forEach { (k, v) ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(k, fontSize = 13.sp, modifier = Modifier.weight(1f))
-                        Text("${"%,.2f".format(v)} 元", fontSize = 13.sp,
+                        Text(k, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                        Text("${"%,.2f".format(v)} 元", fontSize = 12.sp,
                             fontWeight = FontWeight.Medium)
                     }
                 }
             }
             HorizontalDivider()
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("小计", fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                Text("小计", fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f))
                 Text("${"%,.2f".format(subtotal)} 元", fontSize = 14.sp,
                     fontWeight = FontWeight.Bold)
