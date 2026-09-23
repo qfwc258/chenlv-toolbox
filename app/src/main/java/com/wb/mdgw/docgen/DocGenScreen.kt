@@ -1203,7 +1203,7 @@ private fun TypeManageDialog(
                         }
                     }
                 }
-                HorizontalHorizontalDivider(Modifier.padding(vertical = 4.dp))
+                HorizontalDivider(Modifier.padding(vertical = 4.dp))
                 Text("新增类型", fontSize = 12.sp, fontWeight = FontWeight.Medium)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
@@ -1927,7 +1927,7 @@ private fun DefaultValuesDialog(
                         entries.forEach { e -> values[e.key] = builtin[e.key] ?: "" }
                     }) { Text("全部恢复内置", fontSize = 12.sp) }
                 }
-                HorizontalHorizontalDivider()
+                HorizontalDivider()
                 Column(
                     Modifier
                         .fillMaxWidth()
