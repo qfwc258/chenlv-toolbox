@@ -1,5 +1,6 @@
 package com.wb.mdgw.catalog
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -166,9 +167,15 @@ private fun EvidenceScreen(onBack: () -> Unit) {
     }
 
     Scaffold(
+        containerColor = com.wb.mdgw.BrandTokens.BrandPaper,
         topBar = {
             TopAppBar(
-                title = { Text("证据目录", fontWeight = FontWeight.SemiBold) },
+                title = {
+                    Text(
+                        "证据目录",
+                        style = com.wb.mdgw.BrandTokens.BrandTopBarTitleStyle.copy(fontSize = 20.sp)
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
@@ -178,7 +185,16 @@ private fun EvidenceScreen(onBack: () -> Unit) {
                     IconButton(onClick = { confirmClear = true }) {
                         Icon(Icons.Default.Delete, contentDescription = "清空重填")
                     }
-                }
+                },
+                colors = com.wb.mdgw.BrandTokens.BrandTopAppBarColors,
+            bottomBar = {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(com.wb.mdgw.BrandTokens.BrandBronze.copy(alpha = 0.35f))
+                )
+            }
             )
         },
         bottomBar = {
@@ -405,9 +421,15 @@ private fun ArchiveScreen(onBack: () -> Unit) {
     }
 
     Scaffold(
+        containerColor = com.wb.mdgw.BrandTokens.BrandPaper,
         topBar = {
             TopAppBar(
-                title = { Text("法援目录", fontWeight = FontWeight.SemiBold) },
+                title = {
+                    Text(
+                        "法援目录",
+                        style = com.wb.mdgw.BrandTokens.BrandTopBarTitleStyle.copy(fontSize = 20.sp)
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
@@ -417,7 +439,16 @@ private fun ArchiveScreen(onBack: () -> Unit) {
                     IconButton(onClick = { confirmClear = true }) {
                         Icon(Icons.Default.Delete, contentDescription = "清空重填")
                     }
-                }
+                },
+                colors = com.wb.mdgw.BrandTokens.BrandTopAppBarColors,
+            bottomBar = {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(com.wb.mdgw.BrandTokens.BrandBronze.copy(alpha = 0.35f))
+                )
+            }
             )
         },
         bottomBar = {
@@ -439,7 +470,7 @@ private fun ArchiveScreen(onBack: () -> Unit) {
     ) { pad ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(pad).padding(horizontal = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
             contentPadding = PaddingValues(vertical = 10.dp)
         ) {
             item {

@@ -47,7 +47,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import kotlin.collections.ArrayDeque
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -112,8 +111,17 @@ fun WordScreen(
     var pendingDraft by remember { mutableStateOf<DraftStore.MdDraft?>(null) }
 
     // 撤销 / 重做（仅源 Markdown 正文）
-    val undoStack = remember { ArrayDeque<TextFieldValue>() }
-    val redoStack = remember { ArrayDeque<TextFieldValue>() }
+    val (initialMdUndo, initialMdRedo) = remember(context) {
+        UndoHistoryStore.MdWordUndoStore.load(context)
+            ?: (emptyList<UndoHistoryStore.MdUndoSnapshot>() to emptyList())
+    }
+    var undoStack by remember { mutableStateOf(initialMdUndo) }
+    var redoStack by remember { mutableStateOf(initialMdRedo) }
+    LaunchedEffect(undoStack, redoStack) {
+        withContext(Dispatchers.IO) {
+            UndoHistoryStore.MdWordUndoStore.save(context, undoStack, redoStack)
+        }
+    }
 
     // 跨编辑器（PPTX / 公众号）互传的 Markdown
     var incomingMd by remember { mutableStateOf<MarkdownExchange.Payload?>(null) }
@@ -140,10 +148,22 @@ fun WordScreen(
     // 空白编辑态：无正文、未打开文件、无公文模型时，用于在编辑区展示「最近打开」
     val isBlankEditor = tfv.text.isBlank() && originalUri == null && govDoc == null
 
-    // 公文撤销 / 重做（内存快照，覆盖生成 / 编辑 / 打开 / 关闭）
-    var govUndoStack by remember { mutableStateOf<List<GovDoc?>>(emptyList()) }
-    var govRedoStack by remember { mutableStateOf<List<GovDoc?>>(emptyList()) }
+    // 公文撤销 / 重做（持久化版）
+    //   - 当前态（govDoc）由 [GovDocDraftStore] 草稿承载；栈仅承载历史快照。
+    //   - 启动时从 [UndoHistoryStore.GovUndoStore] 恢复，栈变化即异步落盘；
+    //     与草稿配合，重启后用户可继续撤销/重做上次的工作。
+    val (initialGovUndo, initialGovRedo) = remember(context) {
+        UndoHistoryStore.GovUndoStore.load(context)
+            ?: (emptyList<GovDoc?>() to emptyList<GovDoc?>())
+    }
+    var govUndoStack by remember { mutableStateOf(initialGovUndo) }
+    var govRedoStack by remember { mutableStateOf(initialGovRedo) }
     val GOV_MAX_HISTORY = 40
+    LaunchedEffect(govUndoStack, govRedoStack) {
+        withContext(Dispatchers.IO) {
+            UndoHistoryStore.GovUndoStore.save(context, govUndoStack, govRedoStack)
+        }
+    }
     var govDirty by remember { mutableStateOf(false) }
     var govAutoSaved by remember { mutableStateOf(false) }
     var govEditVersion by remember { mutableStateOf(0) }
@@ -211,9 +231,8 @@ fun WordScreen(
 
     fun insertSnippet(s: MarkdownSnippets.Snippet) {
         if (busy || govBusy) return
-        undoStack.addLast(tfv)
-        if (undoStack.size > 60) undoStack.removeFirst()
-        redoStack.clear()
+        undoStack = (undoStack + UndoHistoryStore.MdUndoSnapshot.of(tfv)).takeLast(60)
+        redoStack = emptyList()
         val r = MarkdownSnippets.apply(tfv.text, tfv.selection.start, tfv.selection.end, s)
         tfv = TextFieldValue(r.text, TextRange(r.caret))
         dirty = true
@@ -222,14 +241,18 @@ fun WordScreen(
 
     fun undo() {
         if (undoStack.isEmpty()) return
-        redoStack.addLast(tfv)
-        tfv = undoStack.removeLast()
+        redoStack = (redoStack + UndoHistoryStore.MdUndoSnapshot.of(tfv)).takeLast(60)
+        val snap = undoStack.last()
+        undoStack = undoStack.dropLast(1)
+        tfv = UndoHistoryStore.MdUndoSnapshot.toTfv(snap)
         dirty = true
     }
     fun redo() {
         if (redoStack.isEmpty()) return
-        undoStack.addLast(tfv)
-        tfv = redoStack.removeLast()
+        undoStack = (undoStack + UndoHistoryStore.MdUndoSnapshot.of(tfv)).takeLast(60)
+        val snap = redoStack.last()
+        redoStack = redoStack.dropLast(1)
+        tfv = UndoHistoryStore.MdUndoSnapshot.toTfv(snap)
         dirty = true
     }
 
@@ -253,7 +276,7 @@ fun WordScreen(
             if (base.isEmpty()) p.text else "$base\n\n${p.text}"
         } else p.text
         tfv = TextFieldValue(merged, TextRange(merged.length))
-        undoStack.clear(); redoStack.clear(); dirty = true; autoSaved = false
+        undoStack = emptyList(); redoStack = emptyList(); dirty = true; autoSaved = false
         MarkdownExchange.consume(context)
         incomingMd = null
         subView = SubView.EDIT
@@ -288,7 +311,7 @@ fun WordScreen(
                     commitGov(payload)
                     fidelityNotes = payload.originalDocx?.let { DocxFidelity.scan(it) } ?: emptyList()
                     fileName = name; sourceName = name
-                    tfv = TextFieldValue(md); undoStack.clear(); redoStack.clear(); lastGenSource = md
+                    tfv = TextFieldValue(md); undoStack = emptyList(); redoStack = emptyList(); lastGenSource = md
                     originalUri = uri; dirty = false; autoSaved = false
                     govDirty = false; govAutoSaved = false
                     DraftStore.clear(context); GovDocDraftStore.clear(context); resultUri = null
@@ -298,7 +321,7 @@ fun WordScreen(
                 } else {
                     val content = payload as String
                     fileName = name
-                    tfv = TextFieldValue(content); undoStack.clear(); redoStack.clear()
+                    tfv = TextFieldValue(content); undoStack = emptyList(); redoStack = emptyList()
                     originalUri = uri; dirty = false; autoSaved = false
                     DraftStore.clear(context); resultUri = null; govDoc = null
                     subView = SubView.EDIT
@@ -824,9 +847,8 @@ fun WordScreen(
                         onFontSizeChange = { fontSize = it },
                         onChange = { newTfv ->
                             if (newTfv.text != tfv.text) {
-                                undoStack.addLast(tfv)
-                                if (undoStack.size > 60) undoStack.removeFirst()
-                                redoStack.clear()
+                                undoStack = (undoStack + UndoHistoryStore.MdUndoSnapshot.of(tfv)).takeLast(60)
+                                redoStack = emptyList()
                             }
                             tfv = newTfv; dirty = true; autoSaved = false
                         },
@@ -836,7 +858,7 @@ fun WordScreen(
                         onRedo = { redo() },
                         canRedo = redoStack.isNotEmpty(),
                         onClear = {
-                            tfv = TextFieldValue(""); undoStack.clear(); redoStack.clear()
+                            tfv = TextFieldValue(""); undoStack = emptyList(); redoStack = emptyList()
                             dirty = true; autoSaved = false
                         },
                         onTemplates = { openTemplates() },
