@@ -89,20 +89,40 @@ stages:
             fi
             echo "✓✓✓ 单元测试全部通过 ✓✓✓"
 
+          # ---- 3.6) 解码签名密钥（云编译环境无本地密钥） ----
+          - |
+            echo "=== 准备签名密钥 ==="
+            if [ -n "$SIGNING_KEY_BASE64" ]; then
+              echo "$SIGNING_KEY_BASE64" | base64 -d > mdgw-release.jks
+              echo "✓ 签名密钥已就绪: $(ls -l mdgw-release.jks | awk '{print $5}') 字节"
+            else
+              echo "⚠ 未配置 SIGNING_KEY_BASE64：尝试默认密钥（不存在将导致签名失败）"
+            fi
+
           # ---- 4) 编译Release签名APK ----
           - |
             echo "=== 开始编译Release签名APK ==="
             chmod +x gradlew
-            ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee build.log
-            EXIT_CODE=$?
+            if [ -n "$SIGNING_KEY_BASE64" ]; then
+              ./gradlew assembleRelease --no-daemon --stacktrace \
+                -PstoreFile=mdgw-release.jks \
+                -PstorePassword="$SIGNING_STORE_PASSWORD" \
+                -PkeyAlias="$SIGNING_KEY_ALIAS" \
+                -PkeyPassword="$SIGNING_KEY_PASSWORD" \
+                -PstoreType=PKCS12 2>&1 | tee build.log
+            else
+              ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee build.log
+            fi
+            EXIT_CODE=${PIPESTATUS[0]}
             echo "=== 编译退出码: $EXIT_CODE ==="
 
           # ---- 5) 产物校验输出 ----
           - |
             echo "=== 构建产物检索 ==="
             find . -name "*.apk" -type f 2>/dev/null | while read f; do ls -lh "$f"; done
-            if [ -f app/build/outputs/apk/release/app-release.apk ]; then
-              echo "✓✓✓ APK 构建成功 ✓✓✓"
+            APK=$(ls app/build/outputs/apk/release/app-release.apk 2>/dev/null || ls app/build/outputs/apk/release/app-release-unsigned.apk 2>/dev/null)
+            if [ -n "$APK" ]; then
+              echo "✓✓✓ APK 构建成功: $APK ✓✓✓"
               ls -lh app/build/outputs/apk/release/*.apk
             else
               echo "✗✗✗ APK 未生成 ✗✗✗"
@@ -110,6 +130,18 @@ stages:
               tail -80 build.log 2>/dev/null || echo "无构建日志"
               exit 1
             fi
+          # ---- 6) 发布到 GitHub 双仓（源码仓 + xccapk），容错不阻断 ----
+          - |
+            echo "=== 发布 APK 到 GitHub（源码仓 + xccapk） ==="
+            set +e
+            APK=$(ls app/build/outputs/apk/release/app-release.apk 2>/dev/null || ls app/build/outputs/apk/release/app-release-unsigned.apk 2>/dev/null)
+            VERSION_NAME=$(grep -oP '"versionName"\s*:\s*"\K[^"]+' app/build/outputs/apk/release/output-metadata.json 2>/dev/null | head -1)
+            [ -z "$VERSION_NAME" ] && VERSION_NAME="local"
+            SHORT_SHA=$(git rev-parse --short HEAD 2>/dev/null || echo "nogit")
+            export APK VERSION_NAME SHORT_SHA
+            python3 .ci/publish_apk.py
+            echo "=== GitHub 发布步骤结束（容错） ==="
+
         artifacts:
           - name: chenlv-toolbox-apk
             path:

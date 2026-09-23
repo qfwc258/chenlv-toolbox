@@ -102,10 +102,32 @@ jobs:
           path: ${{ steps.version_info.outputs.apk_path }}
           retention-days: 30
 
+      - name: Publish APK to source repo (chenlv-toolbox)
+        # 在源码仓自身也保留一份 Release，作为 xccapk 之外的冗余备份。
+        # 使用 Actions 自带的 GITHUB_TOKEN（本仓 contents 写权限），无需额外密钥。
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version_info.outputs.version_name }}
+          name: 陈律工具箱 v${{ steps.version_info.outputs.version_name }}（源码仓备份）
+          body: |
+            ## 陈律工具箱 自动构建（源码仓冗余备份）
+
+            - Word / PPTX / PDF / 公众号排版，法援目录与证据目录填报
+            - 法律查询（国家法规库 OFD 阅读器自适应手机）
+            - 工伤赔偿计算（湖南标准，残疾/死亡双模式）
+            - 生成文书（按模板批量替换）、FTP 传文件、应用内检查更新
+
+            本 Release 为源码仓备份，正式更新分发见 qfwc258/xccapk。
+          files: ${{ steps.version_info.outputs.apk_path }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Publish APK to xccapk
         # 跨仓发布到公开的 APK 分发仓库；需在本仓库 Settings→Secrets→Actions 配置
-        # 名为 XCCAPK 的密钥（对 qfwc258/xccapk 有 Contents 写权限）。未配置时跳过，不阻断构建。
+        # 名为 XCCAPK 的密钥（对 qfwc258/xccapk 有 Contents 写权限）。未配置时跳过。
+        # 独立容错：即便 xccapk 发布失败，上一步源码仓 Release 已保留 APK，不拖红整次构建。
         if: ${{ env.XCCAPK_TOKEN != '' }}
+        continue-on-error: true
         uses: softprops/action-gh-release@v2
         with:
           repository: qfwc258/xccapk
