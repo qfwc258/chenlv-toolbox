@@ -291,7 +291,30 @@ fun AppScreen(initialUri: Uri? = null) {
 @Composable
 private fun HomeScreen(onOpen: (Route) -> Unit) {
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background
+        containerColor = BrandTokens.BrandPaper,
+        topBar = {
+            TopAppBar(
+                title = {
+                    Column {
+                        Text(
+                            "陈律工具箱",
+                            style = BrandTokens.BrandTopBarTitleStyle.copy(fontSize = 20.sp)
+                        )
+                        Text(
+                            "常用工具一站式聚合",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { onOpen(Route.SETTINGS) }) {
+                        Icon(Icons.Default.Settings, contentDescription = "设置")
+                    }
+                },
+                colors = BrandTokens.BrandTopAppBarColors
+            )
+        }
     ) { pad ->
         LazyVerticalGrid(
             columns = GridCells.Fixed(3),
