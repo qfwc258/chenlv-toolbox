@@ -33,7 +33,7 @@ class InjuryCalculatorTest {
     @Test
     fun 一级伤残津贴按月90且不计入一次性总额() {
         val r = calc.calculate(InjuryCase(rank = Rank.LEVEL_1, wage = W))
-        assertEquals(0.9f * W, r.monthlyItems["伤残津贴(按月)"]!!, 0.01f)
+        assertEquals(0.9f * W, r.monthlyItems["伤残津贴(基金按月)"]!!, 0.01f)
         // 一次性总额仅含一次性伤残补助金（27 个月），不含按月津贴
         assertEquals(27f * W, r.totalFund, 0.01f)
         assertEquals(0f, r.totalEmployer, 0.01f)
@@ -42,10 +42,10 @@ class InjuryCalculatorTest {
     @Test
     fun 五六级难以安排工作发伤残津贴70与60() {
         val r5 = calc.calculate(InjuryCase(rank = Rank.LEVEL_5, wage = W, difficultToArrange = true))
-        assertEquals(0.7f * W, r5.monthlyItems["伤残津贴(按月)"]!!, 0.01f)
+        assertEquals(0.7f * W, r5.monthlyItems["伤残津贴(单位按月)"]!!, 0.01f)
 
         val r6 = calc.calculate(InjuryCase(rank = Rank.LEVEL_6, wage = W, difficultToArrange = true))
-        assertEquals(0.6f * W, r6.monthlyItems["伤残津贴(按月)"]!!, 0.01f)
+        assertEquals(0.6f * W, r6.monthlyItems["伤残津贴(单位按月)"]!!, 0.01f)
     }
 
     @Test
@@ -56,7 +56,7 @@ class InjuryCalculatorTest {
         )
         assertEquals(0.7f * W, r.monthlyItems["供养亲属抚恤金(按月)"]!!, 0.01f)
         // 工亡一次性总额 = 工亡补助金 + 丧葬（6 个月统筹工资）
-        val expected = InjuryParams.DEFAULT.deathOneTime + 6f * InjuryParams.DEFAULT.baseMonthlyWage
+        val expected = InjuryParams.DEFAULT.urbanIncome * 20f + 6f * InjuryParams.DEFAULT.baseMonthlyWage
         assertEquals(expected, r.totalFund, 0.01f)
     }
 

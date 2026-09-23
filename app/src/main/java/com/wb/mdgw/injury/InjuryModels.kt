@@ -96,8 +96,8 @@ data class InjuryParams(
     val baseMonthlyWage: Float = 7694f,
     /** 住院伙食补助费标准（元/天） */
     val hospitalFoodPerDay: Float = 20f,
-    /** 一次性工亡补助金（元） */
-    val deathOneTime: Float = 1083760f,
+    /** 上一年度全国城镇居民人均可支配收入（元/年）；一次性工亡补助金 = 该值 × 20 */
+    val urbanIncome: Float = 54188f,
     /** 一次性伤残补助金对应月数（1-10 级） */
     val disabilityOnceMonths: Map<Int, Float> = mapOf(
         1 to 27f, 2 to 25f, 3 to 23f, 4 to 21f,

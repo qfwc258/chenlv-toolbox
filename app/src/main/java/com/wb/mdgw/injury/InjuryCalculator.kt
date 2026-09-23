@@ -26,27 +26,27 @@ class InjuryCalculator {
     private fun r2(v: Double): Float = (Math.round(v * 100.0) / 100.0).toFloat()
 
     /**
-     * 年龄扣减系数（Double 保证比例精确）：距法定退休≥5 年不扣减；≤0 年全部扣减；
-     * 中间每少 1 年扣 20%。
+     * 年龄扣减系数（Double 保证比例精确）：距法定退休≥5 年不扣减；不足 5 年每少 1 年
+     * 扣 20%；按规定最高减除额不超过全额的 90%，即系数下限 0.1（最少发 10%）。
      */
     private fun deductRate(age: Float, retireAge: Float): Double {
         val remainYear = retireAge - age
         return when {
             remainYear >= 5f -> 1.0
-            remainYear <= 0f -> 0.0
-            else -> 1.0 - (5f - remainYear) * 0.2
+            else -> maxOf(0.1, 1.0 - (5f - remainYear) * 0.2)
         }
     }
 
     /**
-     * 供养亲属抚恤金总比例：配偶 40%、其他亲属每人 30%、孤寡老人或孤儿每人 +10%，
-     * 各供养亲属抚恤金之和不得超过因工死亡职工生前的工资（即总比例封顶 100%）。
+     * 供养亲属抚恤金总比例：配偶 40%、其他亲属每人 30%；孤寡老人或孤儿在其他亲属
+     * 30% 的基础上再增加 10%，即每人 40%。各供养亲属抚恤金之和不得超过因工死亡
+     * 职工生前的工资（总比例封顶 100%）。
      */
     private fun pensionRatio(case: InjuryCase): Double {
         var r = 0.0
         if (case.pensionSpouse) r += 0.4
         r += case.pensionOther * 0.3
-        r += case.pensionOrphan * 0.1
+        r += case.pensionOrphan * 0.4
         return min(r, 1.0)
     }
 
@@ -62,7 +62,7 @@ class InjuryCalculator {
         val effectiveWage = wageD.toFloat()
 
         if (case.rank == Rank.DEATH) {
-            fundItems["一次性工亡补助金"] = r2(params.deathOneTime.toDouble())
+            fundItems["一次性工亡补助金"] = r2(params.urbanIncome.toDouble() * 20.0)
             fundItems["丧葬补助金"] = r2(6.0 * base)
             // 供养亲属抚恤金（可选，按月）
             val ratio = pensionRatio(case)
@@ -84,13 +84,15 @@ class InjuryCalculator {
                 note += "生活护理费按月发放，不计入一次性总额；"
             }
 
-            // 伤残津贴（按月）：1-4 级法定保留劳动关系、退出岗位，自动按月；
+            // 伤残津贴（按月）：1-4 级法定保留劳动关系、退出岗位，由工伤保险基金按月；
             // 5-6 级难以安排工作时由用人单位按月发放（需勾选 difficultToArrange）
             val allowRate = params.disabilityAllowanceRate[rankInt] ?: 0f
             val allowEligible = rankInt in 1..4 || (rankInt in 5..6 && case.difficultToArrange)
             if (allowRate > 0 && allowEligible) {
-                monthlyItems["伤残津贴(按月)"] = r2(allowRate.toDouble() * wageD)
-                note += "伤残津贴按月发放，不计入一次性总额；"
+                val byFund = rankInt in 1..4
+                val label = if (byFund) "伤残津贴(基金按月)" else "伤残津贴(单位按月)"
+                monthlyItems[label] = r2(allowRate.toDouble() * wageD)
+                note += (if (byFund) "工伤保险基金" else "用人单位") + "按月发放伤残津贴，不计入一次性总额；"
             }
 
             // 解除劳动关系时的一次性医疗/就业补助金（仅 5-10 级）

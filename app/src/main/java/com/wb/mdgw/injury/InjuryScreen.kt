@@ -225,7 +225,7 @@ fun InjuryScreen() {
                                 ) { breakRelation = it == "true" }
                             }
                             Text(
-                                "5-10 级解除劳动关系时，领取一次性医疗/就业补助金，并按距退休年龄扣减。",
+                                "5-10 级解除时领取一次性医疗/就业补助金；距退休不足 5 年每少 1 年减 20%，最高扣减 90%。",
                                 fontSize = 11.sp, color = MaterialTheme.colorScheme.outline
                             )
                         }
@@ -270,7 +270,7 @@ fun InjuryScreen() {
                             pensionOrphanText = filterNum(it, integer = true)
                         }
                         Text(
-                            "其他亲属每人 30%、孤儿或孤寡每人 +10%，各亲属抚恤金之和不超过本人工资，按月发放。",
+                            "其他亲属每人 30%、孤儿/孤寡每人 40%（30% 基础上 +10%），各亲属抚恤金之和不超过本人工资，按月发放。",
                             fontSize = 11.sp, color = MaterialTheme.colorScheme.outline
                         )
                     }
@@ -393,6 +393,9 @@ fun InjuryScreen() {
 
                 // ---------- 计算方式说明（可折叠，按当前选择动态生成） ----------
                 CalcMethodCard(parseCase(), params, isDeath)
+
+                // ---------- 政策说明（可折叠，静态规定） ----------
+                PolicyNoteCard()
                 Spacer(Modifier.height(72.dp))
             }
         }
@@ -526,8 +529,8 @@ private fun ParamsCard(
     var foodText by remember(params.hospitalFoodPerDay) {
         mutableStateOf(params.hospitalFoodPerDay.toInt().toString())
     }
-    var deathText by remember(params.deathOneTime) {
-        mutableStateOf(params.deathOneTime.toInt().toString())
+    var urbanText by remember(params.urbanIncome) {
+        mutableStateOf(params.urbanIncome.toInt().toString())
     }
     FormCard("赔偿标准参数（湖南 2025）") {
         // ---------- 统筹与单价标准 ----------
@@ -548,12 +551,12 @@ private fun ParamsCard(
             foodText = filterNum(it, integer = true)
             foodText.toFloatOrNull()?.let { v -> onChange(params.copy(hospitalFoodPerDay = v)) }
         }
-        NumberInputRow("一次性工亡补助金", deathText, "元", integer = true) {
-            deathText = filterNum(it, integer = true)
-            deathText.toFloatOrNull()?.let { v -> onChange(params.copy(deathOneTime = v)) }
+        NumberInputRow("城镇人均可支配收入/年", urbanText, "元", integer = true) {
+            urbanText = filterNum(it, integer = true)
+            urbanText.toFloatOrNull()?.let { v -> onChange(params.copy(urbanIncome = v)) }
         }
         Text(
-            "单价与标准均可在政策更新时修改保存，无需等待版本升级。",
+            "一次性工亡补助金 = 人均可支配收入 × 20 = ${(params.urbanIncome * 20f).toInt()} 元；单价与标准均可在政策更新时修改保存。",
             fontSize = 11.sp, color = MaterialTheme.colorScheme.outline
         )
 
@@ -761,6 +764,56 @@ private fun CalcMethodCard(case: InjuryCase, params: InjuryParams, isDeath: Bool
     }
 }
 
+/**
+ * 政策说明（可折叠，静态）：集中列出《工伤保险待遇简明表》中的备注与适用规定，
+ * 不参与计算，仅作口径参考。
+ */
+@Composable
+private fun PolicyNoteCard() {
+    var expanded by remember { mutableStateOf(false) }
+    Card(shape = MaterialTheme.shapes.large) {
+        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+            Row(
+                Modifier.fillMaxWidth().clickable { expanded = !expanded },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "政策说明与适用规定", fontWeight = FontWeight.SemiBold, fontSize = 15.sp,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    if (expanded) "收起" else "展开",
+                    fontSize = 12.sp, color = MaterialTheme.colorScheme.primary
+                )
+            }
+            if (expanded) {
+                Spacer(Modifier.height(8.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(8.dp))
+                val notes = listOf(
+                    "伤残津贴：1-4 级由工伤保险基金按月发放；5-6 级难以安排工作的，由用人单位按月发放。",
+                    "1-4 级办理退休手续后停发伤残津贴，基本养老保险待遇低于伤残津贴的，由工伤保险基金补足差额。",
+                    "5-10 级解除劳动关系时，一次性医疗/就业补助金距退休不足 5 年每少 1 年减 20%，最高减除 90%。",
+                    "生活护理费由基金按月支付：全部不能自理 50%、大部分 40%、部分 30%（按统筹工资）。",
+                    "住院伙食补助：2022 年 1 月 1 日前住院为 10 元/天，之后为 20 元/天。",
+                    "一次性工亡补助金 = 上年度全国城镇居民人均可支配收入 × 20；丧葬补助金 = 6 个月统筹工资。",
+                    "供养亲属抚恤金：配偶 40%、其他亲属每人 30%、孤儿/孤寡每人 40%，总和不超过生前本人工资。",
+                    "应参保而未参保的，由用人单位按《工伤保险条例》规定的项目和标准支付全部费用。",
+                    "本人工资指工伤前 12 个月平均月缴费工资，高于统筹工资 300% 按 300%、低于 60% 按 60% 计算。",
+                    "2011 年 1 月 1 日以后发生并认定的工伤，按现行标准执行。"
+                )
+                notes.forEach {
+                    Text(
+                        "· $it", fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 3.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
 /** 生成计算方式说明条目（与实际计算口径一致） */
 private fun buildCalcMethodLines(case: InjuryCase, params: InjuryParams): List<String> {
     val f = DecimalFormat("#,##0")
@@ -770,10 +823,10 @@ private fun buildCalcMethodLines(case: InjuryCase, params: InjuryParams): List<S
     val wage = case.wage.coerceIn(lo, hi)
     val list = mutableListOf<String>()
     if (case.rank == Rank.DEATH) {
-        list += "一次性工亡补助金 = 上年度全国城镇居民人均可支配收入 × 20（¥ ${f.format(params.deathOneTime)}）"
+        list += "一次性工亡补助金 = 全国城镇居民人均可支配收入 ¥${f.format(params.urbanIncome)} × 20（¥ ${f.format(params.urbanIncome * 20f)}）"
         list += "丧葬补助金 = 统筹工资 ¥${f.format(base)} × 6 个月"
         if (case.pensionSpouse || case.pensionOther > 0 || case.pensionOrphan > 0) {
-            list += "供养亲属抚恤金 = 本人工资 ¥${f.format(wage)} ×（配偶40% + 其他亲属30%×人数 + 孤寡10%×人数），封顶100%，按月发放"
+            list += "供养亲属抚恤金 = 本人工资 ¥${f.format(wage)} ×（配偶40% + 其他亲属30%×人数 + 孤儿/孤寡40%×人数），封顶100%，按月发放"
         }
         return list
     }
@@ -786,11 +839,12 @@ private fun buildCalcMethodLines(case: InjuryCase, params: InjuryParams): List<S
     val allowRate = params.disabilityAllowanceRate[r] ?: 0f
     val allowEligible = r in 1..4 || (r in 5..6 && case.difficultToArrange)
     if (allowRate > 0 && allowEligible) {
-        list += "伤残津贴 = 本人工资 ¥${f.format(wage)} × ${(allowRate * 100).toInt()}%（按月发放）"
+        val payer = if (r in 1..4) "基金" else "单位"
+        list += "伤残津贴 = 本人工资 ¥${f.format(wage)} × ${(allowRate * 100).toInt()}%（$payer 按月发放）"
     }
     if (case.breakRelation && r in 5..10) {
-        list += "一次性工伤医疗补助金 = 本人工资 ¥${f.format(wage)} × ${params.medicalOnceMonths[r]?.toInt() ?: 0} 个月（解除时，按距退休扣减）"
-        list += "一次性伤残就业补助金 = 本人工资 ¥${f.format(wage)} × ${params.employOnceMonths[r]?.toInt() ?: 0} 个月（解除时，按距退休扣减）"
+        list += "一次性工伤医疗补助金 = 本人工资 ¥${f.format(wage)} × ${params.medicalOnceMonths[r]?.toInt() ?: 0} 个月（解除时按距退休扣减，最高扣 90%）"
+        list += "一次性伤残就业补助金 = 本人工资 ¥${f.format(wage)} × ${params.employOnceMonths[r]?.toInt() ?: 0} 个月（解除时按距退休扣减，最高扣 90%）"
     }
     if (case.hospitalDay > 0) {
         list += "住院伙食补助费 = ¥${params.hospitalFoodPerDay.toInt()} /天 × ${case.hospitalDay} 天"
