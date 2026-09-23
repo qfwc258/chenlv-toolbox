@@ -10,11 +10,14 @@ import androidx.core.content.IntentCompat
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -39,6 +42,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -103,7 +107,9 @@ fun MdGwTheme(darkTheme: Boolean = false, content: @Composable () -> Unit) {
         background = Color(0xFFF6F3EE),
         surfaceVariant = Color(0xFFEDE7DE)
     )
-    MaterialTheme(colorScheme = colors, content = content)
+    // 颜色 + 自定义字版（BrandTokens.BrandTypography 覆盖 Material3 默认 Typography），
+    // 不破坏现有 MaterialTheme.colorScheme.* 引用。
+    MaterialTheme(colorScheme = colors, typography = BrandTokens.BrandTypography, content = content)
 }
 
 /** 顶层路由：主页宫格 + 各功能页（平铺，不再有底部 Tab） */
@@ -280,33 +286,23 @@ fun AppScreen(initialUri: Uri? = null) {
     }
 }
 
-/** 功能主页：一行三列宫格，可随功能数量自动换行扩展 */
+/** 功能主页：平铺宫格（不分组） */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun HomeScreen(onOpen: (Route) -> Unit) {
     Scaffold(
-        topBar = {
-            TopAppBar(title = {
-                Column {
-                    Text("陈律工具箱", fontWeight = FontWeight.Bold, fontSize = 19.sp)
-                    Text("常用工具一站式聚合", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
-                }
-            }, actions = {
-                IconButton(onClick = { onOpen(Route.SETTINGS) }) {
-                    Icon(Icons.Default.Settings, contentDescription = "设置")
-                }
-            })
-        }
+        containerColor = MaterialTheme.colorScheme.background
     ) { pad ->
         LazyVerticalGrid(
             columns = GridCells.Fixed(3),
             modifier = Modifier
                 .fillMaxSize()
                 .padding(pad),
-            contentPadding = PaddingValues(16.dp),
+            contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 14.dp, bottom = 20.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            // 不分组：13 个功能按 HOME_FEATURES 声明顺序平铺
             items(HOME_FEATURES, key = { it.route.name }) { f ->
                 FeatureCard(feature = f, onClick = { onOpen(f.route) })
             }
@@ -314,65 +310,182 @@ private fun HomeScreen(onOpen: (Route) -> Unit) {
     }
 }
 
-/** 宫格卡片：图标 + 标题，简洁居中 */
+/** 分组标签保留 composable 定义（暂未使用，后续若需要分组可快速启用），
+ *  实际不再被调用，避免删除已有引用造成编译错误。 */
+@Suppress("unused")
+private val EDITORIAL_ROUTES = setOf(
+    Route.WORD, Route.WECHAT, Route.PPTX, Route.DOC_GEN,
+    Route.TABLE_FORM, Route.SCREENSHOT
+)
+@Suppress("unused")
+private val TOOL_ROUTES = setOf(
+    Route.PDF, Route.LAW_SEARCH, Route.INJURY
+)
+@Suppress("unused")
+private val SYS_ROUTES = setOf(
+    Route.DOCUMENTS, Route.EVIDENCE_CATALOG, Route.ARCHIVE_CATALOG, Route.FTP
+)
+
+/**
+ * 分组标题：左侧小色条 + 衬线标题 + 右侧计数
+ * 用品牌色区分三组，比纯文本「文书编辑 / TOOLS / SYS」更有品牌感
+ */
+@Composable
+private fun HomeSectionLabel(
+    label: String,
+    accent: androidx.compose.ui.graphics.Color,
+    count: Int
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            // 上方 16dp 留白让上一组卡片与本组标签之间有明显的视觉断开；
+            // 下方 6dp 留白让标签与卡片之间不太空。
+            .padding(start = 2.dp, end = 2.dp, top = 16.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier
+                .size(width = 4.dp, height = 14.dp)
+                .background(accent, RoundedCornerShape(2.dp))
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            label,
+            fontFamily = FontFamily.Serif,
+            fontWeight = FontWeight.Medium,
+            fontSize = 15.sp,
+            color = MaterialTheme.colorScheme.onBackground,
+            letterSpacing = 1.sp
+        )
+        Spacer(Modifier.width(6.dp))
+        // 计数：用稍小字号 + 较低对比度，传达「信息密度」但不抢主标题风头
+        Text(
+            "· $count",
+            fontFamily = FontFamily.Serif,
+            fontWeight = FontWeight.Normal,
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+/**
+ * 宫格卡片：暖纸色背景 + 衬线标题 + 金色左线 + 微妙阴影
+ * 关键变化（vs 旧版）：
+ *  - 卡片背景从「surfaceVariant 半透明」改为「BrandParchment」宣纸色，纸张感更强
+ *  - 加 1dp 金色左线点缀，对应「公文行格线」意象
+ *  - 阴影由 Material3 Card 默认 elevation 提升到 2dp，立体感更强
+ *  - 标题改用 Serif 字体 + Semibold，与品牌头呼应
+ *  - 图标底色铺一层朱砂红 8% 透明圆形背景，让图标更有「印章」感
+ */
 @Composable
 private fun FeatureCard(feature: Feature, onClick: () -> Unit) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(104.dp)
+            // 从 104dp 降到 92dp：内容（40dp 图标 + 8dp 间距 + ~18dp 标题）= 66dp，
+            // 剩余 26dp 留白比例约 30%，比原 46dp/45% 更紧凑，一屏多看一行。
+            .height(92.dp)
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(8.dp),     // 直角微圆，比 Material3 默认 12dp 略小，更稳重
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+            containerColor = BrandTokens.BrandParchment
+        ),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = 2.dp,
+            pressedElevation = 1.dp
         )
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 8.dp, vertical = 14.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Icon(
-                feature.icon,
-                contentDescription = null,
-                modifier = Modifier.size(34.dp),
-                tint = MaterialTheme.colorScheme.primary
+        Row(Modifier.fillMaxSize()) {
+            // 左侧 1dp 金色细线
+            Box(
+                Modifier
+                    .width(1.dp)
+                    .fillMaxHeight()
+                    .background(BrandTokens.BrandBronze.copy(alpha = 0.6f))
             )
-            Spacer(Modifier.height(10.dp))
-            Text(
-                feature.title,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 6.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // 图标：朱砂红 8% 透明圆形背景 + 朱砂红图标 = 印章意象
+                Box(
+                    Modifier
+                        .size(40.dp)
+                        .background(
+                            color = BrandTokens.BrandSealRed,
+                            shape = CircleShape
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        feature.icon,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    feature.title,
+                    fontFamily = FontFamily.Serif,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    letterSpacing = 0.5.sp
+                )
+            }
         }
     }
 }
 
-/** 给没有自带标题栏的页面套一个统一的顶部返回栏 */
+/** 给没有自带标题栏的页面套一个统一的顶部返回栏（品牌版）
+ *
+ *  body 容器已经统一加了 14dp padding（与主页 LazyVerticalGrid 一致），子屏不需要再写。
+ *  如需更紧凑/更松，可通过 `bodyPadding` 覆盖。
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SimpleScreenFrame(
     title: String,
     onBack: () -> Unit,
+    bodyPadding: androidx.compose.foundation.layout.PaddingValues =
+        androidx.compose.foundation.layout.PaddingValues(14.dp),
     content: @Composable () -> Unit
 ) {
     Scaffold(
+        // 容器色改成宣纸色暖白，与主页卡片、WordScreen 视觉一致
+        containerColor = BrandTokens.BrandPaper,
         topBar = {
             TopAppBar(
-                title = { Text(title, fontWeight = FontWeight.SemiBold) },
+                title = {
+                    Text(
+                        title,
+                        style = BrandTokens.BrandTopBarTitleStyle.copy(fontSize = 20.sp)  // P2：20sp
+                    )
+                },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(
+                        onClick = onBack,
+                        modifier = Modifier.padding(start = 6.dp)
+                    ) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回主页")
                     }
-                }
+                },
+                colors = BrandTokens.BrandTopAppBarColors
             )
         }
     ) { pad ->
-        Box(Modifier.padding(pad).fillMaxSize()) { content() }
+        Box(Modifier.padding(pad).fillMaxSize()) {
+            // P1：统一 body padding 14dp，子屏无需重复写
+            Box(Modifier.padding(bodyPadding).fillMaxSize()) { content() }
+        }
     }
 }
 

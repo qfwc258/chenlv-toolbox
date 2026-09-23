@@ -10,12 +10,15 @@ import android.os.Environment
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Folder
@@ -126,13 +129,29 @@ fun FtpScreen(onBack: () -> Unit) {
     fun stop() = FtpServerService.stop(context)
 
     Scaffold(
+        containerColor = com.wb.mdgw.BrandTokens.BrandPaper,
         topBar = {
             TopAppBar(
-                title = { Text("FTP 服务", fontWeight = FontWeight.SemiBold) },
+                title = {
+                    Text(
+                        "FTP 服务",
+                        style = com.wb.mdgw.BrandTokens.BrandTopBarTitleStyle.copy(fontSize = 20.sp)
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回主页")
                     }
+                },
+                colors = com.wb.mdgw.BrandTokens.BrandTopAppBarColors,
+                bottomBar = {
+                    // P2：1dp 金色细线作为顶栏与 body 的视觉分隔
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(com.wb.mdgw.BrandTokens.BrandBronze.copy(alpha = 0.35f))
+                    )
                 }
             )
         },
@@ -143,129 +162,123 @@ fun FtpScreen(onBack: () -> Unit) {
                 .fillMaxSize()
                 .padding(pad)
                 .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+                .padding(14.dp),                     // P1：与 SimpleScreenFrame 默认 14dp 对齐
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // ---------- 状态 + 开关 ----------
-            Card(shape = MaterialTheme.shapes.large) {
-                Column(Modifier.fillMaxWidth().padding(18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Surface(
-                        shape = CircleShape,
-                        color = if (running) Color(0xFF2E7D32) else MaterialTheme.colorScheme.surfaceVariant,
-                        modifier = Modifier.size(64.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                Icons.Default.Dns,
-                                contentDescription = null,
-                                modifier = Modifier.size(34.dp),
-                                tint = if (running) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+            // ---------- 状态 + 开关：紧凑横条（不再垂直居中占用整张卡片） ----------
+            Card(
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                colors = androidx.compose.material3.CardDefaults.cardColors(
+                    containerColor = com.wb.mdgw.BrandTokens.BrandParchment
+                )
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // 状态点：8x8dp 朱砂红 / 灰
+                    Box(
+                        Modifier
+                            .size(10.dp)
+                            .background(
+                                if (running) com.wb.mdgw.BrandTokens.BrandRed
+                                else MaterialTheme.colorScheme.outlineVariant,
+                                CircleShape
                             )
-                        }
-                    }
-                    Spacer(Modifier.height(10.dp))
-                    Text(
-                        if (running) "运行中" else "已停止",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp,
-                        color = if (running) Color(0xFF2E7D32) else MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(Modifier.height(14.dp))
-                    if (running) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            if (running) "运行中" else "已停止",
+                            fontFamily = FontFamily.Serif,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (running) MaterialTheme.colorScheme.onBackground
+                                    else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (running) {
                             Text(
                                 address,
                                 fontFamily = FontFamily.Monospace,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.weight(1f)
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1
                             )
-                            IconButton(onClick = {
-                                val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                cm.setPrimaryClip(ClipData.newPlainText("ftp", address))
-                            }) {
-                                Icon(Icons.Default.ContentCopy, contentDescription = "复制地址")
-                            }
-                        }
-                        Spacer(Modifier.height(10.dp))
-                        Button(
-                            onClick = { stop() },
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                        ) {
-                            Icon(Icons.Default.Stop, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("停止服务")
-                        }
-                    } else {
-                        Button(onClick = { start() }, modifier = Modifier.fillMaxWidth()) {
-                            Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("启动服务")
+                        } else {
+                            Text(
+                                "本机 IP：${
+                                    if (detectedIps.isEmpty()) "未检测到网络"
+                                    else detectedIps.joinToString("、")
+                                }",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1
+                            )
                         }
                     }
+                    // 右侧 Switch：紧凑主操作
+                    Switch(
+                        checked = running,
+                        onCheckedChange = { if (running) stop() else start() },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = com.wb.mdgw.BrandTokens.BrandPaper,
+                            checkedTrackColor = com.wb.mdgw.BrandTokens.BrandRed
+                        )
+                    )
                 }
             }
 
-            // ---------- 连接设置 ----------
-            Card(shape = MaterialTheme.shapes.large) {
-                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("连接设置", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-
-                    // 本机 IP（只读，自动检测）
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Wifi, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                        Spacer(Modifier.width(10.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text("本机 IP（自动获取）", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
-                            Text(
-                                if (detectedIps.isEmpty()) "未检测到网络" else detectedIps.joinToString("、"),
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
+            // ---------- 连接设置：拆成 SettingsCard ----------
+            Card(
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                colors = androidx.compose.material3.CardDefaults.cardColors(
+                    containerColor = com.wb.mdgw.BrandTokens.BrandParchment
+                )
+            ) {
+                Column(Modifier.fillMaxWidth().padding(14.dp)) {
+                    Text(
+                        "连接设置",
+                        fontFamily = FontFamily.Serif,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    // P4：三个 SettingsRow，每行 8dp 间距
+                    SettingsRow(label = "本机 IP", value = detectedIps.joinToString("、").ifEmpty { "未检测到网络" }, actionLabel = "设置") {
+                        showIpDialog = true
                     }
-                    OutlinedButton(
-                        onClick = { showIpDialog = true },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Default.Lan, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("设置静态 IP（跳转系统设置）")
-                    }
-
-                    HorizontalDivider()
-
-                    // 端口
+                    SettingsDivider()
+                    SettingsRow(label = "端口", value = portText)
                     OutlinedTextField(
                         value = portText,
                         onValueChange = { portText = it.filter { c -> c.isDigit() }.take(5) },
-                        label = { Text("端口（1024–65535）") },
+                        label = { Text("端口（1024–65535）", fontSize = 12.sp) },
                         singleLine = true,
                         enabled = !running,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp)
                     )
-
-                    // 根目录
+                    SettingsDivider()
+                    SettingsRow(label = "根目录", value = rootDir.substringAfterLast('/'))
                     OutlinedTextField(
                         value = rootDir,
                         onValueChange = { rootDir = it },
-                        label = { Text("根目录（绝对路径）") },
+                        label = { Text("根目录（绝对路径）", fontSize = 12.sp) },
                         singleLine = true,
                         enabled = !running,
-                        leadingIcon = { Icon(Icons.Default.Folder, contentDescription = null) },
-                        modifier = Modifier.fillMaxWidth()
+                        leadingIcon = { Icon(Icons.Default.Folder, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp)
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // 快捷目录 chip
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         QuickDir("内部存储", Environment.getExternalStorageDirectory().absolutePath, running) { rootDir = it }
                         QuickDir("/scan", FtpSettings.DEFAULT_ROOT, running) { rootDir = it }
                         QuickDir("Download", Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).absolutePath, running) { rootDir = it }
                     }
                     if (running) {
+                        Spacer(Modifier.height(8.dp))
                         Text(
                             "服务运行中，端口与根目录已锁定；停止后可修改。",
-                            fontSize = 12.sp,
+                            fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.outline
                         )
                     }
@@ -273,9 +286,20 @@ fun FtpScreen(onBack: () -> Unit) {
             }
 
             // ---------- 说明 ----------
-            Card(shape = MaterialTheme.shapes.large) {
-                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("使用说明", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+            Card(
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                colors = androidx.compose.material3.CardDefaults.cardColors(
+                    containerColor = com.wb.mdgw.BrandTokens.BrandParchment
+                )
+            ) {
+                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        "使用说明",
+                        fontFamily = FontFamily.Serif,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
                     InfoLine("手机与电脑/其他设备需连接同一 WiFi（或手机热点）。")
                     InfoLine("匿名登录，用户名 anonymous，密码任意；对根目录拥有读写删全部权限。")
                     InfoLine("电脑：文件资源管理器地址栏输入上面的 ftp:// 地址；或用 FileZilla 选被动模式。")
@@ -331,4 +355,69 @@ private fun QuickDir(label: String, path: String, running: Boolean, onClick: (St
 @Composable
 private fun InfoLine(text: String) {
     Text("· $text", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+}
+
+/**
+ * P4：设置行 ——
+ * 系统设置风格：左标签 + 右值，右侧带 chevron 表示可点击。
+ * 整个 Row 用 Row.clickable 调用 onAction，避免按钮抢占视觉重量。
+ */
+@Composable
+private fun SettingsRow(
+    label: String,
+    value: String,
+    actionLabel: String? = null,
+    onClick: (() -> Unit)? = null
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .height(48.dp)
+            .clickable(enabled = onClick != null, onClick = { onClick?.invoke() })
+            .padding(horizontal = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            label,
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.width(72.dp)
+        )
+        Text(
+            value,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onBackground,
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        if (onClick != null) {
+            if (!actionLabel.isNullOrEmpty()) {
+                Text(
+                    actionLabel,
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(end = 4.dp)
+                )
+            }
+            Icon(
+                androidx.compose.material.icons.Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+    }
+}
+
+/** 设置行之间的细分隔线 */
+@Composable
+private fun SettingsDivider() {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(0.5.dp)
+            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+    )
 }

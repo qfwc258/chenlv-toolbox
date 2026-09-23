@@ -21,7 +21,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.background
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Article
 import androidx.compose.material.icons.filled.Delete
@@ -33,10 +35,11 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Slideshow
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -45,6 +48,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.runtime.Composable
@@ -58,6 +62,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -235,9 +240,15 @@ fun DocumentsScreen(
     }
 
     Scaffold(
+        containerColor = com.wb.mdgw.BrandTokens.BrandPaper,
         topBar = {
             TopAppBar(
-                title = { Text("我的文档", fontWeight = FontWeight.SemiBold) },
+                title = {
+                    Text(
+                        "我的文档",
+                        style = com.wb.mdgw.BrandTokens.BrandTopBarTitleStyle.copy(fontSize = 20.sp)
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
@@ -247,6 +258,16 @@ fun DocumentsScreen(
                     IconButton(onClick = { reload() }) {
                         Icon(Icons.Default.Refresh, contentDescription = "刷新")
                     }
+                },
+                colors = com.wb.mdgw.BrandTokens.BrandTopAppBarColors,
+                bottomBar = {
+                    // P2：1dp 金色细线作为 TopAppBar 与 body 的视觉分隔
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(com.wb.mdgw.BrandTokens.BrandBronze.copy(alpha = 0.35f))
+                    )
                 }
             )
         }
@@ -335,29 +356,51 @@ private fun DocRow(
     menuExpanded: Boolean,
     onMenuToggle: (Boolean) -> Unit
 ) {
-    ElevatedCard(
+    // 与主页卡片同语言：宣纸色 + 1dp 金色左线 + 朱砂红圆形图标底 + Serif Semibold 标题
+    Card(
         onClick = onOpen,
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = com.wb.mdgw.BrandTokens.BrandParchment),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp, pressedElevation = 1.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
             Modifier.fillMaxWidth().padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                iconFor(item.name),
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(30.dp)
+            // 左侧 1dp 金色细线（与主页卡片同语言），高度与图标底对齐 40dp
+            Box(
+                Modifier
+                    .width(1.dp)
+                    .height(40.dp)
+                    .background(com.wb.mdgw.BrandTokens.BrandBronze.copy(alpha = 0.6f))
             )
+            Spacer(Modifier.width(12.dp))
+            // 图标：朱砂红 12% 透明圆形底 + 主色图标
+            Box(
+                Modifier
+                    .size(40.dp)
+                    .background(com.wb.mdgw.BrandTokens.BrandSealRed, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    iconFor(item.name),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(
                     item.name,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium,
+                    fontFamily = FontFamily.Serif,
+                    fontSize = 14.sp,            // P3：从 15sp 降到 14sp，与列表行高协调
+                    fontWeight = FontWeight.SemiBold,
                     maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    letterSpacing = 0.3.sp
                 )
                 Spacer(Modifier.height(3.dp))
                 Text(
@@ -368,7 +411,7 @@ private fun DocRow(
                             append(SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(item.modified)))
                         }
                     },
-                    fontSize = 11.sp,
+                    fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
