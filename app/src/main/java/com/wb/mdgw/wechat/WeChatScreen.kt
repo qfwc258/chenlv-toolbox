@@ -74,10 +74,13 @@ import com.wb.mdgw.MdEditorPane
 import com.wb.mdgw.UI_CARD_RADIUS
 import com.wb.mdgw.UI_BTN_RADIUS
 import com.wb.mdgw.UI_ACTION_HEIGHT
+import com.wb.mdgw.UndoHistoryStore
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.nio.charset.StandardCharsets
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 /**
  * 陈律工具箱「公众号」Tab：Markdown → 微信公众号排版。
@@ -100,10 +103,19 @@ fun WeChatScreen(snackbar: SnackbarHostState) {
     val draft = remember { WeChatDraftStore.load(context) }
 
     var mdTfv by remember { mutableStateOf(TextFieldValue(draft?.markdown ?: "")) }
-    // 字号（各 Tab 独立记忆）与撤销/重做栈
+    // 字号（各 Tab 独立记忆）与撤销/重做栈（持久化版）
     var fontSize by remember { mutableStateOf(15) }
-    val undoStack = remember { ArrayDeque<TextFieldValue>() }
-    val redoStack = remember { ArrayDeque<TextFieldValue>() }
+    val (initialMdUndo, initialMdRedo) = remember(context) {
+        UndoHistoryStore.MdWechatUndoStore.load(context)
+            ?: (emptyList<UndoHistoryStore.MdUndoSnapshot>() to emptyList())
+    }
+    var undoStack by remember { mutableStateOf(initialMdUndo) }
+    var redoStack by remember { mutableStateOf(initialMdRedo) }
+    LaunchedEffect(undoStack, redoStack) {
+        withContext(Dispatchers.IO) {
+            UndoHistoryStore.MdWechatUndoStore.save(context, undoStack, redoStack)
+        }
+    }
     // 跨编辑器（WORD / PPTX）互传的 Markdown
     var incomingMd by remember { mutableStateOf<MarkdownExchange.Payload?>(null) }
     // 主题与自定义 CSS：全局共享状态，「设置」Tab 与本页实时同步
@@ -164,7 +176,7 @@ fun WeChatScreen(snackbar: SnackbarHostState) {
             if (base.isEmpty()) p.text else "$base\n\n${p.text}"
         } else p.text
         mdTfv = TextFieldValue(merged, TextRange(merged.length))
-        undoStack.clear(); redoStack.clear()
+        undoStack = emptyList(); redoStack = emptyList()
         subView = SubView.EDIT
         MarkdownExchange.consume(context)
         incomingMd = null
@@ -252,10 +264,10 @@ fun WeChatScreen(snackbar: SnackbarHostState) {
                         }
                     },
                     onClear = {
-                        mdTfv = TextFieldValue(""); undoStack.clear(); redoStack.clear()
+                        mdTfv = TextFieldValue(""); undoStack = emptyList(); redoStack = emptyList()
                     },
                     onExample = {
-                        mdTfv = TextFieldValue(DEFAULT_MD); undoStack.clear(); redoStack.clear()
+                        mdTfv = TextFieldValue(DEFAULT_MD); undoStack = emptyList(); redoStack = emptyList()
                     },
                     onImport = { pickLauncher.launch("text/*") },
                     onExportPdf = { requestPrintPdf() },
@@ -286,9 +298,8 @@ fun WeChatScreen(snackbar: SnackbarHostState) {
                         onFontSizeChange = { fontSize = it },
                         onChange = { newTfv ->
                             if (newTfv.text != mdTfv.text) {
-                                undoStack.addLast(mdTfv)
-                                if (undoStack.size > 60) undoStack.removeFirst()
-                                redoStack.clear()
+                                undoStack = (undoStack + UndoHistoryStore.MdUndoSnapshot.of(mdTfv)).takeLast(60)
+                                redoStack = emptyList()
                             }
                             mdTfv = newTfv
                         },
@@ -298,20 +309,24 @@ fun WeChatScreen(snackbar: SnackbarHostState) {
                         },
                         onUndo = {
                             if (undoStack.isNotEmpty()) {
-                                redoStack.addLast(mdTfv)
-                                mdTfv = undoStack.removeLast()
+                                redoStack = (redoStack + UndoHistoryStore.MdUndoSnapshot.of(mdTfv)).takeLast(60)
+                                val snap = undoStack.last()
+                                undoStack = undoStack.dropLast(1)
+                                mdTfv = UndoHistoryStore.MdUndoSnapshot.toTfv(snap)
                             }
                         },
                         canUndo = undoStack.isNotEmpty(),
                         onRedo = {
                             if (redoStack.isNotEmpty()) {
-                                undoStack.addLast(mdTfv)
-                                mdTfv = redoStack.removeLast()
+                                undoStack = (undoStack + UndoHistoryStore.MdUndoSnapshot.of(mdTfv)).takeLast(60)
+                                val snap = redoStack.last()
+                                redoStack = redoStack.dropLast(1)
+                                mdTfv = UndoHistoryStore.MdUndoSnapshot.toTfv(snap)
                             }
                         },
                         canRedo = redoStack.isNotEmpty(),
                         onClear = {
-                            mdTfv = TextFieldValue(""); undoStack.clear(); redoStack.clear()
+                            mdTfv = TextFieldValue(""); undoStack = emptyList(); redoStack = emptyList()
                         },
                         title = "公众号排版",
                         hint = "预览 / 复制将实时排版",

@@ -12,6 +12,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.webkit.WebView.HitTestResult
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -29,7 +30,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -61,12 +61,13 @@ fun LawDetailScreen(
     var isLoading by remember { mutableStateOf(true) }
 
     Scaffold(
+        containerColor = com.wb.mdgw.BrandTokens.BrandPaper,
         topBar = {
             TopAppBar(
                 title = {
                     Text(
                         law.title,
-                        fontSize = 16.sp,
+                        style = com.wb.mdgw.BrandTokens.BrandTopBarTitleStyle.copy(fontSize = 20.sp),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -76,9 +77,15 @@ fun LawDetailScreen(
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                )
+                colors = com.wb.mdgw.BrandTokens.BrandTopAppBarColors,
+                bottomBar = {
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(com.wb.mdgw.BrandTokens.BrandBronze.copy(alpha = 0.35f))
+                    )
+                }
             )
         }
     ) { paddingValues ->

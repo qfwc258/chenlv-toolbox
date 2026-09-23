@@ -7,6 +7,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -419,13 +420,28 @@ fun DocGenScreen(onBack: () -> Unit) {
     }
 
     Scaffold(
+        containerColor = com.wb.mdgw.BrandTokens.BrandPaper,
         topBar = {
             TopAppBar(
-                title = { Text("生成文书", fontWeight = FontWeight.SemiBold) },
+                title = {
+                    Text(
+                        "生成文书",
+                        style = com.wb.mdgw.BrandTokens.BrandTopBarTitleStyle.copy(fontSize = 20.sp)
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                     }
+                },
+                colors = com.wb.mdgw.BrandTokens.BrandTopAppBarColors,
+                bottomBar = {
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(com.wb.mdgw.BrandTokens.BrandBronze.copy(alpha = 0.35f))
+                    )
                 }
             )
         },
@@ -1207,7 +1223,7 @@ private fun TypeManageDialog(
                         singleLine = true,
                         modifier = Modifier.weight(1f)
                     )
-                    IconButton(onClick = { addType() }) {
+                    FilledTonalIconButton(onClick = { addType() }) {
                         Icon(Icons.Default.Add, contentDescription = "添加类型")
                     }
                 }

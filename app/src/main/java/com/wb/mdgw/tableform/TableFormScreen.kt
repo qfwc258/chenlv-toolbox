@@ -5,6 +5,7 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
@@ -255,11 +256,16 @@ fun TableFormScreen(onBack: () -> Unit) {
     }
 
     Scaffold(
+        containerColor = com.wb.mdgw.BrandTokens.BrandPaper,
         topBar = {
             TopAppBar(
                 title = {
                     Column {
-                        Text("通用表格填报", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                        Text(
+                            "通用表格填报",
+                            style = com.wb.mdgw.BrandTokens.BrandTopBarTitleStyle.copy(fontSize = 20.sp),
+                            maxLines = 1
+                        )
                         if (phase == TfPhase.FILL && fileName.isNotBlank())
                             Text(fileName, fontSize = 11.sp, maxLines = 1,
                                 overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -311,8 +317,17 @@ fun TableFormScreen(onBack: () -> Unit) {
                             Text("生成 Word（保留原格式）")
                         }
                     }
+                },
+                colors = com.wb.mdgw.BrandTokens.BrandTopAppBarColors,
+                bottomBar = {
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(com.wb.mdgw.BrandTokens.BrandBronze.copy(alpha = 0.35f))
+                    )
                 }
-            }
+            )
         },
         snackbarHost = { SnackbarHost(snackbar) }
     ) { pad ->

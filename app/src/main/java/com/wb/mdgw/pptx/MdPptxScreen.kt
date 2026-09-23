@@ -87,6 +87,7 @@ import com.wb.mdgw.ExportResultDialog
 import com.wb.mdgw.UI_CARD_RADIUS
 import com.wb.mdgw.UI_BTN_RADIUS
 import com.wb.mdgw.UI_ACTION_HEIGHT
+import com.wb.mdgw.UndoHistoryStore
 
 /** PPTX 文件 MIME（与文件导出/打开/分享保持一致）。 */
 private const val PPTX_MIME =
@@ -152,10 +153,19 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
     val draft = remember { PptDraftStore.load(context) }
 
     var mdTfv by remember { mutableStateOf(TextFieldValue(draft?.markdown?.takeIf { it.isNotBlank() } ?: DEFAULT_MD)) }
-    // 字号（各 Tab 独立记忆）与撤销/重做栈
+    // 字号（各 Tab 独立记忆）与撤销/重做栈（持久化版）
     var fontSize by remember { mutableStateOf(15) }
-    val undoStack = remember { ArrayDeque<TextFieldValue>() }
-    val redoStack = remember { ArrayDeque<TextFieldValue>() }
+    val (initialMdUndo, initialMdRedo) = remember(context) {
+        UndoHistoryStore.MdPptxUndoStore.load(context)
+            ?: (emptyList<UndoHistoryStore.MdUndoSnapshot>() to emptyList())
+    }
+    var undoStack by remember { mutableStateOf(initialMdUndo) }
+    var redoStack by remember { mutableStateOf(initialMdRedo) }
+    LaunchedEffect(undoStack, redoStack) {
+        withContext(Dispatchers.IO) {
+            UndoHistoryStore.MdPptxUndoStore.save(context, undoStack, redoStack)
+        }
+    }
     // 跨编辑器（WORD / 公众号）互传的 Markdown
     var incomingMd by remember { mutableStateOf<MarkdownExchange.Payload?>(null) }
     // 色调（单一主色驱动整套配色）与自动分页：全局共享状态，「设置」Tab 与本页实时同步
@@ -281,7 +291,7 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
             if (base.isEmpty() || base == DEFAULT_MD) p.text else "$base\n\n${p.text}"
         } else p.text
         mdTfv = TextFieldValue(merged, TextRange(merged.length))
-        undoStack.clear(); redoStack.clear()
+        undoStack = emptyList(); redoStack = emptyList()
         MarkdownExchange.consume(context)
         incomingMd = null
         subView = SubView.EDIT
@@ -369,7 +379,7 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
         scope.launch(Dispatchers.IO) {
             val txt = context.contentResolver.openInputStream(uri)?.bufferedReader()?.readText() ?: ""
             withContext(Dispatchers.Main) {
-                mdTfv = TextFieldValue(txt); undoStack.clear(); redoStack.clear()
+                mdTfv = TextFieldValue(txt); undoStack = emptyList(); redoStack = emptyList()
             }
         }
     }
@@ -407,7 +417,7 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
                     },
                     onImport = { importLauncher.launch(arrayOf("text/markdown", "text/plain", "*/*")) },
                     onClear = {
-                        mdTfv = TextFieldValue(""); undoStack.clear(); redoStack.clear()
+                        mdTfv = TextFieldValue(""); undoStack = emptyList(); redoStack = emptyList()
                     },
                     onSendTo = { sendTo(it) },
                     onImportExchange = { openImportExchange() }
@@ -441,9 +451,8 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
                             onFontSizeChange = { fontSize = it },
                             onChange = { newTfv ->
                                 if (newTfv.text != mdTfv.text) {
-                                    undoStack.addLast(mdTfv)
-                                    if (undoStack.size > 60) undoStack.removeFirst()
-                                    redoStack.clear()
+                                    undoStack = (undoStack + UndoHistoryStore.MdUndoSnapshot.of(mdTfv)).takeLast(60)
+                                    redoStack = emptyList()
                                 }
                                 mdTfv = newTfv
                             },
@@ -453,20 +462,24 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
                             },
                             onUndo = {
                                 if (undoStack.isNotEmpty()) {
-                                    redoStack.addLast(mdTfv)
-                                    mdTfv = undoStack.removeLast()
+                                    redoStack = (redoStack + UndoHistoryStore.MdUndoSnapshot.of(mdTfv)).takeLast(60)
+                                    val snap = undoStack.last()
+                                    undoStack = undoStack.dropLast(1)
+                                    mdTfv = UndoHistoryStore.MdUndoSnapshot.toTfv(snap)
                                 }
                             },
                             canUndo = undoStack.isNotEmpty(),
                             onRedo = {
                                 if (redoStack.isNotEmpty()) {
-                                    undoStack.addLast(mdTfv)
-                                    mdTfv = redoStack.removeLast()
+                                    undoStack = (undoStack + UndoHistoryStore.MdUndoSnapshot.of(mdTfv)).takeLast(60)
+                                    val snap = redoStack.last()
+                                    redoStack = redoStack.dropLast(1)
+                                    mdTfv = UndoHistoryStore.MdUndoSnapshot.toTfv(snap)
                                 }
                             },
                             canRedo = redoStack.isNotEmpty(),
                             onClear = {
-                                mdTfv = TextFieldValue(""); undoStack.clear(); redoStack.clear()
+                                mdTfv = TextFieldValue(""); undoStack = emptyList(); redoStack = emptyList()
                             },
                             title = "幻灯片",
                             hint = "将生成 ${slides.size} 页 · 版式：${defaultLayout.label}",
