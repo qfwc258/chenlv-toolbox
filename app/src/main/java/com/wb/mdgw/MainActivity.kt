@@ -191,18 +191,19 @@ fun AppScreen(initialUri: Uri? = null) {
                     HomeScreen(onOpen = { route = it })
                 }
 
-                // WORD / PPTX / 公众号：全屏编辑器，用系统返回键回主页（保留最大编辑区）
+                // WORD / PPTX / 公众号：全屏编辑器，常驻切换条左侧「主页」按钮可回主页
                 AnimatedVisibility(route == Route.WORD, enter = fadeIn(), exit = fadeOut()) {
                     WordScreen(
                         snackbar = snackbar,
+                        onBack = { route = Route.HOME },
                         initialUri = initialUri.takeIf { initialRoute == Route.WORD }
                     )
                 }
                 AnimatedVisibility(route == Route.PPTX, enter = fadeIn(), exit = fadeOut()) {
-                    MdPptxScreen(snackbar = snackbar)
+                    MdPptxScreen(snackbar = snackbar, onBack = { route = Route.HOME })
                 }
                 AnimatedVisibility(route == Route.WECHAT, enter = fadeIn(), exit = fadeOut()) {
-                    WeChatScreen(snackbar = snackbar)
+                    WeChatScreen(snackbar = snackbar, onBack = { route = Route.HOME })
                 }
 
                 // 自带顶部栏的子页
@@ -370,7 +371,7 @@ private fun HomeSectionLabel(
         Box(
             Modifier
                 .size(width = 4.dp, height = 14.dp)
-                .background(accent, RoundedCornerShape(2.dp))
+                .background(accent, RoundedCornerShape(8.dp))
         )
         Spacer(Modifier.width(8.dp))
         Text(
@@ -542,7 +543,7 @@ fun AboutDialog(onDismiss: () -> Unit) {
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier
-                        .clip(RoundedCornerShape(4.dp))
+                        .clip(RoundedCornerShape(8.dp))
                         .clickable {
                             runCatching {
                                 context.startActivity(

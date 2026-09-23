@@ -89,7 +89,7 @@ internal fun PptxSettingsDialog(
         contentAlignment = Alignment.Center
     ) {
         Surface(
-            shape = RoundedCornerShape(18.dp),
+            shape = RoundedCornerShape(16.dp),
             tonalElevation = 6.dp,
             color = MaterialTheme.colorScheme.surface,
             modifier = Modifier
@@ -404,7 +404,7 @@ internal fun PptxStyleDialog(
         contentAlignment = Alignment.Center
     ) {
         Surface(
-            shape = RoundedCornerShape(18.dp),
+            shape = RoundedCornerShape(16.dp),
             tonalElevation = 6.dp,
             color = MaterialTheme.colorScheme.surface,
             modifier = Modifier
@@ -737,7 +737,7 @@ internal fun PillWithIcon(
             Box(
                 modifier = Modifier
                     .size(width = 8.dp, height = 14.dp)
-                    .clip(RoundedCornerShape(1.dp))
+                    .clip(RoundedCornerShape(8.dp))
                     .background(
                         when (iconShape) {
                             ColorBlock.NONE -> grayColor

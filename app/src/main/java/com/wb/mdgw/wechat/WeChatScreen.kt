@@ -95,7 +95,7 @@ import kotlinx.coroutines.withContext
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun WeChatScreen(snackbar: SnackbarHostState) {
+fun WeChatScreen(snackbar: SnackbarHostState, onBack: () -> Unit) {
     val context = LocalContext.current
     val converter = remember { MdWechatConverter(context.applicationContext) }
 
@@ -286,6 +286,7 @@ fun WeChatScreen(snackbar: SnackbarHostState) {
                 onToggleTop = { topExpanded = !topExpanded },
                 bottomExpanded = bottomExpanded,
                 onToggleBottom = { bottomExpanded = !bottomExpanded },
+                onHome = onBack,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)
             )
             Box(Modifier.fillMaxSize().weight(1f).padding(horizontal = 8.dp)) {

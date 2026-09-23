@@ -586,7 +586,7 @@ private fun RankChip(
             )
         },
         modifier = modifier,
-        shape = RoundedCornerShape(10.dp)
+        shape = RoundedCornerShape(12.dp)
     )
 }
 

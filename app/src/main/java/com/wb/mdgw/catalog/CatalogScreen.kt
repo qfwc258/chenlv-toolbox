@@ -221,7 +221,7 @@ private fun EvidenceScreen(onBack: () -> Unit) {
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                 ) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -298,7 +298,7 @@ private fun EvidenceCard(
     var menu by remember { mutableStateOf(false) }
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp)
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
     ) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -471,7 +471,7 @@ private fun ArchiveScreen(onBack: () -> Unit) {
         ) {
             item {
                 Card(
-                    shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                 ) {
                     CatalogField(title, { title = it }, "标题",
@@ -479,7 +479,7 @@ private fun ArchiveScreen(onBack: () -> Unit) {
                 }
             }
             itemsIndexed(items, key = { i, _ -> i }) { i, item ->
-                Card(shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp)) {
+                Card(shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)) {
                     Row(
                         Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -525,7 +525,7 @@ private fun ArchiveScreen(onBack: () -> Unit) {
                                 },
                                 onDone = { focusManager.clearFocus() }
                             ),
-                            shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp)
+                            shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
                         )
                     }
                 }
@@ -596,7 +596,7 @@ private fun CatalogField(
         singleLine = singleLine,
         minLines = minLines,
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp)
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
     )
 }
 

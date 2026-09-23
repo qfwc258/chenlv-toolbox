@@ -15,6 +15,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -274,7 +275,7 @@ fun TableFormScreen(onBack: () -> Unit) {
                     },
                     navigationIcon = {
                         IconButton(onClick = onBack) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                         }
                     },
                     actions = {
@@ -631,7 +632,7 @@ private fun FillArea(
                                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
                                         .heightIn(min = if (long) 76.dp else 48.dp),
                                     textStyle = LocalTextStyle.current.copy(fontSize = 14.sp, lineHeight = 19.sp),
-                                    shape = RoundedCornerShape(10.dp),
+                                    shape = RoundedCornerShape(12.dp),
                                     minLines = if (long) 2 else 1
                                 )
                             }
@@ -745,6 +746,6 @@ private fun TfInput(value: String, onValue: (String) -> Unit, label: String) {
         label = { Text(label, fontSize = 12.sp) },
         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
         textStyle = LocalTextStyle.current.copy(fontSize = 14.sp),
-        shape = RoundedCornerShape(10.dp)
+        shape = RoundedCornerShape(12.dp)
     )
 }

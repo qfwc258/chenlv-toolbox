@@ -1,5 +1,7 @@
 package com.wb.mdgw.shot
 
+import com.wb.mdgw.BrandTokens
+
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -251,7 +253,7 @@ fun ShotScreen(initialUri: Uri? = null, snackbar: SnackbarHostState, onOpenPdf: 
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .size(240.dp)
-                    .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(20.dp))
+                    .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(16.dp))
                     .padding(24.dp)
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -296,7 +298,7 @@ fun ShotScreen(initialUri: Uri? = null, snackbar: SnackbarHostState, onOpenPdf: 
     if (showErrorDialog) {
         AlertDialog(
             onDismissRequest = { showErrorDialog = false },
-            icon = { Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFE65100)) },
+            icon = { Icon(Icons.Default.Warning, contentDescription = null, tint = BrandTokens.StatusWarning) },
             title = { Text("处理失败") },
             text = { Text(errorMessage) },
             confirmButton = {
@@ -309,7 +311,7 @@ fun ShotScreen(initialUri: Uri? = null, snackbar: SnackbarHostState, onOpenPdf: 
     if (showLargeWarning) {
         AlertDialog(
             onDismissRequest = { showLargeWarning = false },
-            icon = { Icon(Icons.Default.Info, contentDescription = null, tint = Color(0xFF1976D2)) },
+            icon = { Icon(Icons.Default.Info, contentDescription = null, tint = BrandTokens.StatusInfo) },
             title = { Text("内容较多") },
             text = {
                 val mb = previewPlan.estimatedBytes / (1024 * 1024)
@@ -378,7 +380,7 @@ fun ShotScreen(initialUri: Uri? = null, snackbar: SnackbarHostState, onOpenPdf: 
                 selected.forEachIndexed { i, img ->
                     Surface(
                         color = MaterialTheme.colorScheme.surfaceVariant,
-                        shape = RoundedCornerShape(10.dp),
+                        shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -488,7 +490,7 @@ fun ShotScreen(initialUri: Uri? = null, snackbar: SnackbarHostState, onOpenPdf: 
                             Box {
                                 OutlinedButton(
                                     onClick = { posMenuOpen = true },
-                                    shape = RoundedCornerShape(10.dp),
+                                    shape = RoundedCornerShape(12.dp),
                                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
                                 ) {
                                     Text(posNames[pageNumberPos], fontSize = 13.sp)
@@ -521,7 +523,7 @@ fun ShotScreen(initialUri: Uri? = null, snackbar: SnackbarHostState, onOpenPdf: 
                 onClick = { doProcess() },
                 enabled = !busy && selected.isNotEmpty(),
                 modifier = Modifier.fillMaxWidth().height(52.dp),
-                shape = RoundedCornerShape(14.dp)
+                shape = RoundedCornerShape(16.dp)
             ) {
                 if (busy) {
                     CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
@@ -540,7 +542,7 @@ fun ShotScreen(initialUri: Uri? = null, snackbar: SnackbarHostState, onOpenPdf: 
             ElevatedCard(shape = RoundedCornerShape(16.dp)) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF2E7D32))
+                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = BrandTokens.StatusSuccess)
                         Spacer(Modifier.width(8.dp))
                         Text("✓ 排版完成（${result!!.plan.segments.size} 张/段 · ${result!!.plan.cols} 列 × ${result!!.plan.rows} 行 · ${result!!.plan.pages} 页）", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                     }

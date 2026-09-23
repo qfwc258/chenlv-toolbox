@@ -265,7 +265,7 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .size(240.dp)
-                    .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(20.dp))
+                    .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(16.dp))
                     .padding(24.dp)
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -288,7 +288,7 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(8.dp)
-                                .clip(RoundedCornerShape(4.dp)),
+                                .clip(RoundedCornerShape(8.dp)),
                             color = MaterialTheme.colorScheme.primary,
                             trackColor = MaterialTheme.colorScheme.surfaceVariant
                         )
@@ -314,7 +314,7 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
     if (showErrorDialog) {
         AlertDialog(
             onDismissRequest = { showErrorDialog = false },
-            icon = { Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFE65100)) },
+            icon = { Icon(Icons.Default.Warning, contentDescription = null, tint = BrandTokens.StatusWarning) },
             title = { Text("处理失败") },
             text = { Text(errorMessage) },
             confirmButton = {
@@ -327,7 +327,7 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
     if (showLargeFileWarning) {
         AlertDialog(
             onDismissRequest = { showLargeFileWarning = false },
-            icon = { Icon(Icons.Default.Info, contentDescription = null, tint = Color(0xFF1976D2)) },
+            icon = { Icon(Icons.Default.Info, contentDescription = null, tint = BrandTokens.StatusInfo) },
             title = { Text("文件较大") },
             text = {
                 val mb = (pdfBytes?.size ?: 0) / (1024 * 1024)
@@ -377,7 +377,7 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                 if (fileName.isNotBlank()) {
                     Surface(
                         color = MaterialTheme.colorScheme.surfaceVariant,
-                        shape = RoundedCornerShape(10.dp),
+                        shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -436,12 +436,12 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
             ElevatedCard(shape = RoundedCornerShape(16.dp)) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF2E7D32))
+                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = BrandTokens.StatusSuccess)
                         Spacer(Modifier.width(8.dp))
                         Text("✓ 页码已添加并保存", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     }
                     Text(outName, fontWeight = FontWeight.Medium)
-                    Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
+                    Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                         Text("保存位置：$savedPath", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(10.dp))
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -564,7 +564,7 @@ private fun PageNumberSection(
 
     Button(
         onClick = onProcess, enabled = !busy,
-        modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(14.dp)
+        modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(16.dp)
     ) {
         if (busy) {
             CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
@@ -718,12 +718,12 @@ private fun SealSection(
                             bitmap = it, contentDescription = "已选印章预览",
                             modifier = Modifier
                                 .size(48.dp)
-                                .background(Color.White, RoundedCornerShape(6.dp))
-                                .border(1.dp, Color(0xFFBDBDBD), RoundedCornerShape(6.dp))
+                                .background(Color.White, RoundedCornerShape(8.dp))
+                                .border(1.dp, BrandTokens.Hairline, RoundedCornerShape(8.dp))
                                 .padding(4.dp)
                         )
                         Spacer(Modifier.width(8.dp))
-                        Text("印章已载入", fontSize = 12.sp, color = Color(0xFF2E7D32), fontWeight = FontWeight.Medium)
+                        Text("印章已载入", fontSize = 12.sp, color = BrandTokens.StatusSuccess, fontWeight = FontWeight.Medium)
                     }
                 }
             }
@@ -855,8 +855,8 @@ private fun SealSection(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(with(density) { vh.toDp() })
-                            .background(Color.White, RoundedCornerShape(6.dp))
-                            .border(1.dp, Color(0xFFBDBDBD), RoundedCornerShape(6.dp))
+                            .background(Color.White, RoundedCornerShape(8.dp))
+                            .border(1.dp, BrandTokens.Hairline, RoundedCornerShape(8.dp))
                     ) {
                         previewBmp?.let {
                             Image(bitmap = it, contentDescription = "PDF 页面预览", modifier = Modifier.fillMaxSize())
@@ -961,7 +961,7 @@ private fun SealSection(
                     }
                 }
             },
-            modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(14.dp)
+            modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(16.dp)
         ) {
             Icon(Icons.Default.GppGood, contentDescription = null)
             Spacer(Modifier.width(8.dp))
@@ -989,8 +989,8 @@ private fun PagePreview(
         Modifier
             .width(96.dp)
             .height(132.dp)
-            .background(Color.White, RoundedCornerShape(6.dp))
-            .border(1.dp, Color(0xFFBDBDBD), RoundedCornerShape(6.dp))
+            .background(Color.White, RoundedCornerShape(8.dp))
+            .border(1.dp, BrandTokens.Hairline, RoundedCornerShape(8.dp))
             .padding(8.dp)
     ) {
         Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -999,12 +999,12 @@ private fun PagePreview(
                     Modifier
                         .fillMaxWidth(fraction = if (it == 4) 0.6f else 0.85f)
                         .height(4.dp)
-                        .background(Color(0xFFE0E0E0), RoundedCornerShape(2.dp))
+                        .background(BrandTokens.SubtleGray, RoundedCornerShape(8.dp))
                 )
             }
         }
         Box(Modifier.fillMaxSize(), contentAlignment = align) {
-            Surface(color = dotColor, shape = RoundedCornerShape(3.dp)) {
+            Surface(color = dotColor, shape = RoundedCornerShape(8.dp)) {
                 Text(
                     "${prefix.ifBlank { "" }}1",
                     color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold,

@@ -111,7 +111,7 @@ internal fun TemplateListDialog(
                             Surface(
                                 onClick = { onApply(t) },
                                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                                shape = RoundedCornerShape(10.dp),
+                                shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
@@ -177,7 +177,7 @@ internal fun TemplateEditDialog(
                             onClick = { onExtChange(e) },
                             color = if (ext == e) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                            shape = RoundedCornerShape(10.dp),
+                            shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.height(30.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 14.dp)) {
@@ -382,9 +382,9 @@ internal fun FindReplaceDialog(
         text = {
             Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
                 OutlinedTextField(value = findText, onValueChange = onFindChange,
-                    label = { Text("查找") }, singleLine = true, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp))
+                    label = { Text("查找") }, singleLine = true, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp))
                 OutlinedTextField(value = replaceText, onValueChange = onReplaceChange,
-                    label = { Text("替换为") }, singleLine = true, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth())
+                    label = { Text("替换为") }, singleLine = true, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth())
                 Text("替换对全文生效（含表格），每个 run 内独立匹配。", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
             }
         },
@@ -402,7 +402,7 @@ internal fun FindReplaceDialog(
 
 @Composable
 internal fun StyleTag(label: String) {
-    Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(6.dp)) {
+    Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(8.dp)) {
         Text(label, fontSize = 10.sp, color = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
     }
 }
@@ -414,8 +414,8 @@ internal fun FmtChip(text: String, active: Boolean, onClick: () -> Unit) {
     val fg = if (active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
     Surface(
         color = bg,
-        shape = RoundedCornerShape(6.dp),
-        modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClick = onClick)
+        shape = RoundedCornerShape(8.dp),
+        modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick)
     ) {
         Text(
             text, fontSize = 12.sp, color = fg,

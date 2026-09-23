@@ -120,7 +120,7 @@ fun MdEditorPane(
                     }
                     Surface(
                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                        shape = RoundedCornerShape(20.dp)
+                        shape = RoundedCornerShape(16.dp)
                     ) {
                         Text(
                             "$charCount 字 · $lineCount 行",
@@ -143,7 +143,7 @@ fun MdEditorPane(
                             Surface(
                                 onClick = { onInsert(s) },
                                 color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
-                                shape = RoundedCornerShape(15.dp),
+                                shape = RoundedCornerShape(16.dp),
                                 modifier = Modifier.height(26.dp)
                             ) {
                                 Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 9.dp)) {
@@ -168,7 +168,7 @@ fun MdEditorPane(
                         Surface(
                             onClick = { onTemplates() },
                             color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f),
-                            shape = RoundedCornerShape(15.dp),
+                            shape = RoundedCornerShape(16.dp),
                             modifier = Modifier.height(26.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 9.dp)) {
@@ -265,7 +265,7 @@ fun MdEditorPane(
 private fun FontSizeStepper(fontSize: Int, onChange: (Int) -> Unit) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(16.dp),
         modifier = Modifier.height(26.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {

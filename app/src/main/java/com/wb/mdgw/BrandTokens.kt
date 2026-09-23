@@ -48,6 +48,20 @@ object BrandTokens {
     val BrandSealRed   = androidx.compose.ui.graphics.Color(0x1FB03A2E)
 
     // ----------------------------------------------------------------
+    // 语义状态色 + 中性灰：全 App 统一，替代各屏重复的硬编码
+    // ----------------------------------------------------------------
+    /** 成功（完成、校验通过） */
+    val StatusSuccess = androidx.compose.ui.graphics.Color(0xFF2E7D32)
+    /** 警告（需注意） */
+    val StatusWarning = androidx.compose.ui.graphics.Color(0xFFE65100)
+    /** 信息（提示） */
+    val StatusInfo    = androidx.compose.ui.graphics.Color(0xFF1976D2)
+    /** 中性描边灰（边框、分隔） */
+    val Hairline      = androidx.compose.ui.graphics.Color(0xFFBDBDBD)
+    /** 浅灰填充（占位、印章底） */
+    val SubtleGray    = androidx.compose.ui.graphics.Color(0xFFE0E0E0)
+
+    // ----------------------------------------------------------------
     // TopAppBar 配色（品牌版）
     // ----------------------------------------------------------------
     /**

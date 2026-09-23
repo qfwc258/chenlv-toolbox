@@ -481,7 +481,7 @@ fun DocGenScreen(onBack: () -> Unit) {
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                    shape = RoundedCornerShape(14.dp),
+                    shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                 ) {
                     Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
@@ -537,7 +537,7 @@ fun DocGenScreen(onBack: () -> Unit) {
                                     label = { Text("模板目录路径") },
                                     singleLine = true,
                                     modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(10.dp)
+                                    shape = RoundedCornerShape(12.dp)
                                 )
                                 Spacer(Modifier.height(4.dp))
                                 Text(
@@ -617,7 +617,7 @@ fun DocGenScreen(onBack: () -> Unit) {
 
             // ---------- 文书类型（可增删、重命名） ----------
             item {
-                Card(shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+                Card(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("文书类型", fontWeight = FontWeight.SemiBold, fontSize = 15.sp, modifier = Modifier.weight(1f))
@@ -658,7 +658,7 @@ fun DocGenScreen(onBack: () -> Unit) {
 
             // ---------- 主要字段（工具条 + 分组字段合并为一个卡片） ----------
             item {
-                Card(shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+                Card(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(14.dp)) {
                         // 标题行
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -860,7 +860,7 @@ fun DocGenScreen(onBack: () -> Unit) {
                                             OutlinedButton(
                                                 onClick = { addProcess() },
                                                 modifier = Modifier.fillMaxWidth(),
-                                                shape = RoundedCornerShape(10.dp),
+                                                shape = RoundedCornerShape(12.dp),
                                                 contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 4.dp)
                                             ) {
                                                 Icon(Icons.Default.Add, null, Modifier.size(16.dp))
@@ -879,7 +879,7 @@ fun DocGenScreen(onBack: () -> Unit) {
                             OutlinedButton(
                                 onClick = { addProcess() },
                                 modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(10.dp)
+                                shape = RoundedCornerShape(12.dp)
                             ) {
                                 Icon(Icons.Default.PlaylistAdd, null, Modifier.size(18.dp))
                                 Spacer(Modifier.size(4.dp))
@@ -890,7 +890,7 @@ fun DocGenScreen(onBack: () -> Unit) {
                             OutlinedButton(
                                 onClick = { newGroupAfter = null; showNewGroup = true },
                                 modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(10.dp)
+                                shape = RoundedCornerShape(12.dp)
                             ) {
                                 Icon(Icons.Default.CreateNewFolder, null, Modifier.size(18.dp))
                                 Spacer(Modifier.size(4.dp))
@@ -899,7 +899,7 @@ fun DocGenScreen(onBack: () -> Unit) {
                             Button(
                                 onClick = { addDialogGroup = null; showAddDialog = true },
                                 modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(10.dp)
+                                shape = RoundedCornerShape(12.dp)
                             ) {
                                 Icon(Icons.Default.Add, null, Modifier.size(18.dp))
                                 Spacer(Modifier.size(4.dp))
@@ -996,7 +996,7 @@ fun DocGenScreen(onBack: () -> Unit) {
                     label = { Text("分组名称") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp)
+                    shape = RoundedCornerShape(12.dp)
                 )
             },
             confirmButton = {
@@ -1022,7 +1022,7 @@ fun DocGenScreen(onBack: () -> Unit) {
                     label = { Text("分组名称") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp)
+                    shape = RoundedCornerShape(12.dp)
                 )
             },
             confirmButton = {
@@ -1113,7 +1113,7 @@ private fun TypeChip(
     val content = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
     Surface(
         onClick = onClick,
-        shape = RoundedCornerShape(9.dp),
+        shape = RoundedCornerShape(12.dp),
         color = container,
         contentColor = content,
         border = if (selected) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
@@ -1350,7 +1350,7 @@ private fun FieldInput(line: RuleLine, onChange: (String) -> Unit) {
         },
         singleLine = !isLong,
         minLines = if (isLong) 3 else 1,
-        shape = RoundedCornerShape(10.dp)
+        shape = RoundedCornerShape(12.dp)
     )
 }
 
@@ -1406,7 +1406,7 @@ private fun ProcessGroupCard(
                 OutlinedButton(
                     onClick = { onEnsure(number) },
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp),
+                    shape = RoundedCornerShape(12.dp),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 6.dp)
                 ) { Text("＋ 添加过程内容", fontSize = 12.sp) }
             }
@@ -1423,7 +1423,7 @@ private fun ProcessSmallField(p: Pair<Int, RuleLine>, label: String, onValue: (I
         modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
         label = { Text(label, fontSize = 11.sp, maxLines = 1) },
         singleLine = true,
-        shape = RoundedCornerShape(10.dp)
+        shape = RoundedCornerShape(12.dp)
     )
 }
 
@@ -1436,7 +1436,7 @@ private fun ProcessContentField(p: Pair<Int, RuleLine>, onValue: (Int, String) -
         modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
         label = { Text("过程内容", fontSize = 11.sp) },
         minLines = 2,
-        shape = RoundedCornerShape(10.dp)
+        shape = RoundedCornerShape(12.dp)
     )
 }
 
@@ -1445,7 +1445,7 @@ private fun MissingFieldButton(text: String, onClick: () -> Unit) {
     OutlinedButton(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-        shape = RoundedCornerShape(10.dp),
+        shape = RoundedCornerShape(12.dp),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 14.dp)
     ) { Text(text, fontSize = 12.sp) }
 }
@@ -1533,7 +1533,7 @@ private fun AddFieldDialog(
                     OutlinedButton(
                         onClick = { groupMenuOpen = true },
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp),
+                        shape = RoundedCornerShape(12.dp),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                     ) {
                         Icon(Icons.Default.FolderOpen, null, Modifier.size(16.dp))
@@ -1567,7 +1567,7 @@ private fun AddFieldDialog(
                     placeholder = { Text("搜索标签 / key / 分类", fontSize = 13.sp) },
                     leadingIcon = { Icon(Icons.Default.Search, null, Modifier.size(18.dp)) },
                     singleLine = true,
-                    shape = RoundedCornerShape(10.dp)
+                    shape = RoundedCornerShape(12.dp)
                 )
                 Spacer(Modifier.height(8.dp))
                 LazyColumn(modifier = Modifier.fillMaxWidth().height(380.dp)) {
@@ -1706,7 +1706,7 @@ private fun AddFieldDialog(
                                             }
                                         },
                                         modifier = Modifier.fillMaxWidth(),
-                                        shape = RoundedCornerShape(10.dp)
+                                        shape = RoundedCornerShape(12.dp)
                                     )
                                     Spacer(Modifier.height(6.dp))
                                     OutlinedTextField(
@@ -1714,7 +1714,7 @@ private fun AddFieldDialog(
                                         label = { Text("显示名（中文备注，可选）") },
                                         singleLine = true,
                                         modifier = Modifier.fillMaxWidth(),
-                                        shape = RoundedCornerShape(10.dp)
+                                        shape = RoundedCornerShape(12.dp)
                                     )
                                     Spacer(Modifier.height(6.dp))
                                     OutlinedTextField(
@@ -1722,7 +1722,7 @@ private fun AddFieldDialog(
                                         label = { Text("初始值（可留空）") },
                                         minLines = 2,
                                         modifier = Modifier.fillMaxWidth(),
-                                        shape = RoundedCornerShape(10.dp)
+                                        shape = RoundedCornerShape(12.dp)
                                     )
                                     Spacer(Modifier.height(6.dp))
                                     Button(
@@ -1819,7 +1819,7 @@ private fun EditFieldDialog(
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp)
+                    shape = RoundedCornerShape(12.dp)
                 )
                 Spacer(Modifier.height(6.dp))
                 // 所属分组
@@ -1827,7 +1827,7 @@ private fun EditFieldDialog(
                     OutlinedButton(
                         onClick = { groupMenuOpen = true },
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp),
+                        shape = RoundedCornerShape(12.dp),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 8.dp)
                     ) {
                         Icon(Icons.Default.FolderOpen, null, Modifier.size(16.dp))
@@ -1851,7 +1851,7 @@ private fun EditFieldDialog(
                     label = { Text("显示名（中文备注，可选）") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp)
+                    shape = RoundedCornerShape(12.dp)
                 )
                 Spacer(Modifier.height(6.dp))
                 OutlinedTextField(
@@ -1859,7 +1859,7 @@ private fun EditFieldDialog(
                     label = { Text("字段值") },
                     minLines = 3,
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp)
+                    shape = RoundedCornerShape(12.dp)
                 )
                 TextButton(
                     enabled = keyValid && !dup,
@@ -1956,7 +1956,7 @@ private fun DefaultValuesDialog(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(vertical = 3.dp),
-                            shape = RoundedCornerShape(10.dp)
+                            shape = RoundedCornerShape(12.dp)
                         )
                     }
                 }

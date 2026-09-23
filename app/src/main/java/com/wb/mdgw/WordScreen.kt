@@ -86,6 +86,7 @@ private class LegacyWordException(val uri: Uri, val name: String) : Exception("l
 @Composable
 fun WordScreen(
     snackbar: SnackbarHostState,
+    onBack: () -> Unit,
     initialUri: Uri? = null
 ) {
     val context = LocalContext.current
@@ -836,6 +837,7 @@ fun WordScreen(
                 onToggleTop = { topExpanded = !topExpanded },
                 bottomExpanded = bottomExpanded,
                 onToggleBottom = { bottomExpanded = !bottomExpanded },
+                onHome = onBack,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)
             )
 
@@ -1313,7 +1315,7 @@ private fun PaperPreview(
                                 Surface(
                                     onClick = { onStartEdit(EditTarget(h.blockIndex, h.row, h.col)); onToggleSearch() },
                                     color = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp, shadowElevation = 2.dp,
-                                    shape = RoundedCornerShape(10.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)),
+                                    shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)),
                                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
                                 ) {
                                     Column(Modifier.padding(12.dp)) {
@@ -1490,7 +1492,7 @@ private fun SimpleTextFallback(
                     val fullText = b.runs.joinToString("") { it.text }
                     Surface(
                         onClick = { onStartEdit(EditTarget(idx, runIndex = -1)) },
-                        color = Color.White, shape = RoundedCornerShape(6.dp),
+                        color = Color.White, shape = RoundedCornerShape(8.dp),
                         modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)
                     ) {
                         Text(
@@ -1502,7 +1504,7 @@ private fun SimpleTextFallback(
                 }
                 is Block.Table -> {
                     Surface(
-                        color = Color.White, shape = RoundedCornerShape(6.dp),
+                        color = Color.White, shape = RoundedCornerShape(8.dp),
                         modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)
                     ) {
                         Column(Modifier.padding(8.dp)) {
@@ -1515,7 +1517,7 @@ private fun SimpleTextFallback(
                                         Surface(
                                             onClick = { onStartEdit(EditTarget(idx, ri, ci)) },
                                             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                                            shape = RoundedCornerShape(4.dp),
+                                            shape = RoundedCornerShape(8.dp),
                                             modifier = Modifier.weight(1f).padding(horizontal = 1.dp)
                                         ) {
                                             Text(

@@ -148,7 +148,7 @@ private enum class SubView { EDIT, PREVIEW }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MdPptxScreen(snackbar: SnackbarHostState) {
+fun MdPptxScreen(snackbar: SnackbarHostState, onBack: () -> Unit) {
     val context = LocalContext.current
     val draft = remember { PptDraftStore.load(context) }
 
@@ -437,6 +437,7 @@ fun MdPptxScreen(snackbar: SnackbarHostState) {
                     onToggleTop = { topExpanded = !topExpanded },
                     bottomExpanded = bottomExpanded,
                     onToggleBottom = { bottomExpanded = !bottomExpanded },
+                    onHome = onBack,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)
                 )
 
@@ -729,7 +730,7 @@ private fun PptxActionBar(
 @Composable
 private fun ColorPalette(selected: String, onPick: (String) -> Unit) {
     Surface(
-        shape = RoundedCornerShape(10.dp),
+        shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
         modifier = Modifier.padding(horizontal = 2.dp)
     ) {
@@ -1046,7 +1047,7 @@ private fun SlideCanvas(slide: PptLayoutEngine.LaidOutSlide, theme: PptTheme, mo
                     Modifier.offset {
                         IntOffset((b.x * scale * density).roundToInt(), (b.y * scale * density).roundToInt())
                     }.width((b.w * scale).dp).height((b.h * scale).dp)
-                        .background(hexToColor(theme.quoteBg), shape = RoundedCornerShape(6.dp))
+                        .background(hexToColor(theme.quoteBg), shape = RoundedCornerShape(8.dp))
                 )
             }
             slide.units.forEach { unit -> UnitBox(unit, theme, scale, slide.cover, accentBg) }

@@ -9,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.PictureAsPdf
@@ -25,10 +26,19 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** 全 App 统一的圆角与尺寸令牌，确保各 tab 视觉语言一致 */
-val UI_SECTION_RADIUS = RoundedCornerShape(12.dp)
-val UI_CARD_RADIUS = RoundedCornerShape(14.dp)
-val UI_BTN_RADIUS = RoundedCornerShape(10.dp)
+/** ===== 统一设计令牌：圆角阶梯（全 App 只允许这三档，消除 14 种散乱值）===== */
+val UI_RADIUS_SM = RoundedCornerShape(8.dp)    // 小：标签、内嵌块、小芯片
+val UI_RADIUS_MD = RoundedCornerShape(12.dp)   // 中：卡片、分区、按钮（主力）
+val UI_RADIUS_LG = RoundedCornerShape(16.dp)   // 大：弹窗、大卡片
+/** ===== 统一间距阶梯 ===== */
+val UI_SPACE_XS = 4.dp
+val UI_SPACE_SM = 8.dp
+val UI_SPACE_MD = 12.dp
+val UI_SPACE_LG = 16.dp
+/** 兼容旧引用：统一指向中圆角，旧代码自动收敛 */
+val UI_SECTION_RADIUS = UI_RADIUS_MD
+val UI_CARD_RADIUS = UI_RADIUS_MD
+val UI_BTN_RADIUS = UI_RADIUS_MD
 val UI_ACTION_HEIGHT = 46.dp
 
 /**
@@ -91,9 +101,18 @@ fun EditPreviewBar(
     onToggleTop: () -> Unit,
     bottomExpanded: Boolean,
     onToggleBottom: () -> Unit,
+    onHome: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = onHome, modifier = Modifier.size(34.dp)) {
+            Icon(
+                Icons.Default.Home,
+                contentDescription = "返回主页",
+                modifier = Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
+        }
         IconButton(onClick = onToggleTop, modifier = Modifier.size(34.dp)) {
             Icon(
                 if (topExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
@@ -139,7 +158,7 @@ fun ExportResultDialog(
     if (visible) {
         AlertDialog(
             onDismissRequest = onDismiss,
-            icon = { Icon(Icons.Default.CheckCircle, null, tint = Color(0xFF2E7D32), modifier = Modifier.size(30.dp)) },
+            icon = { Icon(Icons.Default.CheckCircle, null, tint = BrandTokens.StatusSuccess, modifier = Modifier.size(30.dp)) },
             title = { Text(title, fontWeight = FontWeight.Bold, fontSize = 17.sp) },
             text = {
                 Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {

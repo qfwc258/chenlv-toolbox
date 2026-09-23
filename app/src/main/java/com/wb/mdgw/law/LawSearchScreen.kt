@@ -229,7 +229,7 @@ private fun LawItemCard(
                         modifier = Modifier
                             .background(
                                 color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-                                shape = RoundedCornerShape(4.dp)
+                                shape = RoundedCornerShape(8.dp)
                             )
                             .padding(horizontal = 6.dp, vertical = 2.dp)
                     )
@@ -250,7 +250,7 @@ private fun LawItemCard(
                         modifier = Modifier
                             .background(
                                 color = statusColor.copy(alpha = 0.1f),
-                                shape = RoundedCornerShape(4.dp)
+                                shape = RoundedCornerShape(8.dp)
                             )
                             .padding(horizontal = 6.dp, vertical = 2.dp)
                     )

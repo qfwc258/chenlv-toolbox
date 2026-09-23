@@ -364,7 +364,7 @@ private fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> 
         Modifier
             .fillMaxWidth()
             .padding(bottom = 12.dp)
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(16.dp))
             .background(MaterialTheme.colorScheme.surface)
             .padding(12.dp)
     ) {
