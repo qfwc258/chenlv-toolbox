@@ -6,6 +6,7 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
@@ -587,10 +588,23 @@ private fun FillArea(
     Column(Modifier.fillMaxSize()) {
         // ============== B 级段落编辑区（表格外的文字） ==============
         if (paras.isNotEmpty()) {
+            var paraExpanded by remember { mutableStateOf(false) }
             Surface(tonalElevation = 1.dp) {
                 Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { paraExpanded = !paraExpanded }
+                    ) {
+                        Icon(
+                            imageVector = if (paraExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            contentDescription = if (paraExpanded) "收起" else "展开",
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.width(4.dp))
                         Icon(Icons.Default.EditNote, null,
                             modifier = Modifier.size(16.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -601,22 +615,24 @@ private fun FillArea(
                         Text("格式保留", fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.outline)
                     }
-                    val visibleParas = paras.filter {
-                        val v = paraValues[it.domBodyIdx] ?: it.text
-                        v.isNotBlank() || it.text.isNotBlank()  // 跳过始终为空的段落
-                    }
-                    visibleParas.forEachIndexed { i, p ->
-                        val current = paraValues[p.domBodyIdx] ?: p.text
-                        OutlinedTextField(
-                            value = current,
-                            onValueChange = { onParaChange(p.domBodyIdx, it) },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = false,
-                            minLines = 1,
-                            maxLines = 6,
-                            label = { Text("段落 ${i + 1}") },
-                            textStyle = MaterialTheme.typography.bodyMedium
-                        )
+                    if (paraExpanded) {
+                        val visibleParas = paras.filter {
+                            val v = paraValues[it.domBodyIdx] ?: it.text
+                            v.isNotBlank() || it.text.isNotBlank()
+                        }
+                        visibleParas.forEachIndexed { i, p ->
+                            val current = paraValues[p.domBodyIdx] ?: p.text
+                            OutlinedTextField(
+                                value = current,
+                                onValueChange = { onParaChange(p.domBodyIdx, it) },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = false,
+                                minLines = 1,
+                                maxLines = 6,
+                                label = { Text("段落 ${i + 1}") },
+                                textStyle = MaterialTheme.typography.bodyMedium
+                            )
+                        }
                     }
                 }
             }
