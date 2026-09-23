@@ -108,10 +108,10 @@ class UndoHistoryStoreTest {
         val h = UndoHistoryStore.GovUndoHistory(undo = undo, redo = redo)
         val back = json.decodeFromString<UndoHistoryStore.GovUndoHistory>(json.encodeToString(UndoHistoryStore.GovUndoHistory.serializer(), h))
         assertEquals(60, back.undo.size)
-        assertEquals("版本 1", back.undo.first().title)
-        assertEquals("版本 60", back.undo.last().title)
+        assertEquals("版本 1", back.undo.first()?.title)
+        assertEquals("版本 60", back.undo.last()?.title)
         assertEquals(20, back.redo.size)
-        assertEquals("回退 20", back.redo.last().title)
+        assertEquals("回退 20", back.redo.last()?.title)
     }
 
     @Test
