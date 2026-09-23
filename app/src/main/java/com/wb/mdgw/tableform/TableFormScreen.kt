@@ -585,107 +585,110 @@ private fun FillArea(
     paraValues: Map<Int, String>,
     onParaChange: (Int, String) -> Unit
 ) {
-    Column(Modifier.fillMaxSize()) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
         // ============== B 级段落编辑区（表格外的文字） ==============
         if (paras.isNotEmpty()) {
-            var paraExpanded by remember { mutableStateOf(false) }
-            Surface(tonalElevation = 1.dp) {
-                Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { paraExpanded = !paraExpanded }
-                    ) {
-                        Icon(
-                            imageVector = if (paraExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                            contentDescription = if (paraExpanded) "收起" else "展开",
-                            modifier = Modifier.size(18.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Icon(Icons.Default.EditNote, null,
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(Modifier.width(6.dp))
-                        Text("文档正文（${paraValues.size}/${paras.size} 段）",
-                            fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                        Spacer(Modifier.weight(1f))
-                        Text("格式保留", fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.outline)
-                    }
-                    if (paraExpanded) {
-                        val visibleParas = paras.filter {
-                            val v = paraValues[it.domBodyIdx] ?: it.text
-                            v.isNotBlank() || it.text.isNotBlank()
-                        }
-                        visibleParas.forEachIndexed { i, p ->
-                            val current = paraValues[p.domBodyIdx] ?: p.text
-                            OutlinedTextField(
-                                value = current,
-                                onValueChange = { onParaChange(p.domBodyIdx, it) },
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = false,
-                                minLines = 1,
-                                maxLines = 6,
-                                label = { Text("段落 ${i + 1}") },
-                                textStyle = MaterialTheme.typography.bodyMedium
+            item {
+                var paraExpanded by remember { mutableStateOf(false) }
+                Surface(tonalElevation = 1.dp) {
+                    Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { paraExpanded = !paraExpanded }
+                        ) {
+                            Icon(
+                                imageVector = if (paraExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                contentDescription = if (paraExpanded) "收起" else "展开",
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                            Spacer(Modifier.width(4.dp))
+                            Icon(Icons.Default.EditNote, null,
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(Modifier.width(6.dp))
+                            Text("文档正文（${paraValues.size}/${paras.size} 段）",
+                                fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            Spacer(Modifier.weight(1f))
+                            Text("格式保留", fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.outline)
+                        }
+                        if (paraExpanded) {
+                            val visibleParas = paras.filter {
+                                val v = paraValues[it.domBodyIdx] ?: it.text
+                                v.isNotBlank() || it.text.isNotBlank()
+                            }
+                            visibleParas.forEachIndexed { i, p ->
+                                val current = paraValues[p.domBodyIdx] ?: p.text
+                                OutlinedTextField(
+                                    value = current,
+                                    onValueChange = { onParaChange(p.domBodyIdx, it) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = false,
+                                    minLines = 1,
+                                    maxLines = 6,
+                                    label = { Text("段落 ${i + 1}") },
+                                    textStyle = MaterialTheme.typography.bodyMedium
+                                )
+                            }
                         }
                     }
                 }
+                HorizontalDivider(
+                    color = com.wb.mdgw.BrandTokens.BrandBronze.copy(alpha = 0.35f),
+                    thickness = 1.dp
+                )
             }
-            HorizontalDivider(
-                color = com.wb.mdgw.BrandTokens.BrandBronze.copy(alpha = 0.35f),
-                thickness = 1.dp
-            )
         }
         // ============== 表格部分 ==============
         // 模式切换 + 表头行
-        Surface(tonalElevation = 1.dp) {
-            Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    ModeChip("卡片式", mode == TfMode.CARD) { onMode(TfMode.CARD) }
-                    Spacer(Modifier.width(8.dp))
-                    ModeChip("清单式", mode == TfMode.LIST) { onMode(TfMode.LIST) }
-                    Spacer(Modifier.width(8.dp))
-                    ModeChip("网格式", mode == TfMode.GRID) { onMode(TfMode.GRID) }
-                }
-                if (mode != TfMode.LIST && headerRow >= 0 && t.rows.size > 1) {
-                    Row(
-                        Modifier.fillMaxWidth().padding(top = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("表头行：第 ${headerRow + 1} 行", fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(Modifier.weight(1f))
-                        IconButton(
-                            onClick = { if (headerRow > 0) onHeader(headerRow - 1) },
-                            enabled = headerRow > 0,
-                            modifier = Modifier.size(34.dp)
-                        ) { Icon(Icons.Default.Remove, "上移", modifier = Modifier.size(18.dp)) }
-                        IconButton(
-                            onClick = { if (headerRow < t.rows.size - 2) onHeader(headerRow + 1) },
-                            enabled = headerRow < t.rows.size - 2,
-                            modifier = Modifier.size(34.dp)
-                        ) { Icon(Icons.Default.Add, "下移", modifier = Modifier.size(18.dp)) }
+        item {
+            Surface(tonalElevation = 1.dp) {
+                Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        ModeChip("卡片式", mode == TfMode.CARD) { onMode(TfMode.CARD) }
+                        Spacer(Modifier.width(8.dp))
+                        ModeChip("清单式", mode == TfMode.LIST) { onMode(TfMode.LIST) }
+                        Spacer(Modifier.width(8.dp))
+                        ModeChip("网格式", mode == TfMode.GRID) { onMode(TfMode.GRID) }
                     }
-                }
-                if (mode == TfMode.CARD && t.hasVerticalMerge) {
-                    Text("该表含纵向合并单元格，仅支持填空，不支持加行。",
-                        fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+                    if (mode != TfMode.LIST && headerRow >= 0 && t.rows.size > 1) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(top = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("表头行：第 ${headerRow + 1} 行", fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(Modifier.weight(1f))
+                            IconButton(
+                                onClick = { if (headerRow > 0) onHeader(headerRow - 1) },
+                                enabled = headerRow > 0,
+                                modifier = Modifier.size(34.dp)
+                            ) { Icon(Icons.Default.Remove, "上移", modifier = Modifier.size(18.dp)) }
+                            IconButton(
+                                onClick = { if (headerRow < t.rows.size - 2) onHeader(headerRow + 1) },
+                                enabled = headerRow < t.rows.size - 2,
+                                modifier = Modifier.size(34.dp)
+                            ) { Icon(Icons.Default.Add, "下移", modifier = Modifier.size(18.dp)) }
+                        }
+                    }
+                    if (mode == TfMode.CARD && t.hasVerticalMerge) {
+                        Text("该表含纵向合并单元格，仅支持填空，不支持加行。",
+                            fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+                    }
                 }
             }
         }
 
         // 内容
         when (mode) {
-            TfMode.CARD -> LazyColumn(
-                Modifier.fillMaxSize().weight(1f),
-                contentPadding = PaddingValues(12.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
+            TfMode.CARD -> {
                 itemsIndexed(cardRecords) { idx, rec ->
                     ElevatedCard(Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp)) {
@@ -734,11 +737,7 @@ private fun FillArea(
                     }
                 }
             }
-            TfMode.LIST -> LazyColumn(
-                Modifier.fillMaxSize().weight(1f),
-                contentPadding = PaddingValues(12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
+            TfMode.LIST -> {
                 val dataRows = t.rows.drop(headerRow + 1)
                 itemsIndexed(dataRows) { i, row ->
                     val domRow = headerRow + 1 + i
@@ -765,11 +764,7 @@ private fun FillArea(
                     }
                 }
             }
-            TfMode.GRID -> LazyColumn(
-                Modifier.fillMaxSize().weight(1f),
-                contentPadding = PaddingValues(8.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
+            TfMode.GRID -> {
                 val dataRows = t.rows.drop(headerRow + 1)
                 itemsIndexed(dataRows) { i, row ->
                     val domRow = headerRow + 1 + i
