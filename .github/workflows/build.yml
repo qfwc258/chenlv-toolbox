@@ -122,25 +122,30 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Publish APK to xccapk
-        # 跨仓发布到公开的 APK 分发仓库；需在本仓库 Settings→Secrets→Actions 配置
-        # 名为 XCCAPK 的密钥（对 qfwc258/xccapk 有 Contents 写权限）。未配置时跳过。
-        # 独立容错：即便 xccapk 发布失败，上一步源码仓 Release 已保留 APK，不拖红整次构建。
+      - name: Publish APK to xccapk (best-effort)
+        # 跨仓发布到公开分发仓库 qfwc258/xccapk。
+        # 关键约束：本仓自带的 GITHUB_TOKEN 不能写其它仓库，必须用对 xccapk 有
+        # contents:write 的令牌，配置在本仓库 Settings→Secrets→Actions 的 XCCAPK。
+        # 该令牌缺失或越权时本步仅告警、不阻断（源码仓 Release 已保留 APK）。
         if: ${{ env.XCCAPK_TOKEN != '' }}
         continue-on-error: true
-        uses: softprops/action-gh-release@v2
-        with:
-          repository: qfwc258/xccapk
-          tag_name: chenlv-toolbox-v${{ steps.version_info.outputs.version_name }}
-          name: 陈律工具箱 v${{ steps.version_info.outputs.version_name }}
-          body: |
-            ## 陈律工具箱 自动构建
-
-            - Word / PPTX / PDF / 公众号排版，法援目录与证据目录填报
-            - 法律查询（国家法规库 OFD 阅读器自适应手机）
-            - 工伤赔偿计算（湖南标准，残疾/死亡双模式）
-            - 生成文书（按模板批量替换）、FTP 传文件、应用内检查更新
-          files: ${{ steps.version_info.outputs.apk_path }}
-          make_latest: true
         env:
-          GITHUB_TOKEN: ${{ env.XCCAPK_TOKEN }}
+          GH_TOKEN: ${{ env.XCCAPK_TOKEN }}
+        run: |
+          set +e
+          APK="${{ steps.version_info.outputs.apk_path }}"
+          VER="${{ steps.version_info.outputs.version_name }}"
+          TAG="chenlv-toolbox-v${VER}"
+          printf '## 陈律工具箱 自动构建\n\n- Word / PPTX / PDF / 公众号排版，法援目录与证据目录填报\n- 法律查询（国家法规库 OFD 阅读器自适应手机）\n- 工伤赔偿计算（湖南标准，残疾/死亡双模式）\n- 生成文书（按模板批量替换）、FTP 传文件、应用内检查更新\n' > /tmp/notes.md
+          echo "→ 发布到 qfwc258/xccapk (tag ${TAG})"
+          if gh release view "$TAG" --repo qfwc258/xccapk >/dev/null 2>&1; then
+            gh release upload "$TAG" --repo qfwc258/xccapk "$APK" --clobber
+          else
+            gh release create "$TAG" --repo qfwc258/xccapk --title "陈律工具箱 v${VER}" --notes-file /tmp/notes.md --latest "$APK"
+          fi
+          rc=$?
+          if [ $rc -ne 0 ]; then
+            echo "::warning::xccapk 发布失败（HTTP 403 通常表示 secrets.XCCAPK 缺少 qfwc258/xccapk 的 contents:write 权限）。源码仓 Release 已保留 APK，构建不受影响。"
+          else
+            echo "✓ xccapk 发布成功：${TAG}"
+          fi
