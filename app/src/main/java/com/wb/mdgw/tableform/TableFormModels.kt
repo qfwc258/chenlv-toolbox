@@ -73,7 +73,7 @@ data class TfRow(val domRow: Int, val cells: List<TfCell>)
 /** 一张解析出的表 */
 data class TfTable(
     /** 在 body.children 中的 DOM 索引，回填时定位 w:tbl */
-    val domBodyIdx: Int,
+    override val domBodyIdx: Int,
     val tableIndex: Int,
     val gridCols: Int,
     val rows: List<TfRow>,

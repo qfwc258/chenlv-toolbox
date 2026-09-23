@@ -146,18 +146,17 @@ fun TableFormScreen(onBack: () -> Unit) {
                 // B 级段落支持：初始化所有非空段落为原始文字（trim 避免空白段占位）
                 paraValues = doc.paras.filter { it.text.isNotBlank() }
                     .associate { it.domBodyIdx to it.text }
-                // 草稿段落恢复（若有）
-                val draft = TableFormDraftStore.loadFor(context, uri.toString(), name)
-                if (!draft?.paraValues.isNullOrEmpty()) {
-                    paraValues = draft.paraValues.mapNotNull { (k, v) ->
-                        k.toIntOrNull()?.let { it to v }
-                    }.toMap()
-                }
                 RecentFilesStore.touch(
                     context, RecentFile.KIND_TABLEFORM, uri, name, "${doc.tables.size} 个表格"
                 )
                 refreshRecent()
                 val draft = TableFormDraftStore.loadFor(context, uri.toString(), name)
+                // 草稿段落恢复（若有）
+                if (draft != null && draft.paraValues.isNotEmpty()) {
+                    paraValues = draft.paraValues.mapNotNull { (k, v) ->
+                        k.toIntOrNull()?.let { it to v }
+                    }.toMap()
+                }
                 if (doc.tables.size == 1) {
                     tableIndex = 0
                     initFromTable(doc.tables[0], draft)
