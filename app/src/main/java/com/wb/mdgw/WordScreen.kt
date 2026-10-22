@@ -100,9 +100,10 @@ fun WordScreen(
     var fontSize by remember { mutableStateOf(15) }
     var busy by remember { mutableStateOf(false) }
     var subView by remember { mutableStateOf(SubView.EDIT) }
-    // 沉浸式布局：顶部工具面板 / 底部操作面板默认收起，仅常驻「编辑|预览」切换条
+    // 沉浸式布局：顶部工具面板默认收起；底部操作栏（打开/导出/转PDF）默认展开，
+    // 常用动作不再需要先点切换条才看得到。切换条仍在，随时可收起。
     var topExpanded by remember { mutableStateOf(false) }
-    var bottomExpanded by remember { mutableStateOf(false) }
+    var bottomExpanded by remember { mutableStateOf(true) }
     // 上次用于生成公文的源 Markdown；切到「预览」时若与当前不一致则自动重新生成
     var lastGenSource by remember { mutableStateOf("") }
 
@@ -179,6 +180,7 @@ fun WordScreen(
     val smartQuotes by AppSettings.smartQuotes.collectAsState()
     val pageNumber by AppSettings.pageNumber.collectAsState()
     val titleFont by AppSettings.titleFont.collectAsState()
+    val signRightChars by AppSettings.signRightChars.collectAsState()
 
     // ---------- 结果 / 导出弹窗 ----------
     var resultUri by remember { mutableStateOf<Uri?>(null) }
@@ -412,7 +414,7 @@ fun WordScreen(
                 withContext(Dispatchers.IO) {
                     val gov = MdToGongwen.convert(
                         tfv.text,
-                        MdToGongwen.Options(spec = selectedSpec, mainTitleFont = titleFont, smartQuotes = smartQuotes, pageNumber = pageNumber)
+                        MdToGongwen.Options(spec = selectedSpec, mainTitleFont = titleFont, smartQuotes = smartQuotes, pageNumber = pageNumber, signRightChars = signRightChars)
                     )
                     gov to (FileUtils.baseName(fileName).ifBlank { "公文" })
                 }
@@ -585,7 +587,7 @@ fun WordScreen(
                 withContext(Dispatchers.IO) {
                     MdToGongwen.convert(
                         tfv.text,
-                        MdToGongwen.Options(spec = selectedSpec, mainTitleFont = titleFont, smartQuotes = smartQuotes, pageNumber = pageNumber)
+                        MdToGongwen.Options(spec = selectedSpec, mainTitleFont = titleFont, smartQuotes = smartQuotes, pageNumber = pageNumber, signRightChars = signRightChars)
                     )
                 }
             }.onSuccess { gov ->
@@ -621,7 +623,7 @@ fun WordScreen(
                 withContext(Dispatchers.IO) {
                     MdToGongwen.convert(
                         tfv.text,
-                        MdToGongwen.Options(spec = selectedSpec, mainTitleFont = titleFont, smartQuotes = smartQuotes, pageNumber = pageNumber)
+                        MdToGongwen.Options(spec = selectedSpec, mainTitleFont = titleFont, smartQuotes = smartQuotes, pageNumber = pageNumber, signRightChars = signRightChars)
                     )
                 }
             }.onSuccess { gov ->
@@ -650,7 +652,7 @@ fun WordScreen(
                 withContext(Dispatchers.IO) {
                     MdToGongwen.convert(
                         tfv.text,
-                        MdToGongwen.Options(spec = selectedSpec, mainTitleFont = titleFont, smartQuotes = smartQuotes, pageNumber = pageNumber)
+                        MdToGongwen.Options(spec = selectedSpec, mainTitleFont = titleFont, smartQuotes = smartQuotes, pageNumber = pageNumber, signRightChars = signRightChars)
                     )
                 }
             }.onSuccess { gov ->

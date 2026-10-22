@@ -1,40 +1,65 @@
 package com.wb.mdgw.docgen
 
 import android.content.Context
+import java.util.concurrent.ConcurrentHashMap
 
 /**
- * 内置默认字段结构（assets/docgen/default_shared_text.txt）的加载与操作。
+ * 内置默认字段结构（assets/docgen/defaults/<案件类型id>.txt）的加载与操作。
  *
- * 承担三件事：
- *  1. 加载并缓存默认结构（分组 / 注释 / 字段），供「添加字段」选择器列出全部默认字段；
- *  2. 给出默认字段 key 全集，生成时把用户未填 / 已删除的标准字段补空，
- *     保证模板里的标准占位符不会残留；
- *  3. 新增字段时按默认结构定位到原分组（分组被删则连同恢复），自定义字段归入「自定义字段」。
+ * 承担四件事：
+ *  1. 按案件类型加载默认结构（分组 / 注释 / 字段），供「添加字段」选择器列出该类型的全部默认字段；
+ *  2. 给出所有类型默认字段的 key 并集，生成时把用户未填 / 已删除的标准字段补空，
+ *     保证模板里的标准占位符不会残留（用户当前可能只填了其中一种类型的表单）；
+ *  3. 新增字段时按默认结构定位到原分组（分组被删则连同恢复），自定义字段归入「自定义字段」；
+ *  4. 切换案件类型时把当前表单并入目标类型结构，同名字段保留已填内容。
+ *
+ * 没有对应资源的 id（用户自己新增的类型）回退到 `default_shared_text.txt`，
+ * 那份文件同时也是升级前的旧版唯一结构，保留它即保留了旧行为。
  */
 object DefaultFields {
 
     /** 自定义字段统一归入的分组名 */
     const val CUSTOM_GROUP = "自定义字段"
 
-    @Volatile
-    private var cache: List<RuleLine>? = null
+    /** 无对应类型资源时的回退结构（也是升级前的旧版默认结构） */
+    private const val FALLBACK_ASSET = "docgen/default_shared_text.txt"
 
-    /** 默认结构（优先用缓存），assets 缺失时返回空列表 */
-    fun lines(context: Context): List<RuleLine> {
-        cache?.let { return it }
-        val text = runCatching {
-            context.assets.open("docgen/default_shared_text.txt")
-                .bufferedReader(Charsets.UTF_8)
-                .use { r -> r.readText() }
-        }.getOrNull() ?: return emptyList()
-        val parsed = SharedTextParser.parse(text)
-        cache = parsed
+    /** id -> 解析结果；并发下允许重复解析，结果一致 */
+    private val cache = ConcurrentHashMap<String, List<RuleLine>>()
+
+    private fun assetOf(caseTypeId: String): String = "docgen/defaults/$caseTypeId.txt"
+
+    private fun readAsset(context: Context, path: String): List<RuleLine>? = runCatching {
+        SharedTextParser.parse(
+            context.assets.open(path).bufferedReader(Charsets.UTF_8).use { it.readText() }
+        )
+    }.getOrNull()
+
+    /** 默认结构（优先用缓存）；类型资源缺失回退通用结构，都没有时返回空列表 */
+    fun lines(context: Context, caseTypeId: String): List<RuleLine> {
+        cache[caseTypeId]?.let { return it }
+        val parsed = readAsset(context, assetOf(caseTypeId))
+            ?: readAsset(context, FALLBACK_ASSET)
+            ?: emptyList()
+        cache[caseTypeId] = parsed
         return parsed
     }
 
-    /** 默认字段 key（按默认顺序，含 gcsj1 等序号字段与 sq1/sq2/lsf） */
-    fun keys(context: Context): List<String> =
-        lines(context).filter { it.isField }.map { it.key }
+    /** 某类型的默认字段 key（按默认顺序，含 gcsj1 等序号字段与 sq1/sq2/lsf） */
+    fun keys(context: Context, caseTypeId: String): List<String> =
+        lines(context, caseTypeId).filter { it.isField }.map { it.key }
+
+    /**
+     * 全部案件类型默认字段 key 的并集（保序去重）。
+     * 生成文书与占位符归类用它，而不是当前类型的 key —— 刑事模板的 zcjg
+     * 之类的字段在民事类型表单里不出现，但模板里可能确有该占位符。
+     */
+    fun allKeys(context: Context, caseTypeIds: Collection<String>): List<String> {
+        val out = LinkedHashSet<String>()
+        caseTypeIds.forEach { id -> keys(context, id).forEach { out.add(it) } }
+        readAsset(context, FALLBACK_ASSET)?.filter { it.isField }?.forEach { out.add(it.key) }
+        return out.toList()
+    }
 
     /**
      * 把一个字段插入当前结构，返回新列表（不修改入参）。
@@ -108,12 +133,12 @@ object DefaultFields {
     const val PROCESS_GROUP = "办案过程"
 
     /**
-     * 内置默认值表（默认值有效 key → 内置值）。
+     * 某类型的内置默认值表（默认值有效 key → 内置值）。
      * 可重复字段（gcsj/gcfs/gcnr）取第一个序号字段的值作为该类字段的内置默认。
      */
-    fun builtinDefaults(context: Context): Map<String, String> {
+    fun builtinDefaults(context: Context, caseTypeId: String): Map<String, String> {
         val map = LinkedHashMap<String, String>()
-        for (l in lines(context)) {
+        for (l in lines(context, caseTypeId)) {
             if (!l.isField) continue
             val dk = FieldLabels.defaultKey(l.key)
             if (dk !in map) map[dk] = l.value
@@ -122,22 +147,90 @@ object DefaultFields {
     }
 
     /**
-     * 某字段的有效默认值：用户自定义覆盖 → 内置默认 → 空。
-     * @param overrides 用户自定义默认值覆盖表（默认值有效 key → 值）
+     * 某字段在当前类型下的有效默认值：用户自定义覆盖 → 内置默认 → 空。
+     * @param overrides 该类型下用户自定义的字段默认值覆盖表（默认值有效 key → 值）
      */
-    fun effectiveDefault(context: Context, key: String, overrides: Map<String, String>): String {
+    fun effectiveDefault(
+        context: Context,
+        key: String,
+        overrides: Map<String, String>,
+        caseTypeId: String
+    ): String {
         val dk = FieldLabels.defaultKey(key)
         overrides[dk]?.let { return it }
-        return builtinDefaults(context)[dk] ?: ""
+        return builtinDefaults(context, caseTypeId)[dk] ?: ""
     }
 
-    /** 对一份结构的所有字段套用有效默认值（重置 / 新建时使用），非字段行原样保留 */
+    /** 对一份结构的所有字段套用有效默认值（重置 / 新建 / 切类型时使用），非字段行原样保留 */
     fun applyUserDefaults(
         context: Context,
         lines: List<RuleLine>,
-        overrides: Map<String, String>
+        overrides: Map<String, String>,
+        caseTypeId: String
     ): List<RuleLine> = lines.map { l ->
-        if (l.isField) l.copy(value = effectiveDefault(context, l.key, overrides)) else l
+        if (l.isField) l.copy(value = effectiveDefault(context, l.key, overrides, caseTypeId)) else l
+    }
+
+    /**
+     * 某类型「每个字段当前显示的默认值」（原始 key → 有效默认值，含用户自定义覆盖）。
+     * 切换类型时用它判断哪些值是用户真正填的（见 [mergeStructure]）。
+     */
+    fun effectiveDefaultsByKey(
+        context: Context,
+        caseTypeId: String,
+        overrides: Map<String, String>
+    ): Map<String, String> =
+        lines(context, caseTypeId).filter { it.isField }
+            .associate { it.key to effectiveDefault(context, it.key, overrides, caseTypeId) }
+
+    /**
+     * 切换案件类型：以目标类型结构为底，把当前表单里**你真正填过的**同名字段内容并入。
+     *
+     * 规则（保证切来切去不丢正在填的内容，也不攒垃圾槽位、不把上一个类型的类型标记带过来）：
+     * - 当前值非空、且不等于 [sourceDefaults] 里该字段的默认值 → 视为用户内容，并入目标结构的同名字段（连同 alias）；
+     * - 当前值等于来源类型该字段的默认值（[sourceDefaults]，如 `类别::民事`、`阶段::一审`，你根本没动过）→ 不并入，
+     *   由目标结构自己的默认值接管，否则切到刑事表单里还会写着「民事」；
+     * - 目标结构里没有、但属于用户内容的字段：并入末尾「自定义字段」分组；
+     * - 目标结构里没有、且不是用户内容的字段：丢弃（那只是上一个类型的空槽位 / 默认值）；
+     * - 分组标题、注释、空行一律以目标结构为准。
+     *
+     * 纯函数、不读 Context，便于单测。[target] 应先套好默认值再传进来；
+     * [sourceDefaults] 传切换前那个类型「每个字段当前显示的默认值」（key → 值，
+     * 用 [effectiveDefaultsByKey] 取，已含用户自定义覆盖）。
+     */
+    fun mergeStructure(
+        current: List<RuleLine>,
+        target: List<RuleLine>,
+        sourceDefaults: Map<String, String>
+    ): List<RuleLine> {
+        val filled = LinkedHashMap<String, RuleLine>()
+        for (l in current) {
+            if (!l.isField || l.value.isBlank() || l.value == sourceDefaults[l.key]) continue
+            if (l.key !in filled) filled[l.key] = l
+        }
+
+        val result = target.map { l ->
+            val from = if (l.isField) filled[l.key] else null
+            if (from == null) l else l.copy(value = from.value, alias = from.alias.ifBlank { l.alias })
+        }.toMutableList()
+
+        val foreign = filled.values.filter { v -> target.none { it.isField && it.key == v.key } }
+        if (foreign.isNotEmpty()) {
+            if (result.isNotEmpty() && result.last().type != RuleLine.TYPE_BLANK) result.add(RuleLine.blank())
+            val gIdx = result.indexOfFirst { it.isGroup && it.text == CUSTOM_GROUP }
+            if (gIdx < 0) {
+                result.add(RuleLine.group(CUSTOM_GROUP))
+                result.addAll(foreign)
+            } else {
+                var end = result.size
+                for (i in gIdx + 1 until result.size) {
+                    if (result[i].isGroup) { end = i; break }
+                }
+                while (end > gIdx + 1 && result[end - 1].type == RuleLine.TYPE_BLANK) end--
+                result.addAll(end, foreign)
+            }
+        }
+        return result
     }
 
     /** 默认值管理界面的单条字段（已按默认值有效 key 去重、可重复字段归并） */
@@ -149,15 +242,19 @@ object DefaultFields {
     )
 
     /**
-     * 默认值管理界面字段清单：先按内置结构顺序列出全部字段（过程三元组归并为三项），
+     * 默认值管理界面字段清单：先按当前类型的内置结构顺序列出全部字段（过程三元组归并为三项），
      * 再补充当前表单里出现过的自定义字段，保证任意字段都能设默认值。
      */
-    fun defaultEntries(context: Context, currentLines: List<RuleLine>): List<DefaultFieldEntry> {
+    fun defaultEntries(
+        context: Context,
+        currentLines: List<RuleLine>,
+        caseTypeId: String
+    ): List<DefaultFieldEntry> {
         val seen = LinkedHashSet<String>()
         val result = mutableListOf<DefaultFieldEntry>()
 
         var group: String? = null
-        for (l in lines(context)) {
+        for (l in lines(context, caseTypeId)) {
             when {
                 l.isGroup -> group = l.text
                 l.isField -> {

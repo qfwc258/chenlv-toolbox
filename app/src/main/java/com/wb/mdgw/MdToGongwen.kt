@@ -12,7 +12,8 @@ import kotlin.math.roundToInt
  *  - 四级标题 `####`  : 仿宋_GB2312 三号，首行缩进 2 字符
  *  - 正文             : 仿宋_GB2312 三号，首行缩进 2 字符(32pt)，固定行距 28pt
  *  - `ll ` 前缀       : 顶格（不缩进）
- *  - `rr ` 前缀       : 右对齐（落款用，如具状人 / 日期）
+ *  - `rr ` 前缀       : 右对齐（落款用，如具状人 / 日期），并按「设置 → 公文 → 落款右缩进」
+ *                      距右边界留出若干个中文字符宽（默认 4 字），不贴边
  *  - `tab ` / `tab.` / `tab-` 前缀：制表位前导符填空线（公文填空下划线 / 目录点线）。
  *    可选 `@Ncm` 指定制表位位置（缺省=右侧页边距）；内容可用 `::` 分隔左 / 右文字。
  *    例：`tab 甲方（盖章）：`、`tab. 第一章 总则::1`、`tab@12cm 乙方（签字）：`
@@ -140,7 +141,9 @@ object MdToGongwen {
         /** 自动识别称呼语（主送机关）并顶格 */
         val autoSalutation: Boolean = spec.autoSalutation,
         /** 是否添加页码：Word 写入页脚、PDF 底部居中阿拉伯数字 */
-        val pageNumber: Boolean = spec.pageNumber
+        val pageNumber: Boolean = spec.pageNumber,
+        /** `rr ` 落款行的右缩进，按中文字符个数计（4 = 距右边界 4 个汉字宽），0 表示贴右边距 */
+        val signRightChars: Int = 4
     )
 
     /**
@@ -348,11 +351,16 @@ object MdToGongwen {
                 continue
             }
 
-            // `rr ` 前缀 -> 强制右对齐、不缩进（落款行，如具状人/日期）
+            // `rr ` 前缀 -> 强制右对齐、不缩进（落款行，如具状人/日期），距右边界留 signRightChars 个汉字
             if (text.startsWith("rr ")) {
                 doc.addParagraph(
                     parseInline(text.substring(3), bodyFont, bodySize),
-                    ParaProps(align = Align.RIGHT, firstLineIndentPt = 0.0, lineSpacingPt = spacing)
+                    ParaProps(
+                        align = Align.RIGHT,
+                        firstLineIndentPt = 0.0,
+                        lineSpacingPt = spacing,
+                        rightIndentChars = options.signRightChars * 100
+                    )
                 )
                 bodyStarted = true
                 i++

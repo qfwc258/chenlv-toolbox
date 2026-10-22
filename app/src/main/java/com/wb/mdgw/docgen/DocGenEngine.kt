@@ -30,7 +30,7 @@ data class GenOutput(
  * 流程：扫描模板目录 → 按文书类型 code 粗筛文件名 → docx 走 [DocxTemplateFiller]
  * 占位符替换、pdf 原样复制 → 保存到「下载 / 陈律文档 / 案件_<编号> /」→ 打包 zip 供分享。
  *
- * 替换规则：先铺内置默认字段全集（用户未填 / 已删除的标准字段置空，由 filler 按占位符
+ * 替换规则：先铺全部案件类型的默认字段并集（用户未填 / 已删除的标准字段置空，由 filler 按占位符
  * 长度留白，保证模板里不残留占位符），再用用户当前填写 / 新增的字段值覆盖。
  */
 object DocGenEngine {
@@ -67,9 +67,11 @@ object DocGenEngine {
         fieldDoc: FieldDoc,
         templates: List<DocTemplateFile>
     ): GenOutput {
-        // 1) 默认字段全集补空；2) 用户值覆盖
+        // 1) 全部案件类型的默认字段并集补空；2) 用户值覆盖。
+        //    用并集而非当前类型的 key：模板可能是另一种类型的文书，漏补会残留英文占位符。
+        val standardKeys = DefaultFields.allKeys(context, CaseTypeStore.load(context).map { it.id })
         val rules = LinkedHashMap<String, String>()
-        DefaultFields.keys(context).forEach { rules[it] = "" }
+        standardKeys.forEach { rules[it] = "" }
         fieldDoc.toMap().forEach { (k, v) -> rules[k] = v }
 
         // 3) 扫描模板里实际出现、但未定义的占位符（如 dlrzj），按长度补空，
@@ -77,7 +79,7 @@ object DocGenEngine {
         runCatching {
             val docxBytes = templates.filter { it.isDocx }.mapNotNull { it.readBytes() }
             if (docxBytes.isNotEmpty()) {
-                val scan = DocxPlaceholders.scan(docxBytes, DefaultFields.keys(context))
+                val scan = DocxPlaceholders.scan(docxBytes, standardKeys)
                 (scan.standard + scan.unknown).forEach { k ->
                     if (!rules.containsKey(k)) rules[k] = ""
                 }

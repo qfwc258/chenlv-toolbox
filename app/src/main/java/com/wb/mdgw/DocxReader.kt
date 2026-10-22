@@ -315,6 +315,7 @@ object DocxReader {
     private fun parsePara(p: Element, styles: StyleTable): Block.Para {
         var align = Align.LEFT
         var firstLinePt = 0.0
+        var rightChars = 0
         var linePt = MdToGongwen.LINE_SPACING
         // 段前 / 段后间距（缇 → 磅）：标题段与正文段的呼吸感由它决定，缺失会让预览版面挤成一片
         var spaceBeforePt = 0.0
@@ -344,6 +345,8 @@ object DocxReader {
                 }
             }
             pPr.child("w:ind")?.attr("w:firstLine")?.toDoubleOrNull()?.let { firstLinePt = it / 20.0 }
+            // 右缩进按字符计（本 App 导出的落款用 w:rightChars），读回来才能不丢
+            pPr.child("w:ind")?.attr("w:rightChars")?.toIntOrNull()?.let { rightChars = it }
             pPr.child("w:spacing")?.let { sp ->
                 sp.attr("w:line")?.toDoubleOrNull()?.let { linePt = it / 20.0 }
                 sp.attr("w:before")?.toDoubleOrNull()?.let { spaceBeforePt = it / 20.0 }
@@ -400,7 +403,8 @@ object DocxReader {
                 spaceBeforePt = spaceBeforePt,
                 spaceAfterPt = spaceAfterPt,
                 borders = borders,
-                tabs = tabs
+                tabs = tabs,
+                rightIndentChars = rightChars
             )
         )
     }

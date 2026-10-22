@@ -52,6 +52,7 @@ fun SettingsScreen() {
     val smartQuotes by AppSettings.smartQuotes.collectAsState()
     val pageNumber by AppSettings.pageNumber.collectAsState()
     val titleFont by AppSettings.titleFont.collectAsState()
+    val signRightChars by AppSettings.signRightChars.collectAsState()
     val wechatTheme by AppSettings.wechatTheme.collectAsState()
     val pptxTone by AppSettings.pptxTone.collectAsState()
     val pptxAutoPaginate by AppSettings.pptxAutoPaginate.collectAsState()
@@ -194,6 +195,25 @@ fun SettingsScreen() {
                     checked = pageNumber,
                     onCheckedChange = { AppSettings.setPageNumber(context, it) }
                 )
+            }
+            SettingsRow(title = "落款右缩进", desc = "rr 落款行距右边界的汉字数，0 为贴右边距") {
+                OutlinedButton(
+                    onClick = { AppSettings.setSignRightChars(context, signRightChars - 1) },
+                    enabled = signRightChars > 0,
+                    modifier = Modifier.size(36.dp),
+                    contentPadding = PaddingValues(0.dp)
+                ) { Text("−", fontSize = 16.sp) }
+                Text(
+                    "${signRightChars} 字",
+                    fontSize = 13.sp, fontWeight = FontWeight.Medium,
+                    modifier = Modifier.padding(horizontal = 10.dp)
+                )
+                OutlinedButton(
+                    onClick = { AppSettings.setSignRightChars(context, signRightChars + 1) },
+                    enabled = signRightChars < 8,
+                    modifier = Modifier.size(36.dp),
+                    contentPadding = PaddingValues(0.dp)
+                ) { Text("＋", fontSize = 16.sp) }
             }
 
             WSectionLabel("主标题字体")

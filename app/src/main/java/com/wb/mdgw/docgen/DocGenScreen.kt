@@ -174,7 +174,16 @@ fun DocGenScreen(onBack: () -> Unit) {
     var templateDir by remember { mutableStateOf(SettingsStore.docgenTemplateDir(context)) }
     var hasAccess by remember { mutableStateOf(DocTemplateDir.hasAccess(context)) }
     var templates by remember { mutableStateOf(emptyList<DocTemplateFile>()) }
-    var lines by remember { mutableStateOf(FieldRuleStore.loadOrDefault(context).lines) }
+    // 案件类型：决定字段表单用哪套默认结构（民事法援 / 刑事法援 / 民事委托 / 刑事委托 + 用户自建）
+    var caseTypes by remember { mutableStateOf(CaseTypeStore.load(context)) }
+    var caseTypeId by remember {
+        mutableStateOf(
+            SettingsStore.docgenCaseType(context)?.takeIf { id -> caseTypes.any { it.id == id } }
+                ?: CaseTypeStore.DEFAULT_ID
+        )
+    }
+    var showCaseTypeManage by remember { mutableStateOf(false) }
+    var lines by remember { mutableStateOf(FieldRuleStore.loadOrDefault(context, caseTypeId).lines) }
     var typeList by remember { mutableStateOf(DocTypeStore.load(context)) }
     var selectedTypes by remember { mutableStateOf(SettingsStore.docgenSelectedTypes(context)) } // 空 = 全部
     var keyword by remember { mutableStateOf("") }
@@ -189,9 +198,10 @@ fun DocGenScreen(onBack: () -> Unit) {
     var showTemplateList by remember { mutableStateOf(false) }
     var showTemplateCard by remember { mutableStateOf(false) }
 
-    val defaults = remember { DefaultFields.lines(context) }
-    val standardKeys = remember { DefaultFields.keys(context) }
-    var userDefaults by remember { mutableStateOf(DefaultValueStore.load(context)) }
+    val defaults = remember(caseTypeId) { DefaultFields.lines(context, caseTypeId) }
+    // 归类 / 模板扫描用「全部类型的 key 并集」：刑事模板的占位符在民事表单里也该识别为标准字段
+    val standardKeys = remember(caseTypes) { DefaultFields.allKeys(context, caseTypes.map { it.id }) }
+    var userDefaults by remember { mutableStateOf(DefaultValueStore.load(context, caseTypeId)) }
     var showDefaultManage by remember { mutableStateOf(false) }
 
     // 分组管理弹窗状态
@@ -247,8 +257,8 @@ fun DocGenScreen(onBack: () -> Unit) {
     }
 
     fun addField(key: String, value: String, alias: String = "", targetGroup: String? = null) {
-        // 新增字段时若未指定值，自动带出该字段的有效默认值（用户自定义 → 内置 → 空）
-        val v = value.ifBlank { DefaultFields.effectiveDefault(context, key, userDefaults) }
+        // 新增字段时若未指定值，自动带出该字段在当前类型下的有效默认值（用户自定义 → 内置 → 空）
+        val v = value.ifBlank { DefaultFields.effectiveDefault(context, key, userDefaults, caseTypeId) }
         var nl = DefaultFields.insertField(lines, key, v, defaults, alias)
         // 用户指定目标分组：插入后移动到该分组
         if (targetGroup != null) {
@@ -264,7 +274,7 @@ fun DocGenScreen(onBack: () -> Unit) {
     fun processValues(number: Int): Map<String, String> =
         listOf("gcsj", "gcfs", "gcnr").associate { base ->
             val key = "$base$number"
-            key to DefaultFields.effectiveDefault(context, key, userDefaults)
+            key to DefaultFields.effectiveDefault(context, key, userDefaults, caseTypeId)
         }
 
     /** 现有办案过程的最大序号 + 1 */
@@ -293,10 +303,47 @@ fun DocGenScreen(onBack: () -> Unit) {
         persistLines(lines.filterNot { it.isField && it.key in keys })
     }
 
-    /** 把某字段当前值存为该字段（默认值有效 key）的默认值 */
+    /** 把某字段当前值存为该字段（默认值有效 key）在当前类型下的默认值 */
     fun setFieldDefault(key: String, value: String) {
-        DefaultValueStore.set(context, FieldLabels.defaultKey(key), value)
-        userDefaults = DefaultValueStore.load(context)
+        DefaultValueStore.set(context, caseTypeId, FieldLabels.defaultKey(key), value)
+        userDefaults = DefaultValueStore.load(context, caseTypeId)
+    }
+
+    /**
+     * 切换案件类型：目标类型结构为底、你填过的内容按同名 key 保留
+     * （未改过的内置默认值由新类型接管，见 [DefaultFields.mergeStructure]），结果落盘。
+     * 不弹确认——并入规则下不会丢已填内容。
+     */
+    fun switchCaseType(newId: String) {
+        if (newId == caseTypeId || caseTypes.none { it.id == newId }) return
+        val sourceDefaults = DefaultFields.effectiveDefaultsByKey(context, caseTypeId, userDefaults)
+        val target = DefaultFields.applyUserDefaults(
+            context,
+            DefaultFields.lines(context, newId),
+            DefaultValueStore.load(context, newId),
+            newId
+        )
+        persistLines(DefaultFields.mergeStructure(lines, target, sourceDefaults))
+        caseTypeId = newId
+        SettingsStore.saveDocgenCaseType(context, newId)
+        userDefaults = DefaultValueStore.load(context, newId)
+        collapsed = emptySet()
+        scope.launch {
+            snackbar.showSnackbar(
+                "已切到「${CaseTypeStore.labelOf(caseTypes, newId)}」：已填内容保留，没改过的默认值跟随新类型"
+            )
+        }
+    }
+
+    /** 保存案件类型列表；当前类型被删掉时顺带切到剩下的第一个，并清理已删类型的默认值覆盖 */
+    fun persistCaseTypes(newList: List<CaseTypeItem>) {
+        val removed = caseTypes.map { it.id }.toSet() - newList.map { it.id }.toSet()
+        removed.forEach { DefaultValueStore.remove(context, it) }
+        caseTypes = newList
+        CaseTypeStore.save(context, newList)
+        if (caseTypeId !in newList.map { it.id }) {
+            newList.firstOrNull()?.let { switchCaseType(it.id) }
+        }
     }
 
     // ---------- 分组管理 ----------
@@ -615,6 +662,40 @@ fun DocGenScreen(onBack: () -> Unit) {
                 }
             }
 
+            // ---------- 案件类型（决定字段表单用哪套默认结构，可增删、重命名） ----------
+            item {
+                Card(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("案件类型", fontWeight = FontWeight.SemiBold, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                            TextButton(
+                                onClick = { showCaseTypeManage = true },
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp)
+                            ) {
+                                Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(15.dp))
+                                Spacer(Modifier.size(4.dp))
+                                Text("管理", fontSize = 12.sp)
+                            }
+                        }
+                        Text(
+                            "切换 = 换一套默认结构：改过的内容保留，没改过的默认值跟随新类型；字段默认值每个类型各存一份",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            caseTypes.forEach { ct ->
+                                TypeChip(
+                                    selected = ct.id == caseTypeId,
+                                    label = ct.label,
+                                    onClick = { switchCaseType(ct.id) }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             // ---------- 文书类型（可增删、重命名） ----------
             item {
                 Card(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
@@ -695,14 +776,16 @@ fun DocGenScreen(onBack: () -> Unit) {
                                         }
                                     )
                                     DropdownMenuItem(
-                                        text = { Text("重置为默认结构") },
+                                        text = { Text("重置为「${CaseTypeStore.labelOf(caseTypes, caseTypeId)}」默认结构") },
                                         onClick = {
                                             menuOpen = false
+                                            val typeId = caseTypeId
+                                            val typeLabel = CaseTypeStore.labelOf(caseTypes, typeId)
                                             scope.launch {
-                                                val doc = withContext(Dispatchers.IO) { FieldRuleStore.resetOrDefault(context) }
+                                                val doc = withContext(Dispatchers.IO) { FieldRuleStore.resetOrDefault(context, typeId) }
                                                 lines = doc.lines
                                                 collapsed = emptySet()
-                                                snackbar.showSnackbar("已重置为默认结构")
+                                                snackbar.showSnackbar("已重置为「$typeLabel」默认结构，已填内容一并清除")
                                             }
                                         }
                                     )
@@ -923,6 +1006,15 @@ fun DocGenScreen(onBack: () -> Unit) {
         )
     }
 
+    // ---------- 案件类型管理对话框 ----------
+    if (showCaseTypeManage) {
+        CaseTypeManageDialog(
+            initial = caseTypes,
+            onDismiss = { showCaseTypeManage = false },
+            onSave = { persistCaseTypes(it) }
+        )
+    }
+
     // ---------- 添加字段对话框 ----------
     if (showAddDialog) {
         AddFieldDialog(
@@ -968,15 +1060,17 @@ fun DocGenScreen(onBack: () -> Unit) {
         }
     }
 
-    // ---------- 默认值管理弹窗 ----------
+    // ---------- 默认值管理弹窗（按案件类型分开存） ----------
     if (showDefaultManage) {
+        val typeId = caseTypeId
         DefaultValuesDialog(
-            entries = DefaultFields.defaultEntries(context, lines),
-            builtin = DefaultFields.builtinDefaults(context),
+            typeLabel = CaseTypeStore.labelOf(caseTypes, typeId),
+            entries = DefaultFields.defaultEntries(context, lines, typeId),
+            builtin = DefaultFields.builtinDefaults(context, typeId),
             initial = userDefaults,
             onDismiss = { showDefaultManage = false },
             onSave = { overrides ->
-                DefaultValueStore.save(context, overrides)
+                DefaultValueStore.save(context, typeId, overrides)
                 userDefaults = overrides
                 showDefaultManage = false
                 scope.launch { snackbar.showSnackbar("已保存字段默认值；重置或新增字段时生效") }
@@ -1248,6 +1342,115 @@ private fun TypeManageDialog(
                 }
                 if (error.isEmpty()) {
                     onSave(valid)
+                    onDismiss()
+                }
+            }) { Text("保存") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        }
+    )
+}
+
+/**
+ * 案件类型管理：只能改显示名、增删类型；内部 id 不暴露给用户
+ * （id 同时是内置默认结构资源名，改了就会找不到默认结构）。
+ */
+@Composable
+private fun CaseTypeManageDialog(
+    initial: List<CaseTypeItem>,
+    onDismiss: () -> Unit,
+    onSave: (List<CaseTypeItem>) -> Unit
+) {
+    var items by remember { mutableStateOf(initial) }
+    var newLabel by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf("") }
+
+    fun addType() {
+        val label = newLabel.trim()
+        if (label.isEmpty()) {
+            error = "类型名称不能为空"
+            return
+        }
+        if (items.any { it.label == label }) {
+            error = "已有同名类型「$label」"
+            return
+        }
+        items = items + CaseTypeItem(CaseTypeStore.newId(items.map { it.id }.toSet()), label)
+        newLabel = ""
+        error = ""
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("管理案件类型") },
+        text = {
+            Column(
+                Modifier
+                    .heightIn(max = 460.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    "每个类型的字段表单有自己的默认结构与字段默认值。新增的类型没有内置结构，" +
+                        "重置时使用通用结构（原法律援助字段），之后可手动增删字段。",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                items.forEachIndexed { idx, item ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(
+                            value = item.label,
+                            onValueChange = { v ->
+                                items = items.toMutableList().also { it[idx] = item.copy(label = v) }
+                            },
+                            singleLine = true,
+                            label = { Text("名称", fontSize = 11.sp) },
+                            modifier = Modifier.weight(1f)
+                        )
+                        IconButton(onClick = { items = items.filterIndexed { i, _ -> i != idx } }) {
+                            Icon(Icons.Default.Delete, contentDescription = "删除类型", modifier = Modifier.size(18.dp))
+                        }
+                    }
+                }
+                HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                Text("新增类型", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = newLabel,
+                        onValueChange = { newLabel = it },
+                        label = { Text("名称", fontSize = 11.sp) },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Surface(
+                        onClick = { addType() },
+                        shape = androidx.compose.foundation.shape.CircleShape,
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.Add, contentDescription = "添加类型")
+                        }
+                    }
+                }
+                if (error.isNotEmpty()) {
+                    Text(error, fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                val valid = items.filter { it.label.isNotBlank() && CaseTypeStore.isValidId(it.id) }
+                val labels = valid.map { it.label.trim() }
+                error = when {
+                    valid.isEmpty() -> "至少保留一个类型"
+                    labels.size != labels.distinct().size -> "存在重名类型"
+                    else -> ""
+                }
+                if (error.isEmpty()) {
+                    onSave(valid.map { it.copy(label = it.label.trim()) })
                     onDismiss()
                 }
             }) { Text("保存") }
@@ -1899,6 +2102,7 @@ private fun EditFieldDialog(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DefaultValuesDialog(
+    typeLabel: String,
     entries: List<DefaultFields.DefaultFieldEntry>,
     builtin: Map<String, String>,
     initial: Map<String, String>,
@@ -1914,11 +2118,11 @@ private fun DefaultValuesDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("默认值管理") },
+        title = { Text("默认值管理 · $typeLabel") },
         text = {
             Column {
                 Text(
-                    "设置各字段的默认值，重置或新增字段时自动带出。过程时间 / 方式 / 内容对所有序号生效。",
+                    "只作用于「$typeLabel」，其他案件类型各存一份。重置或新增字段时自动带出；过程时间 / 方式 / 内容对所有序号生效。",
                     fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.height(6.dp))

@@ -22,11 +22,13 @@ object SettingsStore {
     private const val K_SMART_QUOTES = "smart_quotes"
     private const val K_PAGE_NUMBER = "page_number"
     private const val K_TITLE_FONT = "title_font"
+    private const val K_SIGN_RIGHT_CHARS = "sign_right_chars"
     private const val K_DARK_MODE = "dark_mode"
     private const val K_PPTX_TONE = "pptx_tone"
     private const val K_PPTX_AUTO_PAGINATE = "pptx_auto_paginate"
     private const val K_DOCGEN_TEMPLATE_DIR = "docgen_template_dir"
     private const val K_DOCGEN_SELECTED_TYPES = "docgen_selected_types"
+    private const val K_DOCGEN_CASE_TYPE = "docgen_case_type"
 
     /** 生成文书：默认模板目录（与 PC 端 mb/ 对齐，可在 App 内修改） */
     const val DOCGEN_DEFAULT_TEMPLATE_DIR = "/sdcard/pylaw/mb"
@@ -85,6 +87,14 @@ object SettingsStore {
             .apply()
     }
 
+    /** 落款（`rr ` 行）距右边界的汉字数；4 = 缩进四个中文字符宽。限 0–8 防手改偏好把版面挤没。 */
+    fun signRightChars(ctx: Context): Int =
+        prefs(ctx).getInt(K_SIGN_RIGHT_CHARS, 4).coerceIn(0, 8)
+
+    fun saveSignRightChars(ctx: Context, v: Int) {
+        prefs(ctx).edit().putInt(K_SIGN_RIGHT_CHARS, v.coerceIn(0, 8)).apply()
+    }
+
     /** 深色模式开关。 */
     fun isDarkMode(ctx: Context): Boolean =
         prefs(ctx).getBoolean(K_DARK_MODE, false)
@@ -116,7 +126,8 @@ object SettingsStore {
             spec = s,
             mainTitleFont = titleFont(ctx),
             smartQuotes = smartQuotes(ctx),
-            pageNumber = pageNumber(ctx)
+            pageNumber = pageNumber(ctx),
+            signRightChars = signRightChars(ctx)
         )
     }
 
@@ -137,5 +148,16 @@ object SettingsStore {
 
     fun saveDocgenSelectedTypes(ctx: Context, codes: Set<String>) {
         prefs(ctx).edit().putString(K_DOCGEN_SELECTED_TYPES, codes.joinToString(",")).apply()
+    }
+
+    /**
+     * 生成文书当前选中的案件类型 id（决定字段表单用哪套默认结构）。
+     * null = 从未选择，由调用方回退到内置首选类型。
+     */
+    fun docgenCaseType(ctx: Context): String? =
+        prefs(ctx).getString(K_DOCGEN_CASE_TYPE, null)?.takeIf { it.isNotBlank() }
+
+    fun saveDocgenCaseType(ctx: Context, caseTypeId: String) {
+        prefs(ctx).edit().putString(K_DOCGEN_CASE_TYPE, caseTypeId).apply()
     }
 }

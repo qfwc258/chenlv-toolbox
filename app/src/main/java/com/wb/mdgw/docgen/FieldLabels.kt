@@ -68,13 +68,24 @@ object FieldLabels {
         "dfdsr" to "对方当事人",
         "cbxj" to "承办小结",
         "ljsm" to "阅卷说明",
-        "bljg" to "办理结果"
+        "bljg" to "办理结果",
+        // 刑事案件情况（仅刑事两类默认结构里有；法援/委托共用）
+        "zcjg" to "侦查机关",
+        "zming" to "涉嫌罪名",
+        "qzcs" to "强制措施",
+        "jysuo" to "羁押场所",
+        "trrf" to "认罪认罚",
+        "liangj" to "量刑建议",
+        // 委托合同（仅委托两类；bianh/zprq 仍保留，模板可能用到）
+        "htbh" to "合同编号",
+        "wtrq" to "委托日期",
+        "fxgz" to "风险告知"
     )
 
     /** 内容型字段（值可能是大段文字），表单用多行输入框 */
     private val LONG_BASE: Set<String> = setOf(
         "quanx", "lsf", "ajqk", "ssqq", "basl", "gcnr",
-        "yjnr", "dltg", "cbxj", "ljsm", "bljg"
+        "yjnr", "dltg", "cbxj", "ljsm", "bljg", "liangj", "fxgz"
     )
 
     /** 取 key 去掉末尾数字后的基础部分（gcsj1 → gcsj） */

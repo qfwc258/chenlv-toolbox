@@ -24,6 +24,8 @@ object AppSettings {
     val smartQuotes = MutableStateFlow(false)
     val pageNumber = MutableStateFlow(false)
     val titleFont = MutableStateFlow("")
+    /** 落款（`rr ` 行）距右边界的汉字数 */
+    val signRightChars = MutableStateFlow(4)
 
     // ---- 公众号 ----
     val wechatTheme = MutableStateFlow("")
@@ -41,6 +43,7 @@ object AppSettings {
         smartQuotes.value = SettingsStore.smartQuotes(ctx)
         pageNumber.value = SettingsStore.pageNumber(ctx)
         titleFont.value = SettingsStore.titleFont(ctx)
+        signRightChars.value = SettingsStore.signRightChars(ctx)
 
         // 公众号：主题 + 自定义 CSS（优先草稿，其次默认主题）
         val wd = WeChatDraftStore.load(ctx)
@@ -95,6 +98,11 @@ object AppSettings {
     fun setTitleFont(ctx: Context, v: String) {
         titleFont.value = v
         SettingsStore.saveTitleFont(ctx, v)
+    }
+
+    fun setSignRightChars(ctx: Context, v: Int) {
+        signRightChars.value = v.coerceIn(0, 8)
+        SettingsStore.saveSignRightChars(ctx, signRightChars.value)
     }
 
     fun setWechatTheme(ctx: Context, key: String) {

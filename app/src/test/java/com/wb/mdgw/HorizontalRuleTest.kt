@@ -109,6 +109,57 @@ class HorizontalRuleTest {
     }
 
     /**
+     * 落款行默认距右边界 4 个汉字，且这条缩进必须真进 Word 的 XML（字符单位，随字号联动）。
+     */
+    @Test
+    fun `rr prefix indents four hanzi from right edge`() {
+        val doc = convert("rr 申请人：张三")
+        val p = doc.blocks.filterIsInstance<Block.Para>().first()
+        assertEquals("默认落款右缩进应为 4 汉字（400 字符单位）", 400, p.props.rightIndentChars)
+
+        val xml = unzipEntry(doc.toDocx(), "word/document.xml")!!
+        assertTrue("Word XML 应带字符单位的右缩进", xml.contains("w:rightChars=\"400\""))
+        assertTrue("且仍为右对齐", xml.contains("<w:jc w:val=\"right\"/>"))
+    }
+
+    /** 设置项要能贯通：0 字贴边不写属性，6 字写 600。 */
+    @Test
+    fun `sign right indent follows options`() {
+        val flush = MdToGongwen.convert("rr 张三", MdToGongwen.Options(signRightChars = 0))
+        assertFalse("0 字时不应写 rightChars",
+            unzipEntry(flush.toDocx(), "word/document.xml")!!.contains("w:rightChars"))
+
+        val wide = MdToGongwen.convert("rr 张三", MdToGongwen.Options(signRightChars = 6))
+        assertTrue("6 字应写 600",
+            unzipEntry(wide.toDocx(), "word/document.xml")!!.contains("w:rightChars=\"600\""))
+    }
+
+    /** 不能只改 Word：预览 HTML 要有等价缩进、反导 Markdown 要还原前缀、重开 docx 不能丢。 */
+    @Test
+    fun `preview html and roundtrip reflect rr indent`() {
+        val doc = convert("rr 申请人：张三")
+        assertTrue("预览应按段落字号换算出右缩进",
+            DocxHtml.govDocToHtml(doc).contains("padding-right:"))
+        assertTrue("反导 Markdown 应还原 rr 前缀",
+            doc.toMarkdown().lineSequence().any { it.startsWith("rr ") })
+
+        val back = DocxReader.read(doc.toDocx(), GovDocSpec.DEFAULT)
+        val rp = back.blocks.filterIsInstance<Block.Para>().first { it.runs.isNotEmpty() }
+        assertEquals("重新打开导出的 docx 不应丢右缩进", 400, rp.props.rightIndentChars)
+    }
+
+    private fun unzipEntry(bytes: ByteArray, name: String): String? {
+        java.util.zip.ZipInputStream(java.io.ByteArrayInputStream(bytes)).use { zis ->
+            var e = zis.nextEntry
+            while (e != null) {
+                if (e.name == name) return zis.readBytes().toString(Charsets.UTF_8)
+                e = zis.nextEntry
+            }
+        }
+        return null
+    }
+
+    /**
      * 多个 `---` 不应累积触发落款区——每个都是独立的水平线。
      */
     @Test

@@ -141,7 +141,13 @@ data class ParaProps(
     val spaceAfterPt: Double = 0.0,
     val borders: ParaBorders? = null,
     /** 段落制表位（含前导符）。公务填空线/目录点线常用的第二类「下划线」由它驱动。空列表表示无制表位。 */
-    val tabs: List<TabStop> = emptyList()
+    val tabs: List<TabStop> = emptyList(),
+    /**
+     * 右缩进，单位与 OOXML 的 `w:rightChars` 相同（1/100 个汉字宽）：400 = 4 个中文字符。
+     * 用字符而非缇/磅，是为了随字号联动——与首行缩进的 `w:firstLineChars` 同一套语义。
+     * 右对齐段落用它把内容从右边界往里推（落款不贴边）。0 表示不缩进。
+     */
+    val rightIndentChars: Int = 0
 )
 
 /** 文档中的块级元素 */
@@ -355,6 +361,8 @@ class DocxWriter(
         sb.append("<w:ind w:firstLine=\"").append(ptToTwips(p.firstLineIndentPt)).append("\"")
         // firstLineChars="200" = 精确 2 汉字字符（Word/WPS 优先按字符计，与字号联动）
         if (p.firstLineIndentPt > 0) sb.append(" w:firstLineChars=\"200\"")
+        // 右缩进同样按字符计：Word/WPS 见到 Chars 单位即优先于缇值，字号变了缩进跟着变
+        if (p.rightIndentChars > 0) sb.append(" w:rightChars=\"").append(p.rightIndentChars).append("\"")
         sb.append("/>")
         sb.append("<w:jc w:val=\"").append(p.align.v).append("\"/>")
         // 制表位（含前导符 leader）：公务填空线/目录点线由它驱动。顺序在 jc 之后、其它 pPr 子项之前
