@@ -197,6 +197,8 @@ fun DocGenScreen(onBack: () -> Unit) {
     var editIndex by remember { mutableStateOf(-1) }
     var showTemplateList by remember { mutableStateOf(false) }
     var showTemplateCard by remember { mutableStateOf(false) }
+    /** 待确认的破坏性操作："clear" = 清空所有值，"reset" = 重置为默认结构 */
+    var pendingDestructive by remember { mutableStateOf<String?>(null) }
 
     val defaults = remember(caseTypeId) { DefaultFields.lines(context, caseTypeId) }
     // 归类 / 模板扫描用「全部类型的 key 并集」：刑事模板的占位符在民事表单里也该识别为标准字段
@@ -307,6 +309,42 @@ fun DocGenScreen(onBack: () -> Unit) {
     fun setFieldDefault(key: String, value: String) {
         DefaultValueStore.set(context, caseTypeId, FieldLabels.defaultKey(key), value)
         userDefaults = DefaultValueStore.load(context, caseTypeId)
+    }
+
+    /** 清空所有值：会覆盖当前规则，先留一份备份 */
+    fun doClearValues() {
+        FieldRuleStore.backupCurrent(context)
+        persistLines(lines.map { if (it.isField) it.copy(value = "") else it })
+        scope.launch { snackbar.showSnackbar("已清空所有字段值（可用「恢复上一次备份」找回）") }
+    }
+
+    /** 重置为当前类型默认结构：结构与你增删的字段都会回到内置状态，先留一份备份 */
+    fun doResetStructure() {
+        val typeId = caseTypeId
+        val typeLabel = CaseTypeStore.labelOf(caseTypes, typeId)
+        scope.launch {
+            val doc = withContext(Dispatchers.IO) {
+                FieldRuleStore.backupCurrent(context)
+                FieldRuleStore.resetOrDefault(context, typeId)
+            }
+            lines = doc.lines
+            collapsed = emptySet()
+            snackbar.showSnackbar("已重置为「$typeLabel」默认结构，已填内容一并清除（可用「恢复上一次备份」找回）")
+        }
+    }
+
+    /** 恢复最近一次破坏性操作前的备份 */
+    fun doRestoreBackup() {
+        scope.launch {
+            val doc = withContext(Dispatchers.IO) { FieldRuleStore.restoreLatestBackup(context) }
+            if (doc == null) {
+                snackbar.showSnackbar("没有可恢复的备份")
+            } else {
+                lines = doc.lines
+                collapsed = emptySet()
+                snackbar.showSnackbar("已恢复到上一次清空 / 重置之前")
+            }
+        }
     }
 
     /**
@@ -772,21 +810,22 @@ fun DocGenScreen(onBack: () -> Unit) {
                                         text = { Text("清空所有值") },
                                         onClick = {
                                             menuOpen = false
-                                            persistLines(lines.map { if (it.isField) it.copy(value = "") else it })
+                                            pendingDestructive = "clear"
                                         }
                                     )
                                     DropdownMenuItem(
                                         text = { Text("重置为「${CaseTypeStore.labelOf(caseTypes, caseTypeId)}」默认结构") },
                                         onClick = {
                                             menuOpen = false
-                                            val typeId = caseTypeId
-                                            val typeLabel = CaseTypeStore.labelOf(caseTypes, typeId)
-                                            scope.launch {
-                                                val doc = withContext(Dispatchers.IO) { FieldRuleStore.resetOrDefault(context, typeId) }
-                                                lines = doc.lines
-                                                collapsed = emptySet()
-                                                snackbar.showSnackbar("已重置为「$typeLabel」默认结构，已填内容一并清除")
-                                            }
+                                            pendingDestructive = "reset"
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("恢复上一次备份") },
+                                        enabled = FieldRuleStore.hasBackup(context),
+                                        onClick = {
+                                            menuOpen = false
+                                            doRestoreBackup()
                                         }
                                     )
                                     DropdownMenuItem(
@@ -1154,14 +1193,50 @@ fun DocGenScreen(onBack: () -> Unit) {
         )
     }
 
+    // ---------- 破坏性操作确认 ----------
+    pendingDestructive?.let { kind ->
+        val isReset = kind == "reset"
+        AlertDialog(
+            onDismissRequest = { pendingDestructive = null },
+            title = {
+                Text(if (isReset) "重置为「${CaseTypeStore.labelOf(caseTypes, caseTypeId)}」默认结构" else "清空所有字段值")
+            },
+            text = {
+                Text(
+                    if (isReset)
+                        "字段结构会回到该类型的内置默认：你增删的字段、改过的显示名和所有已填内容都会清除。" +
+                            "执行前会自动留一份备份，之后可用菜单里的「恢复上一次备份」找回。"
+                    else
+                        "所有字段的已填内容会被清成空值（字段结构与显示名保留）。" +
+                            "执行前会自动留一份备份，之后可用菜单里的「恢复上一次备份」找回。",
+                    fontSize = 13.sp
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    pendingDestructive = null
+                    if (isReset) doResetStructure() else doClearValues()
+                }) { Text(if (isReset) "重置" else "清空") }
+            },
+            dismissButton = { TextButton(onClick = { pendingDestructive = null }) { Text("取消") } }
+        )
+    }
+
     // ---------- 结果弹窗 ----------
     output?.let { out ->
         val failed = out.results.filter { !it.success }
+        // 「你手填过、但本次所选模板里没有对应占位符」的字段才值得提示：
+        // 只带默认值的字段没进文书是常态，逐个提示会变成噪音。
+        val typeDefaults = DefaultFields.effectiveDefaultsByKey(context, caseTypeId, userDefaults)
+        val typedUnused = lines
+            .filter { it.isField && it.value.isNotBlank() && it.value != typeDefaults[it.key] }
+            .map { it.key }
+            .filter { it !in out.templateKeys }
         AlertDialog(
             onDismissRequest = { output = null },
             title = { Text("生成完成") },
             text = {
-                Column {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
                     Text("成功 ${out.successCount} 个，失败 ${failed.size} 个", fontSize = 14.sp)
                     Text("保存位置：下载 / 陈律文档 / ${out.caseDir}/", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (out.sharedTextPath != null) {
@@ -1173,6 +1248,45 @@ fun DocGenScreen(onBack: () -> Unit) {
                         failed.take(8).forEach {
                             Text("· ${it.templateName}：${it.error}", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
                         }
+                    }
+                    // 对账：模板有 / 表单没有 —— 这次被留白的占位符
+                    if (out.blankedTemplateKeys.isNotEmpty()) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "模板里有 ${out.blankedTemplateKeys.size} 个占位符没有对应字段，本次已留白：",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            out.blankedTemplateKeys.take(24).joinToString("、") +
+                                if (out.blankedTemplateKeys.size > 24) " …" else "",
+                            fontSize = 11.sp
+                        )
+                        TextButton(
+                            onClick = {
+                                out.blankedTemplateKeys.forEach { addField(it, "") }
+                                scope.launch {
+                                    snackbar.showSnackbar("已把 ${out.blankedTemplateKeys.size} 个占位符补成字段，填值后重新生成")
+                                }
+                            },
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                        ) { Text("全部补成字段", fontSize = 12.sp) }
+                    }
+                    // 对账：你填过、但所选模板没有占位符 —— 这些内容不会进文书
+                    if (out.templateKeys.isNotEmpty() && typedUnused.isNotEmpty()) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "另有 ${typedUnused.size} 个字段你填了内容，但本次所选模板里没有占位符，不会出现在文书上：",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            typedUnused.take(24).joinToString("、") {
+                                val label = FieldLabels.labelOf(it)
+                                if (label.isNullOrBlank()) it else "$it($label)"
+                            } + if (typedUnused.size > 24) " …" else "",
+                            fontSize = 11.sp
+                        )
                     }
                 }
             },

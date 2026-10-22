@@ -2,6 +2,10 @@ package com.wb.mdgw.docgen
 
 import android.content.Context
 import com.wb.mdgw.JsonFileStore
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * 当前案件的替换规则（字段表单）持久化。
@@ -57,4 +61,46 @@ object FieldRuleStore : JsonFileStore<FieldDoc>() {
         if (doc.lines.isNotEmpty()) write(context, doc)
         return doc
     }
+
+    /**
+     * 破坏性操作（重置为默认结构 / 清空所有值）**前**把当前文件原样另存一份
+     * `docgen_fields.bak_<时间戳>.json`，最多保留 [MAX_BACKUPS] 份（超出删最旧）。
+     * 失败静默、返回是否成功——备份只是保险，绝不影响主流程。
+     */
+    fun backupCurrent(context: Context): Boolean = runCatching {
+        val dir = context.filesDir
+        val src = File(dir, fileName)
+        if (!src.exists() || src.length() == 0L) return false
+        val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
+        File(dir, "$BACKUP_PREFIX$stamp.json").writeBytes(src.readBytes())
+        dir.listFiles { f -> f.name.startsWith(BACKUP_PREFIX) && f.name.endsWith(".json") }
+            ?.sortedByDescending { it.name }
+            ?.drop(MAX_BACKUPS)
+            ?.forEach { old -> runCatching { old.delete() } }
+        true
+    }.getOrDefault(false)
+
+    /** 是否存在可用备份 */
+    fun hasBackup(context: Context): Boolean = latestBackup(context) != null
+
+    /**
+     * 用最近一份备份覆盖当前规则并返回；没有备份时返回 null。
+     * 备份文件保留不删（`docgen_fields.bak_*` 由 [backupCurrent] 按数量滚动清理）。
+     */
+    fun restoreLatestBackup(context: Context): FieldDoc? {
+        val file = latestBackup(context) ?: return null
+        val ok = runCatching {
+            File(context.filesDir, fileName).writeBytes(file.readBytes())
+        }.isSuccess
+        return if (ok) load(context) else null
+    }
+
+    private fun latestBackup(context: Context): File? = runCatching {
+        context.filesDir.listFiles { f -> f.name.startsWith(BACKUP_PREFIX) && f.name.endsWith(".json") }
+            ?.sortedByDescending { it.name }
+            ?.firstOrNull { it.length() > 0L }
+    }.getOrNull()
+
+    private const val BACKUP_PREFIX = "docgen_fields.bak_"
+    private const val MAX_BACKUPS = 5
 }

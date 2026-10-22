@@ -21,7 +21,18 @@ data class GenOutput(
     /** 输出子目录名，如「案件_1」 */
     val caseDir: String,
     /** 归档到案件文件夹的 shared_text.txt 展示路径（失败为 null） */
-    val sharedTextPath: String? = null
+    val sharedTextPath: String? = null,
+    /**
+     * 模板里出现、但表单没有对应字段的 key：本次按占位符长度留白（所以模板上看不到英文 key），
+     * UI 据此提示「这些字段没地方填」，可一键补成表单字段。
+     */
+    val blankedTemplateKeys: List<String> = emptyList(),
+    /**
+     * 本次**入选模板**里实际出现的占位符 key 全集（标准 + 疑似）。
+     * UI 用它对照表单，算出「你填了内容、但所选模板没有对应占位符」的字段——
+     * 那些内容不会出现在生成的文书上。
+     */
+    val templateKeys: Set<String> = emptySet()
 )
 
 /**
@@ -74,15 +85,21 @@ object DocGenEngine {
         standardKeys.forEach { rules[it] = "" }
         fieldDoc.toMap().forEach { (k, v) -> rules[k] = v }
 
-        // 3) 扫描模板里实际出现、但未定义的占位符（如 dlrzj），按长度补空，
-        //    保证模板里不残留任何英文 key（对应「未添加的自动替换为空」）
+        // 3) 扫描**本次入选**的模板里实际出现、但未定义的占位符（如 dlrzj），按长度补空，
+        //    保证模板里不残留任何英文 key（对应「未添加的自动替换为空」）；
+        //    同时把「模板有 / 表单没有」与「表单有 / 模板没有」两份对账结果带回 UI。
+        var blankedKeys = emptyList<String>()
+        var matchedKeys = emptySet<String>()
         runCatching {
-            val docxBytes = templates.filter { it.isDocx }.mapNotNull { it.readBytes() }
+            val picked = templates.filter { it.isDocx && matchesType(it.fileName, selectedTypes) }
+            val docxBytes = picked.mapNotNull { it.readBytes() }
             if (docxBytes.isNotEmpty()) {
                 val scan = DocxPlaceholders.scan(docxBytes, standardKeys)
-                (scan.standard + scan.unknown).forEach { k ->
-                    if (!rules.containsKey(k)) rules[k] = ""
-                }
+                val matched = LinkedHashSet(scan.standard + scan.unknown)
+                matchedKeys = matched
+                val blanked = mutableListOf<String>()
+                matched.forEach { k -> if (k !in rules) { rules[k] = ""; blanked += k } }
+                blankedKeys = blanked
             }
         }
 
@@ -163,7 +180,9 @@ object DocGenEngine {
             zipUri = zipUri,
             zipName = zipName,
             caseDir = caseDir,
-            sharedTextPath = sharedTextPath
+            sharedTextPath = sharedTextPath,
+            blankedTemplateKeys = blankedKeys,
+            templateKeys = matchedKeys
         )
     }
 
