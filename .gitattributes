@@ -1,0 +1,32 @@
+# 统一行尾策略：仓库内一律 LF，检出也是 LF。
+# 这样不再依赖每台机器的 core.autocrlf（之前 git add 一直报 "LF will be replaced by CRLF"），
+# 而且 CI 在 Linux 上构建——gradlew / *.sh 一旦带上 CRLF 会直接执行失败。
+* text=auto eol=lf
+
+# 明确二进制：这些格式本身是 zip / 位图，被当文本做换行转换会直接损坏文件
+*.jar binary
+*.aar binary
+*.apk binary
+*.jks binary
+*.keystore binary
+*.zip binary
+*.gz binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.ico binary
+*.ttf binary
+*.otf binary
+*.pdf binary
+*.doc binary
+*.docx binary
+*.ppt binary
+*.pptx binary
+*.mp3 binary
+*.mp4 binary
+
+# Windows 批处理必须是 CRLF，否则 cmd 解析异常
+*.bat text eol=crlf
+*.cmd text eol=crlf
