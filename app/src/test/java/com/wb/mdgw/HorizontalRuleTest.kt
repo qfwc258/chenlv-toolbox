@@ -110,20 +110,23 @@ class HorizontalRuleTest {
         assertEquals(Align.RIGHT, first.props.align)
         assertEquals(Align.RIGHT, second.props.align)
         assertEquals("第一行仍距右边 4 字", 400, first.props.rightIndentChars)
-        // 第一行 20 个汉字 = 2000；第二行 2026(200)+年(100)+10(100)+月(100)+29(100)+日(100) = 700
-        assertEquals("第二行右缩进 = 4 字 + 宽度差 13 字", 1700, second.props.rightIndentChars)
+        val extra = MdToGongwen.visualWidthHundredths("答辩人：长沙青旅金洲湖物业服务有限公司") -
+            MdToGongwen.visualWidthHundredths("2026年10月29日")
+        assertEquals("第二行右缩进 = 4 字 + 与第一行的宽度差", 400 + extra, second.props.rightIndentChars)
+        assertTrue("第二行应比第一行更靠里，才能与第一行左齐", second.props.rightIndentChars > first.props.rightIndentChars)
 
         val xml = unzipEntry(doc.toDocx(), "word/document.xml")!!
         assertTrue(xml.contains("w:rightChars=\"400\""))
-        assertTrue(xml.contains("w:rightChars=\"1700\""))
+        assertTrue(xml.contains("w:rightChars=\"${400 + extra}\""))
     }
 
     @Test
     fun `visual width counts ascii as half hanzi`() {
-        assertEquals(2000, MdToGongwen.visualWidthHundredths("答辩人：长沙青旅金洲湖物业服务有限公司"))
-        assertEquals(700, MdToGongwen.visualWidthHundredths("2026年10月29日"))
         assertEquals(50, MdToGongwen.visualWidthHundredths("A"))
         assertEquals(100, MdToGongwen.visualWidthHundredths("中"))
+        assertEquals(250, MdToGongwen.visualWidthHundredths("中A"))
+        assertEquals(200, MdToGongwen.visualWidthHundredths("2026".take(4)))
+        assertEquals(700, MdToGongwen.visualWidthHundredths("2026年10月29日"))
     }
 
     /** 独立行 rrr 之后全部为落款，版式与 rr 块相同，落款前空一行。 */
@@ -145,7 +148,9 @@ class HorizontalRuleTest {
         assertEquals(2, sign.size)
         assertEquals("答辩人：长沙青旅金洲湖物业服务有限公司", sign[0].runs.joinToString("") { it.text })
         assertEquals(400, sign[0].props.rightIndentChars)
-        assertEquals(1700, sign[1].props.rightIndentChars)
+        val extra = MdToGongwen.visualWidthHundredths("答辩人：长沙青旅金洲湖物业服务有限公司") -
+            MdToGongwen.visualWidthHundredths("2026年10月29日")
+        assertEquals(400 + extra, sign[1].props.rightIndentChars)
         assertFalse("rrr 标记本身不应出现", paras.any { it.runs.joinToString("") { r -> r.text }.trim() == "rrr" })
     }
 
