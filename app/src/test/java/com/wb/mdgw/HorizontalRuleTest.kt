@@ -6,7 +6,8 @@ import org.junit.Test
 /**
  * 验证 MdToGongwen 对 `---` 的处理：
  * - `---` 按正常 Markdown 水平线解读（渲染为空行），不再触发落款区右对齐
- * - `rr ` 前缀用于逐行右对齐（落款用）
+ * - `rr ` 前缀用于落款块：整块右对齐，第一行距右边 4 字，后续行与第一行左齐
+ * - 独立行 `rrr` 之后全部为落款，版式与 `rr` 相同；落款前空一行
  */
 class HorizontalRuleTest {
 
@@ -90,6 +91,84 @@ class HorizontalRuleTest {
         val date = paras.find { it.first.contains("二〇二六") }
         assertNotNull("应存在日期段落", date)
         assertEquals("rr 前缀应右对齐", Align.RIGHT, date!!.second)
+    }
+
+    /**
+     * 连续 rr 行成一块：第一行距右边 4 字，后续行加大右缩进，与第一行左齐。
+     */
+    @Test
+    fun `consecutive rr lines share first line left edge`() {
+        val md = """
+            rr 答辩人：长沙青旅金洲湖物业服务有限公司
+            rr 2026年10月29日
+        """.trimIndent()
+        val doc = convert(md)
+        val paras = doc.blocks.filterIsInstance<Block.Para>().filter { it.runs.isNotEmpty() }
+        assertEquals(2, paras.size)
+        val first = paras[0]
+        val second = paras[1]
+        assertEquals(Align.RIGHT, first.props.align)
+        assertEquals(Align.RIGHT, second.props.align)
+        assertEquals("第一行仍距右边 4 字", 400, first.props.rightIndentChars)
+        // 第一行 20 个汉字 = 2000；第二行 2026(200)+年(100)+10(100)+月(100)+29(100)+日(100) = 700
+        assertEquals("第二行右缩进 = 4 字 + 宽度差 13 字", 1700, second.props.rightIndentChars)
+
+        val xml = unzipEntry(doc.toDocx(), "word/document.xml")!!
+        assertTrue(xml.contains("w:rightChars=\"400\""))
+        assertTrue(xml.contains("w:rightChars=\"1700\""))
+    }
+
+    @Test
+    fun `visual width counts ascii as half hanzi`() {
+        assertEquals(2000, MdToGongwen.visualWidthHundredths("答辩人：长沙青旅金洲湖物业服务有限公司"))
+        assertEquals(700, MdToGongwen.visualWidthHundredths("2026年10月29日"))
+        assertEquals(50, MdToGongwen.visualWidthHundredths("A"))
+        assertEquals(100, MdToGongwen.visualWidthHundredths("中"))
+    }
+
+    /** 独立行 rrr 之后全部为落款，版式与 rr 块相同，落款前空一行。 */
+    @Test
+    fun `rrr marker treats remaining lines as sign block with blank before`() {
+        val md = """
+            正文一段。
+
+            rrr
+            答辩人：长沙青旅金洲湖物业服务有限公司
+            2026年10月29日
+        """.trimIndent()
+        val doc = convert(md)
+        val paras = doc.blocks.filterIsInstance<Block.Para>()
+        val body = paras.first { it.runs.joinToString("") { r -> r.text }.contains("正文一段") }
+        val blankIdx = paras.indexOf(body) + 1
+        assertTrue("落款前应空一行", paras[blankIdx].runs.all { it.text.isBlank() })
+        val sign = paras.filter { it.props.align == Align.RIGHT }
+        assertEquals(2, sign.size)
+        assertEquals("答辩人：长沙青旅金洲湖物业服务有限公司", sign[0].runs.joinToString("") { it.text })
+        assertEquals(400, sign[0].props.rightIndentChars)
+        assertEquals(1700, sign[1].props.rightIndentChars)
+        assertFalse("rrr 标记本身不应出现", paras.any { it.runs.joinToString("") { r -> r.text }.trim() == "rrr" })
+    }
+
+    @Test
+    fun `rr block also inserts blank line before signature`() {
+        val md = """
+            正文一段。
+            rr 答辩人：长沙青旅金洲湖物业服务有限公司
+            rr 2026年10月29日
+        """.trimIndent()
+        val paras = convert(md).blocks.filterIsInstance<Block.Para>()
+        val bodyIdx = paras.indexOfFirst { it.runs.joinToString("") { r -> r.text }.contains("正文一段") }
+        assertTrue(paras[bodyIdx + 1].runs.all { it.text.isBlank() })
+        assertEquals(Align.RIGHT, paras[bodyIdx + 2].props.align)
+    }
+
+    /** 单行 rr、以及后续行比第一行更长时，都不小于基础右缩进。 */
+    @Test
+    fun `sign block longer second line does not indent less than first`() {
+        val doc = convert("rr 日期\nrr 这是一行比第一行更长的落款单位名称")
+        val paras = doc.blocks.filterIsInstance<Block.Para>().filter { it.runs.isNotEmpty() }
+        assertEquals(400, paras[0].props.rightIndentChars)
+        assertEquals("更长的第二行右缩进不低于第一行", 400, paras[1].props.rightIndentChars)
     }
 
     /**

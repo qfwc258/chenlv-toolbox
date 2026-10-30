@@ -24,7 +24,7 @@ object AppSettings {
     val smartQuotes = MutableStateFlow(false)
     val pageNumber = MutableStateFlow(false)
     val titleFont = MutableStateFlow("")
-    /** 落款（`rr ` 行）距右边界的汉字数 */
+    /** 落款块第一行距右边界的汉字数；后续行与第一行左齐 */
     val signRightChars = MutableStateFlow(4)
 
     // ---- 公众号 ----

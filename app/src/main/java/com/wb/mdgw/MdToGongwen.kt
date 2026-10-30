@@ -12,8 +12,9 @@ import kotlin.math.roundToInt
  *  - 四级标题 `####`  : 仿宋_GB2312 三号，首行缩进 2 字符
  *  - 正文             : 仿宋_GB2312 三号，首行缩进 2 字符(32pt)，固定行距 28pt
  *  - `ll ` 前缀       : 顶格（不缩进）
- *  - `rr ` 前缀       : 右对齐（落款用，如具状人 / 日期），并按「设置 → 公文 → 落款右缩进」
- *                      距右边界留出若干个中文字符宽（默认 4 字），不贴边
+ *  - `rr ` 前缀       : 落款块。连续 `rr ` 行合成一块：整块右对齐，第一行距右边界
+ *                      「设置 → 公文 → 落款右缩进」个汉字（默认 4 字），后续行与第一行左齐
+ *  - 独立行 `rrr`     : 其后所有行均为落款，版式与 `rr` 块相同；落款前空一行
  *  - `tab ` / `tab.` / `tab-` 前缀：制表位前导符填空线（公文填空下划线 / 目录点线）。
  *    可选 `@Ncm` 指定制表位位置（缺省=右侧页边距）；内容可用 `::` 分隔左 / 右文字。
  *    例：`tab 甲方（盖章）：`、`tab. 第一章 总则::1`、`tab@12cm 乙方（签字）：`
@@ -142,7 +143,7 @@ object MdToGongwen {
         val autoSalutation: Boolean = spec.autoSalutation,
         /** 是否添加页码：Word 写入页脚、PDF 底部居中阿拉伯数字 */
         val pageNumber: Boolean = spec.pageNumber,
-        /** `rr ` 落款行的右缩进，按中文字符个数计（4 = 距右边界 4 个汉字宽），0 表示贴右边距 */
+        /** 落款块第一行距右边界的汉字数（4 = 4 个汉字宽），0 表示贴右边距；后续行与第一行左齐 */
         val signRightChars: Int = 4
     )
 
@@ -351,19 +352,31 @@ object MdToGongwen {
                 continue
             }
 
-            // `rr ` 前缀 -> 强制右对齐、不缩进（落款行，如具状人/日期），距右边界留 signRightChars 个汉字
-            if (text.startsWith("rr ")) {
-                doc.addParagraph(
-                    parseInline(text.substring(3), bodyFont, bodySize),
-                    ParaProps(
-                        align = Align.RIGHT,
-                        firstLineIndentPt = 0.0,
-                        lineSpacingPt = spacing,
-                        rightIndentChars = options.signRightChars * 100
-                    )
-                )
-                bodyStarted = true
+            // 独立行 `rrr`：其后所有行均为落款，版式与 `rr` 块相同，落款前空一行
+            if (text.trim() == "rrr") {
+                ensureBlankBeforeSign(doc, bodyProps)
                 i++
+                val rest = mutableListOf<String>()
+                while (i < total) {
+                    val line = cleanLines[i]
+                    rest += if (line.startsWith("rr ")) line.substring(3) else line
+                    i++
+                }
+                emitSignBlock(doc, rest, bodyFont, bodySize, spacing, options.signRightChars)
+                bodyStarted = true
+                continue
+            }
+
+            // `rr ` 前缀 -> 连续行合成落款块：整块右对齐，第一行距右边界 signRightChars 字，后续行与第一行左齐
+            if (text.startsWith("rr ")) {
+                val block = mutableListOf<String>()
+                while (i < total && cleanLines[i].startsWith("rr ")) {
+                    block += cleanLines[i].substring(3)
+                    i++
+                }
+                ensureBlankBeforeSign(doc, bodyProps)
+                emitSignBlock(doc, block, bodyFont, bodySize, spacing, options.signRightChars)
+                bodyStarted = true
                 continue
             }
 
@@ -501,6 +514,54 @@ object MdToGongwen {
             indentPt = options.indentPt,
             pageNumber = options.pageNumber
         )
+    }
+
+    /**
+     * 落款行视觉宽度，单位与 `w:rightChars` 相同（1/100 汉字）。
+     * CJK / 全角 = 100，ASCII / Latin-1 = 50。
+     */
+    internal fun visualWidthHundredths(s: String): Int {
+        var w = 0
+        for (c in s) {
+            w += if (c.code < 256) 50 else 100
+        }
+        return w
+    }
+
+    /** 落款块前空一行；文档开头或上一段已是空行则不再加。 */
+    private fun ensureBlankBeforeSign(doc: DocxWriter, bodyProps: ParaProps) {
+        val last = doc.blocks.lastOrNull() ?: return
+        val need = when (last) {
+            is Block.Para -> last.runs.any { it.text.isNotBlank() }
+            is Block.Table -> true
+        }
+        if (need) doc.addEmptyParagraph(bodyProps)
+    }
+
+    /** 整块右对齐：第一行距右边 signRightChars 字，后续行与第一行左齐。 */
+    private fun emitSignBlock(
+        doc: DocxWriter,
+        lines: List<String>,
+        bodyFont: String,
+        bodySize: Double,
+        spacing: Double,
+        signRightChars: Int
+    ) {
+        if (lines.isEmpty()) return
+        val baseRight = signRightChars * 100
+        val firstWidth = visualWidthHundredths(lines.first())
+        for (content in lines) {
+            val extra = (firstWidth - visualWidthHundredths(content)).coerceAtLeast(0)
+            doc.addParagraph(
+                parseInline(content, bodyFont, bodySize),
+                ParaProps(
+                    align = Align.RIGHT,
+                    firstLineIndentPt = 0.0,
+                    lineSpacingPt = spacing,
+                    rightIndentChars = baseRight + extra
+                )
+            )
+        }
     }
 }
 
