@@ -87,7 +87,7 @@ object SettingsStore {
             .apply()
     }
 
-    /** 落款（`rr ` 行）距右边界的汉字数；4 = 缩进四个中文字符宽。限 0–8 防手改偏好把版面挤没。 */
+    /** 落款块第一行距右边界的汉字数；4 = 缩进四个中文字符宽。后续行与第一行左齐。限 0–8。 */
     fun signRightChars(ctx: Context): Int =
         prefs(ctx).getInt(K_SIGN_RIGHT_CHARS, 4).coerceIn(0, 8)
 

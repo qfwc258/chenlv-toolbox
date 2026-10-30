@@ -73,7 +73,7 @@ object MarkdownSnippets {
         Snippet("tabline", "填空线", "tab 甲方（盖章）：", 4),
         Snippet(
             "sign", "落款",
-            "\n（此致）\n\n敬礼！\n\nrr 申请人：\nrr 二〇二六年八月十一日\n",
+            "\n（此致）\n\n敬礼！\n\nrrr\n申请人：\n二〇二六年八月十一日\n",
             0
         )
     )

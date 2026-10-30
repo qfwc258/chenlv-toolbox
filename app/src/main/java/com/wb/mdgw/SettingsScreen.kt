@@ -196,7 +196,7 @@ fun SettingsScreen() {
                     onCheckedChange = { AppSettings.setPageNumber(context, it) }
                 )
             }
-            SettingsRow(title = "落款右缩进", desc = "rr 落款行距右边界的汉字数，0 为贴右边距") {
+            SettingsRow(title = "落款右缩进", desc = "落款块第一行距右边界的汉字数，后续行与第一行左齐，0 为贴右边距") {
                 OutlinedButton(
                     onClick = { AppSettings.setSignRightChars(context, signRightChars - 1) },
                     enabled = signRightChars > 0,
