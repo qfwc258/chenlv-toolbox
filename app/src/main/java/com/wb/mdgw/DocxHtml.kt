@@ -93,12 +93,13 @@ object DocxHtml {
                             }
                             val indent = if (b.props.firstLineIndentPt > 0)
                                 "text-indent:${b.props.firstLineIndentPt}pt;" else ""
-                            // 右缩进：Word 用「字符」单位（w:rightChars，1/100 汉字宽），
-                            // 预览按首个 run 的字号换算成 pt，两者对同一版面的右边界理解才一致
-                            val rIndent = if (b.props.rightIndentChars > 0) {
-                                val sz = b.runs.firstOrNull { it.sizePt > 0 }?.sizePt ?: 16.0
-                                "padding-right:${b.props.rightIndentChars / 100.0 * sz}pt;"
-                            } else ""
+                            val szForInd = b.runs.firstOrNull { it.sizePt > 0 }?.sizePt ?: 16.0
+                            // 左右缩进：Word 用「字符」单位（w:leftChars / w:rightChars，1/100 汉字宽），
+                            // 预览按首个 run 的字号换算成 pt，两者对同一版面的边界理解才一致
+                            val lIndent = if (b.props.leftIndentChars > 0)
+                                "padding-left:${b.props.leftIndentChars / 100.0 * szForInd}pt;" else ""
+                            val rIndent = if (b.props.rightIndentChars > 0)
+                                "padding-right:${b.props.rightIndentChars / 100.0 * szForInd}pt;" else ""
                             val lh = if (b.props.lineSpacingPt > 0)
                                 "line-height:${b.props.lineSpacingPt}pt;" else ""
                             // 段前 / 段后间距：标题与正文的呼吸感，缺失会让版面挤成一片
@@ -110,7 +111,7 @@ object DocxHtml {
                             val visibleLeaderTabs = b.props.tabs.filter { it.leader.isNotBlank() && it.leader != "none" }
                             val useFlex = visibleLeaderTabs.isNotEmpty()
                             val cls = if (useFlex) "doc-para doc-para-flex" else "doc-para"
-                            append("<p data-block='$idx' class='$cls' style='text-align:$align;$mTop$mBot$indent$rIndent$lh$border' onclick=\"editBridge.startEdit($idx,-1,-1)\">")
+                            append("<p data-block='$idx' class='$cls' style='text-align:$align;$mTop$mBot$indent$lIndent$rIndent$lh$border' onclick=\"editBridge.startEdit($idx,-1,-1)\">")
                             if (useFlex) {
                                 append(paraInnerWithTabs(b.runs, visibleLeaderTabs))
                             } else {
@@ -409,12 +410,15 @@ object DocxHtml {
                 }
                 // 字符单位的右缩进（本 App 落款写 w:rightChars）：按段落自身字号换算才与 Word 一致，
                 // 段落没带 w:sz 时退回正文默认 12pt（见 .page 的 font-size）
+                val szNl = p.getElementsByTagName("w:sz")
+                val szPt = if (szNl.length > 0)
+                    (szNl.item(0) as? Element)?.attr("w:val")?.toDoubleOrNull()?.let { it / 2.0 } ?: 12.0
+                else 12.0
+                ind.attr("w:leftChars")?.toIntOrNull()?.let { chars ->
+                    styles += "margin-left:${chars / 100.0 * szPt}pt"
+                }
                 ind.attr("w:rightChars")?.toIntOrNull()?.let { chars ->
-                    val nl = p.getElementsByTagName("w:sz")
-                    val pt = if (nl.length > 0)
-                        (nl.item(0) as? Element)?.attr("w:val")?.toDoubleOrNull()?.let { it / 2.0 } ?: 12.0
-                    else 12.0
-                    styles += "margin-right:${chars / 100.0 * pt}pt"
+                    styles += "margin-right:${chars / 100.0 * szPt}pt"
                 }
             }
             pPr.child("w:spacing")?.let { sp ->

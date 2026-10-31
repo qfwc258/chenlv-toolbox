@@ -290,14 +290,15 @@ object PdfExporter {
 
             val full = runs.joinToString("") { it.text }
             val indent = props.firstLineIndentPt.toFloat()
-            // 右缩进与 Word 同源：w:rightChars 是「段落字号的倍数」，这里按 run 字号换算成 pt
+            // 左右缩进与 Word 同源：w:leftChars / w:rightChars 是「段落字号的倍数」，这里按 run 字号换算成 pt
+            val leftIn = if (props.leftIndentChars > 0) props.leftIndentChars / 100f * sizePt else 0f
             val rightIn = if (props.rightIndentChars > 0) props.rightIndentChars / 100f * sizePt else 0f
 
             // 按 \n 拆分逻辑段，每段各自处理首行缩进
             // 注意：公文靠固定行距控制节奏，段间不额外加空白
             for (raw in full.split("\n")) {
-                // 首行可用宽度需扣除缩进，后续行用满宽；右缩进两边都要扣，否则 PDF 比 Word 少折一行
-                val wrappedLines = wrap(raw, usableW - indent - rightIn, usableW - rightIn)
+                // 首行可用宽度需扣除缩进，后续行用满宽；左右缩进两边都要扣，否则 PDF 比 Word 少折一行
+                val wrappedLines = wrap(raw, usableW - indent - leftIn - rightIn, usableW - leftIn - rightIn)
 
                 for (lIdx in wrappedLines.indices) {
                     ensureSpace(lineH)
@@ -319,8 +320,8 @@ object PdfExporter {
 
                         Align.BOTH -> {
                             val isLastLine = (lIdx == wrappedLines.lastIndex)
-                            val baseX = mLeft + lead
-                            val targetW = usableW - lead
+                            val baseX = mLeft + leftIn + lead
+                            val targetW = usableW - leftIn - lead - rightIn
                             // 段落末行按左对齐（公文规范：最后一行不拉伸）
                             if (isLastLine) {
                                 canvas!!.drawText(ln, baseX, baseline, paint)
@@ -330,7 +331,7 @@ object PdfExporter {
                         }
 
                         Align.LEFT ->
-                            canvas!!.drawText(ln, mLeft + lead, baseline, paint)
+                            canvas!!.drawText(ln, mLeft + leftIn + lead, baseline, paint)
                     }
                     y += lineH
                 }

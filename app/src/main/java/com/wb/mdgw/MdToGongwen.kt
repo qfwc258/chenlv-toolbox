@@ -12,8 +12,8 @@ import kotlin.math.roundToInt
  *  - 四级标题 `####`  : 仿宋_GB2312 三号，首行缩进 2 字符
  *  - 正文             : 仿宋_GB2312 三号，首行缩进 2 字符(32pt)，固定行距 28pt
  *  - `ll ` 前缀       : 顶格（不缩进）
- *  - `rr ` 前缀       : 落款块。连续 `rr ` 行合成一块：整块右对齐，第一行距右边界
- *                      「设置 → 公文 → 落款右缩进」个汉字（默认 4 字），后续行与第一行左齐
+ *  - `rr ` 前缀       : 落款块。连续 `rr ` 行合成一块：各行左对齐并共用同一左缩进，
+ *                      使第一行距右边界「设置 → 公文 → 落款右缩进」个汉字（默认 4 字），后续行与第一行左齐
  *  - 独立行 `rrr`     : 其后所有行均为落款，版式与 `rr` 块相同；落款前空一行
  *  - `tab ` / `tab.` / `tab-` 前缀：制表位前导符填空线（公文填空下划线 / 目录点线）。
  *    可选 `@Ncm` 指定制表位位置（缺省=右侧页边距）；内容可用 `::` 分隔左 / 右文字。
@@ -143,7 +143,7 @@ object MdToGongwen {
         val autoSalutation: Boolean = spec.autoSalutation,
         /** 是否添加页码：Word 写入页脚、PDF 底部居中阿拉伯数字 */
         val pageNumber: Boolean = spec.pageNumber,
-        /** 落款块第一行距右边界的汉字数（4 = 4 个汉字宽），0 表示贴右边距；后续行与第一行左齐 */
+        /** 落款块第一行距右边界的汉字数（4 = 4 个汉字宽），0 表示贴右边距；各行左对齐并与第一行左齐 */
         val signRightChars: Int = 4
     )
 
@@ -362,12 +362,12 @@ object MdToGongwen {
                     rest += if (line.startsWith("rr ")) line.substring(3) else line
                     i++
                 }
-                emitSignBlock(doc, rest, bodyFont, bodySize, spacing, options.signRightChars)
+                emitSignBlock(doc, rest, bodyFont, bodySize, spacing, options.signRightChars, page)
                 bodyStarted = true
                 continue
             }
 
-            // `rr ` 前缀 -> 连续行合成落款块：整块右对齐，第一行距右边界 signRightChars 字，后续行与第一行左齐
+            // `rr ` 前缀 -> 连续行合成落款块：各行左对齐并共用同一左缩进，第一行距右边界 signRightChars 字，后续行与第一行左齐
             if (text.startsWith("rr ")) {
                 val block = mutableListOf<String>()
                 while (i < total && cleanLines[i].startsWith("rr ")) {
@@ -375,7 +375,7 @@ object MdToGongwen {
                     i++
                 }
                 ensureBlankBeforeSign(doc, bodyProps)
-                emitSignBlock(doc, block, bodyFont, bodySize, spacing, options.signRightChars)
+                emitSignBlock(doc, block, bodyFont, bodySize, spacing, options.signRightChars, page)
                 bodyStarted = true
                 continue
             }
@@ -538,29 +538,33 @@ object MdToGongwen {
         if (need) doc.addEmptyParagraph(bodyProps)
     }
 
-    /** 整块右对齐：第一行距右边 signRightChars 字，后续行与第一行左齐。 */
+    /**
+     * 落款块：各行左对齐并共用同一左缩进。
+     * 左缩进按「版心宽度 − 第一行视觉宽 − 距右边界字数」计算，第一行距右边
+     * [signRightChars] 字，后续行自然与第一行左齐。
+     */
     private fun emitSignBlock(
         doc: DocxWriter,
         lines: List<String>,
         bodyFont: String,
         bodySize: Double,
         spacing: Double,
-        signRightChars: Int
+        signRightChars: Int,
+        page: PageSetup
     ) {
         if (lines.isEmpty()) return
-        val baseRight = signRightChars * 100
+        val usableChars = ((page.widthCm - page.leftCm - page.rightCm) * 72.0 / 2.54 / bodySize * 100).roundToInt()
         val firstWidth = visualWidthHundredths(lines.first())
+        val leftChars = (usableChars - firstWidth - signRightChars * 100).coerceAtLeast(0)
+        val signProps = ParaProps(
+            align = Align.LEFT,
+            firstLineIndentPt = 0.0,
+            lineSpacingPt = spacing,
+            leftIndentChars = leftChars,
+            sign = true
+        )
         for (content in lines) {
-            val extra = (firstWidth - visualWidthHundredths(content)).coerceAtLeast(0)
-            doc.addParagraph(
-                parseInline(content, bodyFont, bodySize),
-                ParaProps(
-                    align = Align.RIGHT,
-                    firstLineIndentPt = 0.0,
-                    lineSpacingPt = spacing,
-                    rightIndentChars = baseRight + extra
-                )
-            )
+            doc.addParagraph(parseInline(content, bodyFont, bodySize), signProps)
         }
     }
 }

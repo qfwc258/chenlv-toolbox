@@ -230,37 +230,6 @@ internal fun SaveNameDialog(
     )
 }
 
-/** 源 Markdown 草稿恢复（上次退出前自动保存的正文）。 */
-@Composable
-internal fun MarkdownDraftRestoreDialog(
-    draft: DraftStore.MdDraft,
-    onRestore: (DraftStore.MdDraft) -> Unit,
-    onDiscard: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDiscard,
-        icon = { Icon(Icons.Default.Restore, null, tint = MaterialTheme.colorScheme.primary) },
-        title = { Text("发现未保存的草稿", fontWeight = FontWeight.Bold, fontSize = 17.sp) },
-        text = {
-            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(10.dp)) {
-                        Icon(Icons.Default.Description, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text(draft.name, fontWeight = FontWeight.Medium, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                }
-                val firstLine = draft.text.lineSequence().firstOrNull { it.isNotBlank() } ?: ""
-                Text(if (firstLine.length > 60) firstLine.take(60) + "…" else firstLine.ifBlank { "（空草稿）" },
-                    fontSize = 12.sp, lineHeight = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text("上次编辑内容已在本地自动保存，是否恢复？", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        },
-        confirmButton = { Button(onClick = { onRestore(draft) }) { Text("恢复草稿") } },
-        dismissButton = { TextButton(onClick = onDiscard) { Text("丢弃") } }
-    )
-}
-
 /** 公文草稿恢复（含标题与首块预览）。 */
 @Composable
 internal fun GovDraftRestoreDialog(

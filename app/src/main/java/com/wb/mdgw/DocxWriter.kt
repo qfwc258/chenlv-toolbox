@@ -147,7 +147,14 @@ data class ParaProps(
      * 用字符而非缇/磅，是为了随字号联动——与首行缩进的 `w:firstLineChars` 同一套语义。
      * 右对齐段落用它把内容从右边界往里推（落款不贴边）。0 表示不缩进。
      */
-    val rightIndentChars: Int = 0
+    val rightIndentChars: Int = 0,
+    /**
+     * 左缩进，单位与 OOXML 的 `w:leftChars` 相同（1/100 个汉字宽）。
+     * 落款块各行共用同一左缩进、左对齐，才能保证后续行与第一行左齐。
+     */
+    val leftIndentChars: Int = 0,
+    /** 是否为落款块段落（反导 Markdown 时还原 `rr ` 前缀，与正文顶格行区分） */
+    val sign: Boolean = false
 )
 
 /** 文档中的块级元素 */
@@ -361,7 +368,8 @@ class DocxWriter(
         sb.append("<w:ind w:firstLine=\"").append(ptToTwips(p.firstLineIndentPt)).append("\"")
         // firstLineChars="200" = 精确 2 汉字字符（Word/WPS 优先按字符计，与字号联动）
         if (p.firstLineIndentPt > 0) sb.append(" w:firstLineChars=\"200\"")
-        // 右缩进同样按字符计：Word/WPS 见到 Chars 单位即优先于缇值，字号变了缩进跟着变
+        // 左右缩进同样按字符计：Word/WPS 见到 Chars 单位即优先于缇值，字号变了缩进跟着变
+        if (p.leftIndentChars > 0) sb.append(" w:leftChars=\"").append(p.leftIndentChars).append("\"")
         if (p.rightIndentChars > 0) sb.append(" w:rightChars=\"").append(p.rightIndentChars).append("\"")
         sb.append("/>")
         sb.append("<w:jc w:val=\"").append(p.align.v).append("\"/>")

@@ -147,8 +147,8 @@ data class GovDoc(
                     val t = runsToMd(b.runs)
                     when {
                         t.isBlank() -> appendLine()
-                        // 本模型里右对齐只可能来自 `rr ` 落款行，反导时把前缀还原回去才谈得上往返一致
-                        b.props.align == Align.RIGHT -> appendLine("rr $t")
+                        // 落款（含历史右对齐行）：反导时把前缀还原回去才谈得上往返一致
+                        b.props.sign || b.props.align == Align.RIGHT -> appendLine("rr $t")
                         else -> appendLine(t)
                     }
                 }
