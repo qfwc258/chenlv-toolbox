@@ -124,7 +124,7 @@ class HorizontalRuleTest {
     fun `visual width counts ascii as half hanzi`() {
         assertEquals(50, MdToGongwen.visualWidthHundredths("A"))
         assertEquals(100, MdToGongwen.visualWidthHundredths("中"))
-        assertEquals(250, MdToGongwen.visualWidthHundredths("中A"))
+        assertEquals(150, MdToGongwen.visualWidthHundredths("中A"))
         assertEquals(200, MdToGongwen.visualWidthHundredths("2026".take(4)))
         assertEquals(700, MdToGongwen.visualWidthHundredths("2026年10月29日"))
     }
