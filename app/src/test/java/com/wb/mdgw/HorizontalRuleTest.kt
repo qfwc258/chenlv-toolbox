@@ -6,7 +6,7 @@ import org.junit.Test
 /**
  * 验证 MdToGongwen 对 `---` 的处理：
  * - `---` 按正常 Markdown 水平线解读（渲染为空行），不再触发落款区右对齐
- * - `rr ` 前缀用于落款块：整块右对齐，第一行距右边 4 字，后续行与第一行左齐
+ * - `rr ` 前缀用于落款块：各行左对齐并共用同一左缩进，第一行距右边 4 字，后续行与第一行左齐
  * - 独立行 `rrr` 之后全部为落款，版式与 `rr` 相同；落款前空一行
  */
 class HorizontalRuleTest {
@@ -68,7 +68,7 @@ class HorizontalRuleTest {
     }
 
     /**
-     * `rr ` 前缀应触发右对齐、不缩进。
+     * `rr ` 前缀应触发落款：左对齐、共用左缩进。
      */
     @Test
     fun `rr prefix triggers right alignment`() {
@@ -86,15 +86,15 @@ class HorizontalRuleTest {
 
         val applicant = paras.find { it.first.contains("申请人") }
         assertNotNull("应存在申请人段落", applicant)
-        assertEquals("rr 前缀应右对齐", Align.RIGHT, applicant!!.second)
+        assertEquals("rr 前缀应左对齐", Align.LEFT, applicant!!.second)
 
         val date = paras.find { it.first.contains("二〇二六") }
         assertNotNull("应存在日期段落", date)
-        assertEquals("rr 前缀应右对齐", Align.RIGHT, date!!.second)
+        assertEquals("rr 前缀应左对齐", Align.LEFT, date!!.second)
     }
 
     /**
-     * 连续 rr 行成一块：第一行距右边 4 字，后续行加大右缩进，与第一行左齐。
+     * 连续 rr 行成一块：各行左对齐并共用同一左缩进，后续行与第一行左齐。
      */
     @Test
     fun `consecutive rr lines share first line left edge`() {
@@ -107,17 +107,17 @@ class HorizontalRuleTest {
         assertEquals(2, paras.size)
         val first = paras[0]
         val second = paras[1]
-        assertEquals(Align.RIGHT, first.props.align)
-        assertEquals(Align.RIGHT, second.props.align)
-        assertEquals("第一行仍距右边 4 字", 400, first.props.rightIndentChars)
-        val extra = MdToGongwen.visualWidthHundredths("答辩人：长沙青旅金洲湖物业服务有限公司") -
-            MdToGongwen.visualWidthHundredths("2026年10月29日")
-        assertEquals("第二行右缩进 = 4 字 + 与第一行的宽度差", 400 + extra, second.props.rightIndentChars)
-        assertTrue("第二行应比第一行更靠里，才能与第一行左齐", second.props.rightIndentChars > first.props.rightIndentChars)
+        assertEquals(Align.LEFT, first.props.align)
+        assertEquals(Align.LEFT, second.props.align)
+        assertTrue("落款应带左缩进", first.props.leftIndentChars > 0)
+        assertEquals("各行共用同一左缩进", first.props.leftIndentChars, second.props.leftIndentChars)
+        assertTrue(first.props.sign)
+        assertTrue(second.props.sign)
 
         val xml = unzipEntry(doc.toDocx(), "word/document.xml")!!
-        assertTrue(xml.contains("w:rightChars=\"400\""))
-        assertTrue(xml.contains("w:rightChars=\"${400 + extra}\""))
+        assertTrue("Word XML 应带字符单位的左缩进", xml.contains("w:leftChars=\"${first.props.leftIndentChars}\""))
+        assertTrue("且仍为左对齐", xml.contains("<w:jc w:val=\"left\"/>"))
+        assertFalse("落款不再写逐行不同的右缩进", xml.contains("w:rightChars"))
     }
 
     @Test
@@ -144,13 +144,12 @@ class HorizontalRuleTest {
         val body = paras.first { it.runs.joinToString("") { r -> r.text }.contains("正文一段") }
         val blankIdx = paras.indexOf(body) + 1
         assertTrue("落款前应空一行", paras[blankIdx].runs.all { it.text.isBlank() })
-        val sign = paras.filter { it.props.align == Align.RIGHT }
+        val sign = paras.filter { it.props.sign }
         assertEquals(2, sign.size)
         assertEquals("答辩人：长沙青旅金洲湖物业服务有限公司", sign[0].runs.joinToString("") { it.text })
-        assertEquals(400, sign[0].props.rightIndentChars)
-        val extra = MdToGongwen.visualWidthHundredths("答辩人：长沙青旅金洲湖物业服务有限公司") -
-            MdToGongwen.visualWidthHundredths("2026年10月29日")
-        assertEquals(400 + extra, sign[1].props.rightIndentChars)
+        assertEquals(Align.LEFT, sign[0].props.align)
+        assertEquals("各行左缩进相同", sign[0].props.leftIndentChars, sign[1].props.leftIndentChars)
+        assertTrue(sign[0].props.leftIndentChars > 0)
         assertFalse("rrr 标记本身不应出现", paras.any { it.runs.joinToString("") { r -> r.text }.trim() == "rrr" })
     }
 
@@ -164,16 +163,18 @@ class HorizontalRuleTest {
         val paras = convert(md).blocks.filterIsInstance<Block.Para>()
         val bodyIdx = paras.indexOfFirst { it.runs.joinToString("") { r -> r.text }.contains("正文一段") }
         assertTrue(paras[bodyIdx + 1].runs.all { it.text.isBlank() })
-        assertEquals(Align.RIGHT, paras[bodyIdx + 2].props.align)
+        assertEquals(Align.LEFT, paras[bodyIdx + 2].props.align)
+        assertTrue(paras[bodyIdx + 2].props.sign)
     }
 
-    /** 单行 rr、以及后续行比第一行更长时，都不小于基础右缩进。 */
+    /** 后续行比第一行更长时，仍与第一行共用同一左缩进。 */
     @Test
     fun `sign block longer second line does not indent less than first`() {
         val doc = convert("rr 日期\nrr 这是一行比第一行更长的落款单位名称")
         val paras = doc.blocks.filterIsInstance<Block.Para>().filter { it.runs.isNotEmpty() }
-        assertEquals(400, paras[0].props.rightIndentChars)
-        assertEquals("更长的第二行右缩进不低于第一行", 400, paras[1].props.rightIndentChars)
+        assertEquals(paras[0].props.leftIndentChars, paras[1].props.leftIndentChars)
+        assertTrue(paras[0].props.sign)
+        assertTrue(paras[1].props.sign)
     }
 
     /**
@@ -193,43 +194,52 @@ class HorizontalRuleTest {
     }
 
     /**
-     * 落款行默认距右边界 4 个汉字，且这条缩进必须真进 Word 的 XML（字符单位，随字号联动）。
+     * 落款行默认距右边界 4 个汉字：用共用左缩进实现，必须真进 Word 的 XML（字符单位，随字号联动）。
      */
     @Test
     fun `rr prefix indents four hanzi from right edge`() {
         val doc = convert("rr 申请人：张三")
         val p = doc.blocks.filterIsInstance<Block.Para>().first()
-        assertEquals("默认落款右缩进应为 4 汉字（400 字符单位）", 400, p.props.rightIndentChars)
+        val usableChars = kotlin.math.round((21.0 - 2.5 - 2.5) * 72.0 / 2.54 / 14.0 * 100).toInt()
+        val firstW = MdToGongwen.visualWidthHundredths("申请人：张三")
+        assertEquals("左缩进 = 版心 − 第一行宽 − 右边 4 字", usableChars - firstW - 400, p.props.leftIndentChars)
+        assertTrue(p.props.sign)
 
         val xml = unzipEntry(doc.toDocx(), "word/document.xml")!!
-        assertTrue("Word XML 应带字符单位的右缩进", xml.contains("w:rightChars=\"400\""))
-        assertTrue("且仍为右对齐", xml.contains("<w:jc w:val=\"right\"/>"))
+        assertTrue("Word XML 应带字符单位的左缩进", xml.contains("w:leftChars=\"${p.props.leftIndentChars}\""))
+        assertTrue("且仍为左对齐", xml.contains("<w:jc w:val=\"left\"/>"))
     }
 
-    /** 设置项要能贯通：0 字贴边不写属性，6 字写 600。 */
+    /** 设置项要能贯通：距右边字数越大，左缩进越小。 */
     @Test
     fun `sign right indent follows options`() {
         val flush = MdToGongwen.convert("rr 张三", MdToGongwen.Options(signRightChars = 0))
-        assertFalse("0 字时不应写 rightChars",
-            unzipEntry(flush.toDocx(), "word/document.xml")!!.contains("w:rightChars"))
-
         val wide = MdToGongwen.convert("rr 张三", MdToGongwen.Options(signRightChars = 6))
-        assertTrue("6 字应写 600",
-            unzipEntry(wide.toDocx(), "word/document.xml")!!.contains("w:rightChars=\"600\""))
+        val flushLeft = (flush.blocks.filterIsInstance<Block.Para>().first { it.runs.isNotEmpty() }).props.leftIndentChars
+        val wideLeft = (wide.blocks.filterIsInstance<Block.Para>().first { it.runs.isNotEmpty() }).props.leftIndentChars
+        assertTrue("贴边时左缩进应更大", flushLeft > wideLeft)
+        assertEquals("相差 6 个汉字", 600, flushLeft - wideLeft)
+
+        val xmlFlush = unzipEntry(flush.toDocx(), "word/document.xml")!!
+        val xmlWide = unzipEntry(wide.toDocx(), "word/document.xml")!!
+        assertTrue(xmlFlush.contains("w:leftChars=\"$flushLeft\""))
+        assertTrue(xmlWide.contains("w:leftChars=\"$wideLeft\""))
     }
 
-    /** 不能只改 Word：预览 HTML 要有等价缩进、反导 Markdown 要还原前缀、重开 docx 不能丢。 */
+    /** 不能只改 Word：预览 HTML 要有等价左缩进、反导 Markdown 要还原前缀、重开 docx 不能丢。 */
     @Test
     fun `preview html and roundtrip reflect rr indent`() {
         val doc = convert("rr 申请人：张三")
-        assertTrue("预览应按段落字号换算出右缩进",
-            DocxHtml.govDocToHtml(doc).contains("padding-right:"))
+        val left = doc.blocks.filterIsInstance<Block.Para>().first { it.runs.isNotEmpty() }.props.leftIndentChars
+        assertTrue("预览应按段落字号换算出左缩进",
+            DocxHtml.govDocToHtml(doc).contains("padding-left:"))
         assertTrue("反导 Markdown 应还原 rr 前缀",
             doc.toMarkdown().lineSequence().any { it.startsWith("rr ") })
 
         val back = DocxReader.read(doc.toDocx(), GovDocSpec.DEFAULT)
         val rp = back.blocks.filterIsInstance<Block.Para>().first { it.runs.isNotEmpty() }
-        assertEquals("重新打开导出的 docx 不应丢右缩进", 400, rp.props.rightIndentChars)
+        assertEquals("重新打开导出的 docx 不应丢左缩进", left, rp.props.leftIndentChars)
+        assertTrue(rp.props.sign)
     }
 
     private fun unzipEntry(bytes: ByteArray, name: String): String? {

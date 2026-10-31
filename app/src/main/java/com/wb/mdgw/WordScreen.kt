@@ -35,6 +35,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.text.*
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
@@ -93,10 +96,14 @@ fun WordScreen(
     val scope = rememberCoroutineScope()
 
     // ---------- 源 Markdown（TextFieldValue 承载正文与光标） ----------
-    var fileName by remember { mutableStateOf("未命名.md") }
-    var tfv by remember { mutableStateOf(TextFieldValue("")) }
+    // 无外部文件时静默恢复上次暂存，方便离开后再编辑
+    val restoredMd = remember {
+        if (initialUri == null) DraftStore.load(context) else null
+    }
+    var fileName by remember { mutableStateOf(restoredMd?.name ?: "未命名.md") }
+    var tfv by remember { mutableStateOf(TextFieldValue(restoredMd?.text ?: "")) }
     var originalUri by remember { mutableStateOf<Uri?>(null) }
-    var dirty by remember { mutableStateOf(false) }
+    var dirty by remember { mutableStateOf(restoredMd != null && restoredMd.text.isNotBlank()) }
     var fontSize by remember { mutableStateOf(15) }
     var busy by remember { mutableStateOf(false) }
     var subView by remember { mutableStateOf(SubView.EDIT) }
@@ -108,9 +115,7 @@ fun WordScreen(
     var lastGenSource by remember { mutableStateOf("") }
 
     // 自动保存草稿（源 Markdown）
-    var autoSaved by remember { mutableStateOf(false) }
-    var showRestore by remember { mutableStateOf(false) }
-    var pendingDraft by remember { mutableStateOf<DraftStore.MdDraft?>(null) }
+    var autoSaved by remember { mutableStateOf(restoredMd != null && restoredMd.text.isNotBlank()) }
 
     // 撤销 / 重做（仅源 Markdown 正文）
     val (initialMdUndo, initialMdRedo) = remember(context) {
@@ -444,6 +449,36 @@ fun WordScreen(
     LaunchedEffect(Unit) {
         delay(600)
         MarkdownExchange.pendingFor(context, MarkdownExchange.WORD)?.let { incomingMd = it }
+    }
+    LaunchedEffect(restoredMd) {
+        if (restoredMd != null && restoredMd.text.isNotBlank()) {
+            snackbar.showSnackbar("已恢复上次暂存的 Markdown，可继续编辑")
+        }
+    }
+    // Markdown 防抖自动暂存：停顿 1.5s 落盘，离开页面时立即再写一次
+    LaunchedEffect(tfv.text, fileName, dirty) {
+        if (!dirty) return@LaunchedEffect
+        delay(1500)
+        if (tfv.text.isBlank()) {
+            DraftStore.clear(context)
+            autoSaved = false
+        } else {
+            withContext(Dispatchers.IO) { DraftStore.save(context, fileName, tfv.text) }
+            autoSaved = true
+        }
+    }
+    val stashDirty by rememberUpdatedState(dirty)
+    val stashName by rememberUpdatedState(fileName)
+    val stashText by rememberUpdatedState(tfv.text)
+    val lifecycleOwner = LocalLifecycleOwner.current
+    fun stashNow() {
+        if (tfv.text.isBlank()) {
+            scope.launch { snackbar.showSnackbar("没有可暂存的内容") }
+            return
+        }
+        DraftStore.save(context, fileName, tfv.text)
+        autoSaved = true
+        scope.launch { snackbar.showSnackbar("已暂存，下次进入可继续编辑") }
     }
     // 公文防抖自动保存
     LaunchedEffect(govEditVersion) {
@@ -819,6 +854,7 @@ fun WordScreen(
             ) {
                 WordActionBar(
                     onOpen = { openPicker.launch(arrayOf("text/markdown", "text/x-markdown", "text/plain", DOCX_MIME, "application/octet-stream", "*/*")) },
+                    onStash = { stashNow() },
                     onExportDocx = { exportDocx() },
                     onExportPdf = { exportPdf() },
                     onExportText = { startExport(it) },
@@ -867,7 +903,7 @@ fun WordScreen(
                         },
                         onTemplates = { openTemplates() },
                         title = "Markdown 源",
-                        hint = "切到「预览」即自动生成公文",
+                        hint = if (autoSaved) "已自动暂存，可随时再编辑" else "切到「预览」即自动生成公文",
                         toolbarExpanded = topExpanded
                     )
                     SubView.PREVIEW -> PaperPreview(
@@ -932,9 +968,19 @@ fun WordScreen(
         }
     }
 
-    // ---------- WebView 生命周期：Composable 销毁时释放，避免 Activity 泄漏 ----------
-    DisposableEffect(Unit) {
-        onDispose { safeDestroyWebView(webView); webView = null }
+    // ---------- 切到后台立即暂存 + WebView 释放 ----------
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_PAUSE && stashDirty && stashText.isNotBlank()) {
+                DraftStore.save(context, stashName, stashText)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            if (stashDirty && stashText.isNotBlank()) DraftStore.save(context, stashName, stashText)
+            safeDestroyWebView(webView); webView = null
+        }
     }
 
     // ---------- 导出命名 ----------
@@ -1031,24 +1077,6 @@ fun WordScreen(
             dismissButton = {
                 TextButton(onClick = { legacyDoc = null }) { Text("知道了") }
             }
-        )
-    }
-
-    // ---------- 源 Markdown 草稿恢复 ----------
-    if (showRestore && pendingDraft != null) {
-        val d = pendingDraft!!
-        MarkdownDraftRestoreDialog(
-            draft = d,
-            onRestore = {
-                tfv = TextFieldValue(it.text, TextRange(it.text.length))
-                fileName = it.name
-                originalUri = null
-                dirty = true
-                autoSaved = false
-                pendingDraft = null
-                showRestore = false
-            },
-            onDiscard = { DraftStore.clear(context); pendingDraft = null; showRestore = false }
         )
     }
 
@@ -1158,6 +1186,7 @@ private fun WordToolbar(
 @Composable
 private fun WordActionBar(
     onOpen: () -> Unit,
+    onStash: () -> Unit,
     onExportDocx: () -> Unit,
     onExportPdf: () -> Unit,
     onExportText: (String) -> Unit,
@@ -1172,6 +1201,16 @@ private fun WordActionBar(
         Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             val btnMod = Modifier.weight(1f).height(UI_ACTION_HEIGHT)
             val btnPad = PaddingValues(horizontal = 3.dp, vertical = 0.dp)
+            FilledTonalIconButton(
+                onClick = onStash,
+                modifier = Modifier.size(UI_ACTION_HEIGHT),
+                colors = IconButtonDefaults.filledTonalIconButtonColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            ) {
+                Icon(Icons.Default.Bookmark, contentDescription = "暂存", modifier = Modifier.size(19.dp))
+            }
             OutlinedButton(
                 onClick = onOpen, shape = UI_BTN_RADIUS, modifier = btnMod,
                 border = BorderStroke(1.2.dp, MaterialTheme.colorScheme.primary),
