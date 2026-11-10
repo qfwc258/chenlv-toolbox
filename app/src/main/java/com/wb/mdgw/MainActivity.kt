@@ -405,6 +405,9 @@ private fun HomeSectionLabel(
  */
 @Composable
 private fun FeatureCard(feature: Feature, onClick: () -> Unit) {
+    // 「生成文书」是最常用入口：卡片底色加深一档，从宫格里提出来。
+    // 高亮卡片统一用固定的深墨字 + 朱砂图标，避免深色模式下「浅底 + 浅字」看不清。
+    val highlighted = feature.route == Route.DOC_GEN
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -414,7 +417,8 @@ private fun FeatureCard(feature: Feature, onClick: () -> Unit) {
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(8.dp),     // 直角微圆，比 Material3 默认 12dp 略小，更稳重
         colors = CardDefaults.cardColors(
-            containerColor = BrandTokens.BrandParchment
+            containerColor = if (highlighted) BrandTokens.BrandParchmentStrong
+                else BrandTokens.BrandParchment
         ),
         elevation = CardDefaults.cardElevation(
             defaultElevation = 2.dp,
@@ -427,7 +431,10 @@ private fun FeatureCard(feature: Feature, onClick: () -> Unit) {
                 Modifier
                     .width(1.dp)
                     .fillMaxHeight()
-                    .background(BrandTokens.BrandBronze.copy(alpha = 0.6f))
+                    .background(
+                        if (highlighted) BrandTokens.BrandBronze
+                        else BrandTokens.BrandBronze.copy(alpha = 0.6f)
+                    )
             )
             Column(
                 modifier = Modifier
@@ -450,7 +457,8 @@ private fun FeatureCard(feature: Feature, onClick: () -> Unit) {
                         feature.icon,
                         contentDescription = null,
                         modifier = Modifier.size(20.dp),
-                        tint = MaterialTheme.colorScheme.primary
+                        tint = if (highlighted) BrandTokens.BrandRed
+                            else MaterialTheme.colorScheme.primary
                     )
                 }
                 Spacer(Modifier.height(8.dp))
@@ -461,7 +469,8 @@ private fun FeatureCard(feature: Feature, onClick: () -> Unit) {
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    color = MaterialTheme.colorScheme.onBackground,
+                    color = if (highlighted) BrandTokens.BrandInk
+                        else MaterialTheme.colorScheme.onBackground,
                     letterSpacing = 0.5.sp
                 )
             }

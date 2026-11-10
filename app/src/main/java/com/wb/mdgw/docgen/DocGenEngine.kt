@@ -68,7 +68,8 @@ object DocGenEngine {
     /**
      * 执行批量生成。
      *
-     * @param selectedTypes 选中的文书类型 code 集合；**空集合表示全部**（对应 PC 的 lx=0）
+     * @param selectedTypes 选中的「类型」code 集合；**空集合表示全部**（对应 PC 的 lx=0）。
+     *                      UI 合并类型、改为单选后通常只传一个 code，引擎保留集合形态以兼容旧调用。
      * @param templates    从模板目录扫描得到的文件列表
      * 案件归档目录由字段 weitr（委托人）、jied（阶段）自动拼成，见 [caseDirName]。
      */

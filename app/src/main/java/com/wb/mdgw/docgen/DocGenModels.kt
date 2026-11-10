@@ -67,21 +67,42 @@ data class FieldDoc(
 }
 
 /**
- * 文书类型项（可增删、重命名，持久化保存）。
+ * 统一「类型」项（可增删、重命名，持久化保存）。
  *
- * @param code  文件名匹配码（数字或字母，如 1/8/A）；生成时文件名包含该 code 即入选（对应 PC 的 lx）
- * @param label 显示名（如「委托」），可自由重命名
+ * 旧版把「案件类型」（决定字段表单用哪套默认结构）和「文书类型」（决定生成时按文件名
+ * 筛选哪批模板）拆成两组，实际是同一件事的两面，用户要选两次且容易选错。
+ * 现在合并为一组、只能择一：选中项同时给出模板筛选码与字段结构。
+ *
+ * @param code       文件名匹配码（数字或字母，如 1/5/8/9）；生成时文件名包含该 code 即入选（对应 PC 的 lx）
+ * @param label      显示名（如「民事委托」），可自由重命名
+ * @param caseTypeId 该类型对应的字段默认结构 id（[CaseTypeStore] 的资源名）；
+ *                   空串表示「不切换字段结构」，沿用当前表单（调查 / 诉讼 / 执行等通用模板）。
+ *                   旧持久化数据没有此字段，反序列化时取默认值 ""。
  */
 @Serializable
 data class DocTypeItem(
     val code: String,
-    val label: String
+    val label: String,
+    val caseTypeId: String = ""
 )
 
 /** 文书类型列表（JSON 持久化包装类） */
 @Serializable
 data class DocTypeList(
     val items: List<DocTypeItem> = emptyList()
+)
+
+/**
+ * 导入 shared_text.txt 后的合并结果。
+ *
+ * @param lines   合并完成的完整表单（分组 / 别名 / 顺序沿用当前表单）
+ * @param updated 值被文件中同名 key 覆盖的字段数
+ * @param added   文件中存在、当前表单缺失而补回的字段数
+ */
+data class ImportResult(
+    val lines: List<RuleLine>,
+    val updated: Int,
+    val added: Int
 )
 
 /**

@@ -44,6 +44,11 @@ object BrandTokens {
     val BrandPaper     = androidx.compose.ui.graphics.Color(0xFFFDFBF8)
     /** 宣纸底色 — 用于卡片背景，比 surfaceVariant 暖一档 */
     val BrandParchment = androidx.compose.ui.graphics.Color(0xFFF1ECE0)
+    /**
+     * 加深一档的宣纸底色 — 只给高频入口（生成文书）使用，靠明度差把最常用的功能
+     * 从宫格里「提」出来，仍保持同一暖纸色系，不引入新的强调色。
+     */
+    val BrandParchmentStrong = androidx.compose.ui.graphics.Color(0xFFE4D6BE)
     /** 印章泥红（半透明） — 用于选中态、品牌水印 */
     val BrandSealRed   = androidx.compose.ui.graphics.Color(0x1FB03A2E)
 

@@ -512,6 +512,42 @@ object DefaultFields {
         return collapseBlankLines(result)
     }
 
+    /**
+     * 把导入的 shared_text.txt 字段值「回填」到当前表单，而不是整份替换结构。
+     *
+     *  - 同名 key：用文件里的值覆盖（空值也覆盖，保证与保存时一致）；
+     *  - 文件里有、当前表单没有的 key：按 [insertField] 插回默认结构里的原分组
+     *    （非标准字段归入「自定义字段」），这样界面上能看到该字段及其值；
+     *  - 分组、注释、显示名、字段顺序一律保留当前表单，不会被文件结构冲掉。
+     *
+     * 生成的 shared_text.txt 与 PC 端导出的文本都能这样导回；导出时多行值转义成 `\n`，
+     * 解析后还原成换行，回填到长文本字段里仍是一段完整内容。
+     */
+    fun mergeImportedValues(
+        current: List<RuleLine>,
+        imported: List<RuleLine>,
+        defaults: List<RuleLine>
+    ): ImportResult {
+        val values = LinkedHashMap<String, String>()
+        imported.filter { it.isField }.forEach { values[it.key] = it.value }
+
+        var updated = 0
+        var result: List<RuleLine> = current.map { line ->
+            if (line.isField && values.containsKey(line.key)) {
+                updated++
+                line.copy(value = values[line.key].orEmpty())
+            } else line
+        }
+
+        var added = 0
+        for ((key, value) in values) {
+            if (result.any { it.isField && it.key == key }) continue
+            result = insertField(result, key, value, defaults)
+            added++
+        }
+        return ImportResult(result, updated, added)
+    }
+
     /** 折叠连续空行（最多保留一个），并去掉首尾空行 */
     private fun collapseBlankLines(lines: List<RuleLine>): List<RuleLine> {
         val out = mutableListOf<RuleLine>()

@@ -29,6 +29,8 @@ object SettingsStore {
     private const val K_DOCGEN_TEMPLATE_DIR = "docgen_template_dir"
     private const val K_DOCGEN_SELECTED_TYPES = "docgen_selected_types"
     private const val K_DOCGEN_CASE_TYPE = "docgen_case_type"
+    /** 合并后的「类型」单选 code（旧的两个 key 保留，供一次性迁移读取） */
+    private const val K_DOCGEN_SELECTED_TYPE = "docgen_selected_type"
 
     /** 生成文书：默认模板目录（与 PC 端 mb/ 对齐，可在 App 内修改） */
     const val DOCGEN_DEFAULT_TEMPLATE_DIR = "/sdcard/pylaw/mb"
@@ -141,7 +143,15 @@ object SettingsStore {
         prefs(ctx).edit().putString(K_DOCGEN_TEMPLATE_DIR, path.trim()).apply()
     }
 
-    /** 生成文书：记住上次选中的文书类型 code（空集合表示全部） */
+    /** 生成文书：记住上次选中的统一类型 code（单选） */
+    fun docgenSelectedType(ctx: Context): String? =
+        prefs(ctx).getString(K_DOCGEN_SELECTED_TYPE, null)?.takeIf { it.isNotBlank() }
+
+    fun saveDocgenSelectedType(ctx: Context, code: String) {
+        prefs(ctx).edit().putString(K_DOCGEN_SELECTED_TYPE, code).apply()
+    }
+
+    /** 兼容升级：旧版多选的文书类型 code（空集合表示全部），不再写入 */
     fun docgenSelectedTypes(ctx: Context): Set<String> =
         prefs(ctx).getString(K_DOCGEN_SELECTED_TYPES, null)
             ?.split(",")?.filter { it.isNotBlank() }?.toSet() ?: emptySet()
