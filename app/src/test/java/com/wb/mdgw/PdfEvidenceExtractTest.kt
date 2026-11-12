@@ -1,5 +1,6 @@
 package com.wb.mdgw
 
+import com.wb.mdgw.PdfEvidenceExtract.Segment
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
