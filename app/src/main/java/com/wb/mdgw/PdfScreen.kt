@@ -13,6 +13,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
@@ -50,7 +51,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.math.roundToInt
 
-private enum class PdfTab { PAGE_NUM, SEAL }
+private enum class PdfTab { PAGE_NUM, SEAL, SPLIT }
 private enum class PdfStage { IDLE, LOADED, DONE }
 
 /** 大文件阈值（MB），超过则弹出警告 */
@@ -151,6 +152,12 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
     var prefix by remember { mutableStateOf("") }
     var colorPreset by remember { mutableStateOf(PdfPageNum.ColorPreset.BLACK) }
 
+    // 提取证据：页号规则 + 各片段自定义名称 + 拆分产物
+    var splitRule by remember { mutableStateOf("") }
+    val splitNames = remember { mutableStateListOf<String>() }
+    var splitResults by remember { mutableStateOf<List<Pair<String, FileUtils.SavedFile>>>(emptyList()) }
+    var splitTotalPages by remember { mutableStateOf(0) }
+
     fun loadUri(uri: Uri) {
         scope.launch {
             busy = true
@@ -166,6 +173,10 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                 pdfBytes = bytes
                 stage = PdfStage.LOADED
                 savedPath = ""
+                splitResults = emptyList()
+                splitTotalPages = 0
+                splitRule = ""
+                splitNames.clear()
                 RecentFilesStore.touch(context, RecentFile.KIND_PDF, uri, name, "PDF")
                 pdfRecent = RecentFilesStore.list(context, RecentFile.KIND_PDF)
             }.onFailure { e ->
@@ -243,6 +254,42 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
         if (mb > LARGE_FILE_MB) showLargeFileWarning = true else executeProcess()
     }
 
+    /** 提取证据：按片段拆分并逐份保存为「证据N-名称.pdf」。 */
+    fun executeSplit(segments: List<PdfEvidenceExtract.Segment>, names: List<String>) {
+        val data = pdfBytes ?: return
+        scope.launch {
+            busy = true
+            processedPages = 0
+            totalPages = segments.size
+            progress = 0f
+            splitResults = emptyList()
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val outputs = PdfEvidenceExtract.extract(data, segments) { done, total ->
+                        scope.launch(Dispatchers.Main.immediate) {
+                            processedPages = done
+                            totalPages = total
+                            progress = if (total > 0) done.toFloat() / total else 0f
+                        }
+                    }
+                    val saved = ArrayList<Pair<String, FileUtils.SavedFile>>(outputs.size)
+                    outputs.forEachIndexed { i, bytes ->
+                        val name = PdfEvidenceExtract.outputName(i, names.getOrElse(i) { "" })
+                        saved += name to FileUtils.saveToDownloads(context, name, bytes, FileUtils.PDF_MIME)
+                    }
+                    saved
+                }
+            }.onSuccess { saved ->
+                splitResults = saved
+                scope.launch { snackbar.showSnackbar("✓ 已提取 ${saved.size} 份证据") }
+            }.onFailure {
+                errorMessage = friendlyError(it)
+                showErrorDialog = true
+            }
+            busy = false
+        }
+    }
+
     fun shareResult(open: Boolean) {
         val sf = savedFile ?: return
         runCatching {
@@ -276,13 +323,33 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                     )
                     Spacer(Modifier.height(18.dp))
                     Text(
-                        if (tab == PdfTab.SEAL) "正在盖章…" else "正在添加页码…",
+                        when (tab) {
+                            PdfTab.SEAL -> "正在盖章…"
+                            PdfTab.SPLIT -> "正在提取证据…"
+                            PdfTab.PAGE_NUM -> "正在添加页码…"
+                        },
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(Modifier.height(14.dp))
-                    if (tab == PdfTab.PAGE_NUM && totalPages > 0) {
+                    if (tab == PdfTab.SPLIT && totalPages > 0) {
+                        LinearProgressIndicator(
+                            progress = { progress.coerceIn(0f, 1f) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(8.dp)
+                                .clip(RoundedCornerShape(8.dp)),
+                            color = MaterialTheme.colorScheme.primary,
+                            trackColor = MaterialTheme.colorScheme.surfaceVariant
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "已生成 $processedPages / $totalPages 份（${(progress * 100).toInt()}%）",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else if (tab == PdfTab.PAGE_NUM && totalPages > 0) {
                         LinearProgressIndicator(
                             progress = { progress.coerceIn(0f, 1f) },
                             modifier = Modifier
@@ -354,7 +421,11 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
     ) {
         // ---------- 功能页签 ----------
         SegmentedTabs(
-            items = listOf("加页码" to Icons.Default.Subject, "盖章" to Icons.Default.GppGood),
+            items = listOf(
+                "加页码" to Icons.Default.Subject,
+                "盖章" to Icons.Default.GppGood,
+                "提取证据" to Icons.Default.ContentCut
+            ),
             selectedIndex = tab.ordinal,
             onSelect = { tab = PdfTab.values()[it] },
             modifier = Modifier.fillMaxWidth()
@@ -428,6 +499,16 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                         showErrorDialog = true
                     }
                 )
+                PdfTab.SPLIT -> SplitSection(
+                    rule = splitRule, onRule = { splitRule = it },
+                    names = splitNames,
+                    totalPages = splitTotalPages,
+                    onTotalPages = { splitTotalPages = it },
+                    pdfBytes = pdfBytes!!,
+                    busy = busy,
+                    onExtract = { segments -> executeSplit(segments, splitNames.toList()) },
+                    onError = { errorMessage = it; showErrorDialog = true }
+                )
             }
         }
 
@@ -460,6 +541,76 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
             }
         }
 
+        // ---------- 提取证据结果 ----------
+        if (tab == PdfTab.SPLIT && splitResults.isNotEmpty()) {
+            ElevatedCard(shape = RoundedCornerShape(16.dp)) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = BrandTokens.StatusSuccess)
+                        Spacer(Modifier.width(8.dp))
+                        Text("✓ 已提取 ${splitResults.size} 份证据并保存", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    }
+                    splitResults.forEach { (name, sf) ->
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    runCatching {
+                                        context.startActivity(FileUtils.openIntent(sf.uri, FileUtils.PDF_MIME))
+                                    }.onFailure { scope.launch { snackbar.showSnackbar(friendlyError(it)) } }
+                                }
+                        ) {
+                            Row(
+                                Modifier.padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.PictureAsPdf, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(name, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(sf.displayPath, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                                Spacer(Modifier.width(8.dp))
+                                Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = "打开", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedButton(
+                            onClick = {
+                                runCatching {
+                                    context.startActivity(
+                                        FileUtils.openIntent(splitResults.first().second.uri, FileUtils.PDF_MIME)
+                                    )
+                                }.onFailure { scope.launch { snackbar.showSnackbar(friendlyError(it)) } }
+                            },
+                            modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null)
+                            Spacer(Modifier.width(6.dp))
+                            Text("打开第一份")
+                        }
+                        Button(
+                            onClick = {
+                                runCatching {
+                                    context.startActivity(
+                                        FileUtils.shareMultipleIntent(splitResults.map { it.second.uri }, FileUtils.PDF_MIME)
+                                    )
+                                }.onFailure { scope.launch { snackbar.showSnackbar(friendlyError(it)) } }
+                            },
+                            modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(Icons.Default.Share, contentDescription = null)
+                            Spacer(Modifier.width(6.dp))
+                            Text("全部分享")
+                        }
+                    }
+                }
+            }
+        }
+
         // ---------- 说明 ----------
         if (stage == PdfStage.IDLE) {
             ElevatedCard(shape = RoundedCornerShape(16.dp)) {
@@ -468,6 +619,7 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                     Spacer(Modifier.height(2.dp))
                     Text("• 加页码：在每页按所选位置叠加页码，不改变原文字与版式", fontSize = 13.sp)
                     Text("• 盖章：选择透明印章 PNG，拖拽定位后衬在文字下方导出", fontSize = 13.sp)
+                    Text("• 提取证据：按页号一次拆成多份独立 PDF，命名为「证据1-名称」等", fontSize = 13.sp)
                     Text("• 纯本地处理，文件不上传任何服务器", fontSize = 13.sp)
                     Spacer(Modifier.height(4.dp))
                     Text("暂不支持已加密（设密码）的 PDF。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -574,6 +726,118 @@ private fun PageNumberSection(
             Icon(Icons.AutoMirrored.Filled.Subject, contentDescription = null)
             Spacer(Modifier.width(8.dp))
             Text("添加页码", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+// =====================================================================
+// 提取证据功能区
+// =====================================================================
+@Composable
+private fun SplitSection(
+    rule: String, onRule: (String) -> Unit,
+    names: MutableList<String>,
+    totalPages: Int, onTotalPages: (Int) -> Unit,
+    pdfBytes: ByteArray,
+    busy: Boolean,
+    onExtract: (List<PdfEvidenceExtract.Segment>) -> Unit,
+    onError: (String) -> Unit
+) {
+    // 读取原 PDF 页数（仅一次；失败时保持 0，校验时会提示）。大文件解析较重，放 IO 线程。
+    LaunchedEffect(pdfBytes) {
+        val n = withContext(Dispatchers.IO) {
+            runCatching { PdfEvidenceExtract.pageCount(pdfBytes) }.getOrDefault(0)
+        }
+        onTotalPages(n)
+    }
+
+    val parsed = remember(rule) { PdfEvidenceExtract.parse(rule) }
+    val segments = parsed.segments
+
+    // 名称列表随片段数量自动增减：保留已输入前缀，避免改规则时全部清空
+    LaunchedEffect(segments.size) {
+        while (names.size > segments.size) names.removeAt(names.size - 1)
+        while (names.size < segments.size) names.add("")
+    }
+
+    // 规则为空时不提前报错，避免用户还没输入就看到红字
+    val rangeError = if (rule.isBlank()) null else parsed.error
+    val boundsError = remember(segments, totalPages) {
+        if (totalPages > 0 && segments.isNotEmpty()) PdfEvidenceExtract.validate(segments, totalPages) else null
+    }
+
+    ElevatedCard(shape = RoundedCornerShape(16.dp)) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            StepTitle(2, "页号规则")
+            Text(
+                "用英文逗号分隔多段：单页写「1」，区间写「2-3」。例如 1,2-3,4-15,16-18,19",
+                fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            OutlinedTextField(
+                value = rule,
+                onValueChange = { onRule(it) },
+                label = { Text("页号（如 1,2-3,4-15）") },
+                placeholder = { Text("1,2-3,4-15,16-18,19") },
+                singleLine = true,
+                isError = rangeError != null || boundsError != null,
+                modifier = Modifier.fillMaxWidth()
+            )
+            if (totalPages > 0) {
+                Text("本 PDF 共 $totalPages 页", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            when {
+                rangeError != null -> Text(rangeError, fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                boundsError != null -> Text(boundsError, fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                segments.isNotEmpty() -> Text(
+                    "共 ${segments.size} 段：${segments.joinToString("，") { it.toString() }}",
+                    fontSize = 12.sp, color = BrandTokens.StatusSuccess
+                )
+            }
+        }
+    }
+
+    if (segments.isNotEmpty()) {
+        ElevatedCard(shape = RoundedCornerShape(16.dp)) {
+            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                StepTitle(3, "自定义名称")
+                Text(
+                    "每段对应一份产物，文件名自动加「证据N-」前缀；留空则仅用「证据N」。",
+                    fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                segments.forEachIndexed { i, seg ->
+                    OutlinedTextField(
+                        value = names.getOrElse(i) { "" },
+                        onValueChange = { v -> if (i < names.size) names[i] = v },
+                        label = { Text("证据 ${i + 1}（第 $seg 页）") },
+                        placeholder = { Text("名称，如 合同首页") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        }
+    }
+
+    Button(
+        onClick = {
+            when {
+                rangeError != null -> onError(rangeError)
+                boundsError != null -> onError(boundsError)
+                segments.isEmpty() -> onError("请先输入页号规则")
+                else -> onExtract(segments)
+            }
+        },
+        enabled = !busy && segments.isNotEmpty() && rangeError == null && boundsError == null,
+        modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(16.dp)
+    ) {
+        if (busy) {
+            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+            Spacer(Modifier.width(10.dp))
+            Text("提取中…")
+        } else {
+            Icon(Icons.Default.ContentCut, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text("提取并保存 ${segments.size} 份", fontSize = 16.sp, fontWeight = FontWeight.Bold)
         }
     }
 }

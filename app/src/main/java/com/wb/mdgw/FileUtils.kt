@@ -271,6 +271,16 @@ object FileUtils {
         return Intent.createChooser(send, "分享 $fileName")
     }
 
+    /** 一次分享多个文件（如批量拆分出的多份证据 PDF）。 */
+    fun shareMultipleIntent(uris: List<Uri>, mimeType: String = PDF_MIME): Intent {
+        val send = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+            type = mimeType
+            putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        return Intent.createChooser(send, "分享 ${uris.size} 个文件")
+    }
+
     fun openIntent(uri: Uri, mimeType: String = DOCX_MIME): Intent {
         val view = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, mimeType)
