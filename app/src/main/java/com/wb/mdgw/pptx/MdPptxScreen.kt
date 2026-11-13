@@ -88,6 +88,8 @@ import com.wb.mdgw.UI_CARD_RADIUS
 import com.wb.mdgw.UI_BTN_RADIUS
 import com.wb.mdgw.UI_ACTION_HEIGHT
 import com.wb.mdgw.UndoHistoryStore
+import com.wb.mdgw.UI_RADIUS_MD
+import com.wb.mdgw.UI_RADIUS_SM
 
 /** PPTX 文件 MIME（与文件导出/打开/分享保持一致）。 */
 private const val PPTX_MIME =

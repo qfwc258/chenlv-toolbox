@@ -33,6 +33,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.wb.mdgw.UI_BTN_RADIUS
 import com.wb.mdgw.UI_CARD_RADIUS
+import com.wb.mdgw.UI_RADIUS_LG
+import com.wb.mdgw.UI_RADIUS_MD
+import com.wb.mdgw.UI_RADIUS_SM
 import kotlin.math.roundToInt
 
 
