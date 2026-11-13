@@ -50,7 +50,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.math.roundToInt
 
-private enum class PdfTab { PAGE_NUM, SEAL, SPLIT, MERGE }
+private enum class PdfTab { SPLIT, MERGE, PAGE_NUM, SEAL }
 private enum class PdfStage { IDLE, LOADED, DONE }
 
 /** 大文件阈值（MB），超过则弹出警告 */
@@ -142,7 +142,7 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
     }
 
     // 功能页签：加页码 / 盖章
-    var tab by remember { mutableStateOf(PdfTab.PAGE_NUM) }
+    var tab by remember { mutableStateOf(PdfTab.SPLIT) }
 
     var position by remember { mutableStateOf(PdfPageNum.Position.BOTTOM_RIGHT) }
     var startPage by remember { mutableStateOf("1") }
@@ -531,16 +531,16 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         // ---------- 功能页签 ----------
         SegmentedTabs(
             items = listOf(
-                "加页码" to Icons.Default.Subject,
-                "盖章" to Icons.Default.GppGood,
                 "拆分" to Icons.Default.ContentCut,
-                "合并" to Icons.Default.MergeType
+                "合并" to Icons.Default.MergeType,
+                "加页码" to Icons.Default.Subject,
+                "盖章" to Icons.Default.GppGood
             ),
             selectedIndex = tab.ordinal,
             onSelect = { tab = PdfTab.values()[it] },
@@ -551,7 +551,7 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
         if (tab == PdfTab.MERGE) {
             // 合并：独立多选
             ElevatedCard(shape = RoundedCornerShape(16.dp)) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     StepTitle(1, "选择多个 PDF 文件")
                     Text(
                         "按选取顺序依次合并为一份；可先在文件管理器中长按多选。",
@@ -563,7 +563,7 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp)
                     ) {
-                        Icon(Icons.Default.FolderOpen, contentDescription = null)
+                        Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(20.dp))
                         Spacer(Modifier.width(8.dp))
                         Text(if (mergeItems.isEmpty()) "选取多个 PDF 文件" else "重新选取")
                     }
@@ -588,7 +588,7 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
             }
         } else {
         ElevatedCard(shape = RoundedCornerShape(16.dp)) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 StepTitle(1, "选择 PDF 文件")
                 Button(
                     onClick = { pdfPicker.launch(arrayOf("application/pdf")) },
@@ -596,7 +596,7 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    Icon(Icons.Default.FolderOpen, contentDescription = null)
+                    Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(8.dp))
                     Text(if (stage == PdfStage.IDLE) "选取 PDF 文件" else "重新选择文件")
                 }
@@ -607,7 +607,7 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.PictureAsPdf, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Icon(Icons.Default.PictureAsPdf, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
                             Spacer(Modifier.width(10.dp))
                             Column(Modifier.weight(1f)) {
                                 Text(fileName, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -693,12 +693,12 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         OutlinedButton(onClick = { shareResult(open = true) }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp)) {
-                            Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null)
+                            Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(6.dp))
                             Text("打开文件")
                         }
                         Button(onClick = { shareResult(open = false) }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp)) {
-                            Icon(Icons.Default.Share, contentDescription = null)
+                            Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(6.dp))
                             Text("分享文件")
                         }
@@ -722,12 +722,12 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         OutlinedButton(onClick = { shareResult(open = true) }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp)) {
-                            Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null)
+                            Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(6.dp))
                             Text("打开文件")
                         }
                         Button(onClick = { shareResult(open = false) }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp)) {
-                            Icon(Icons.Default.Share, contentDescription = null)
+                            Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(6.dp))
                             Text("分享文件")
                         }
@@ -783,7 +783,7 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                             },
                             modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp)
                         ) {
-                            Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null)
+                            Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(6.dp))
                             Text("打开第一份")
                         }
@@ -797,7 +797,7 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                             },
                             modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp)
                         ) {
-                            Icon(Icons.Default.Share, contentDescription = null)
+                            Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(6.dp))
                             Text("全部分享")
                         }
@@ -918,7 +918,7 @@ private fun PageNumberSection(
             Spacer(Modifier.width(10.dp))
             Text("处理中…")
         } else {
-            Icon(Icons.AutoMirrored.Filled.Subject, contentDescription = null)
+            Icon(Icons.AutoMirrored.Filled.Subject, contentDescription = null, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(8.dp))
             Text("添加页码", fontSize = 16.sp, fontWeight = FontWeight.Bold)
         }
@@ -1065,7 +1065,7 @@ private fun SplitSection(
             Spacer(Modifier.width(10.dp))
             Text("拆分中…")
         } else {
-            Icon(Icons.Default.ContentCut, contentDescription = null)
+            Icon(Icons.Default.ContentCut, contentDescription = null, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(8.dp))
             Text("拆分并保存 ${segments.size} 份", fontSize = 16.sp, fontWeight = FontWeight.Bold)
         }
@@ -1119,7 +1119,7 @@ private fun MergeSection(
             enabled = !busy && items.isNotEmpty(),
             modifier = Modifier.weight(0.4f), shape = RoundedCornerShape(16.dp)
         ) {
-            Icon(Icons.Default.Delete, contentDescription = null)
+            Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(6.dp))
             Text("清空")
         }
@@ -1133,7 +1133,7 @@ private fun MergeSection(
                 Spacer(Modifier.width(10.dp))
                 Text("合并中…")
             } else {
-                Icon(Icons.Default.MergeType, contentDescription = null)
+                Icon(Icons.Default.MergeType, contentDescription = null, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(8.dp))
                 Text("合并并保存", fontSize = 16.sp, fontWeight = FontWeight.Bold)
             }
@@ -1526,7 +1526,7 @@ private fun SealSection(
             },
             modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(16.dp)
         ) {
-            Icon(Icons.Default.GppGood, contentDescription = null)
+            Icon(Icons.Default.GppGood, contentDescription = null, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(8.dp))
             Text("盖章并导出", fontSize = 16.sp, fontWeight = FontWeight.Bold)
         }
