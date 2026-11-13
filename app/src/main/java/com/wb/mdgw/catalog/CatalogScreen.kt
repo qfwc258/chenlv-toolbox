@@ -33,6 +33,9 @@ import androidx.compose.ui.unit.sp
 import com.wb.mdgw.FileUtils
 import com.wb.mdgw.UI_BTN_RADIUS
 import com.wb.mdgw.UI_PRIMARY_BUTTON_HEIGHT
+import com.wb.mdgw.UI_RADIUS_LG
+import com.wb.mdgw.UI_RADIUS_MD
+import com.wb.mdgw.UI_RADIUS_SM
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -223,7 +226,7 @@ private fun EvidenceScreen(onBack: () -> Unit) {
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = androidx.compose.foundation.shape.UI_RADIUS_LG,
+                    shape = UI_RADIUS_LG,
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                 ) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -258,8 +261,8 @@ private fun EvidenceScreen(onBack: () -> Unit) {
             item {
                 OutlinedButton(
                     onClick = { items = items + EvidenceItem() },
-                    modifier = Modifier.fillMaxWidth().height(46.dp),
-                    shape = androidx.compose.foundation.shape.UI_RADIUS_MD
+                    modifier = Modifier.fillMaxWidth().height(UI_PRIMARY_BUTTON_HEIGHT),
+                    shape = UI_RADIUS_MD
                 ) {
                     Icon(Icons.Default.Add, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp)); Text("添加证据")
@@ -300,13 +303,13 @@ private fun EvidenceCard(
     var menu by remember { mutableStateOf(false) }
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = androidx.compose.foundation.shape.UI_RADIUS_LG
+        shape = UI_RADIUS_LG
     ) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
                     color = MaterialTheme.colorScheme.primaryContainer,
-                    shape = androidx.compose.foundation.shape.UI_RADIUS_SM
+                    shape = UI_RADIUS_SM
                 ) {
                     Text(
                         "证据 ${index + 1}",
@@ -473,7 +476,7 @@ private fun ArchiveScreen(onBack: () -> Unit) {
         ) {
             item {
                 Card(
-                    shape = androidx.compose.foundation.shape.UI_RADIUS_LG,
+                    shape = UI_RADIUS_LG,
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                 ) {
                     CatalogField(title, { title = it }, "标题",
@@ -481,7 +484,7 @@ private fun ArchiveScreen(onBack: () -> Unit) {
                 }
             }
             itemsIndexed(items, key = { i, _ -> i }) { i, item ->
-                Card(shape = androidx.compose.foundation.shape.UI_RADIUS_MD) {
+                Card(shape = UI_RADIUS_MD) {
                     Row(
                         Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -527,7 +530,7 @@ private fun ArchiveScreen(onBack: () -> Unit) {
                                 },
                                 onDone = { focusManager.clearFocus() }
                             ),
-                            shape = androidx.compose.foundation.shape.UI_RADIUS_MD
+                            shape = UI_RADIUS_MD
                         )
                     }
                 }
@@ -598,7 +601,7 @@ private fun CatalogField(
         singleLine = singleLine,
         minLines = minLines,
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
-        shape = androidx.compose.foundation.shape.UI_RADIUS_MD
+        shape = UI_RADIUS_MD
     )
 }
 

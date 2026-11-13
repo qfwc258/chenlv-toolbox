@@ -166,7 +166,7 @@ fun FtpScreen(onBack: () -> Unit) {
         ) {
             // ---------- 状态 + 开关：紧凑横条（不再垂直居中占用整张卡片） ----------
             Card(
-                shape = androidx.compose.foundation.shape.UI_RADIUS_SM,
+                shape = UI_RADIUS_SM,
                 colors = androidx.compose.material3.CardDefaults.cardColors(
                     containerColor = com.wb.mdgw.BrandTokens.BrandParchment
                 )
@@ -229,7 +229,7 @@ fun FtpScreen(onBack: () -> Unit) {
 
             // ---------- 连接设置：拆成 SettingsCard ----------
             Card(
-                shape = androidx.compose.foundation.shape.UI_RADIUS_SM,
+                shape = UI_RADIUS_SM,
                 colors = androidx.compose.material3.CardDefaults.cardColors(
                     containerColor = com.wb.mdgw.BrandTokens.BrandParchment
                 )
@@ -286,7 +286,7 @@ fun FtpScreen(onBack: () -> Unit) {
 
             // ---------- 说明 ----------
             Card(
-                shape = androidx.compose.foundation.shape.UI_RADIUS_SM,
+                shape = UI_RADIUS_SM,
                 colors = androidx.compose.material3.CardDefaults.cardColors(
                     containerColor = com.wb.mdgw.BrandTokens.BrandParchment
                 )
