@@ -51,7 +51,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.math.roundToInt
 
-private enum class PdfTab { PAGE_NUM, SEAL, SPLIT }
+private enum class PdfTab { PAGE_NUM, SEAL, SPLIT, MERGE }
 private enum class PdfStage { IDLE, LOADED, DONE }
 
 /** 大文件阈值（MB），超过则弹出警告 */
@@ -152,11 +152,20 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
     var prefix by remember { mutableStateOf("") }
     var colorPreset by remember { mutableStateOf(PdfPageNum.ColorPreset.BLACK) }
 
-    // 提取证据：页号规则 + 各片段自定义名称 + 拆分产物
+    // 拆分：页号规则 + 各片段自定义名称 + 拆分产物
     var splitRule by remember { mutableStateOf("") }
     val splitNames = remember { mutableStateListOf<String>() }
     var splitResults by remember { mutableStateOf<List<Pair<String, FileUtils.SavedFile>>>(emptyList()) }
     var splitTotalPages by remember { mutableStateOf(0) }
+
+    // 拆分后对每份输出加页码
+    var splitAddPageNum by remember { mutableStateOf(false) }
+    var splitNumStartAt by remember { mutableStateOf(1) } // 编号方式：每份从1开始 / 全局连续
+
+    // 合并：待合并文件列表
+    var mergeItems by remember { mutableStateOf<List<FileUtils.SavedFile>>(emptyList()) }
+    var mergeAddPageNum by remember { mutableStateOf(false) }
+    var mergeOutName by remember { mutableStateOf("") }
 
     fun loadUri(uri: Uri) {
         scope.launch {
@@ -201,6 +210,33 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
         ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         uri?.let { loadUri(it) }
+    }
+
+    /** 合并：多选 PDF 文件 */
+    val mergePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris: List<Uri> ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        scope.launch {
+            busy = true
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    uris.mapNotNull { uri ->
+                        val name = FileUtils.displayName(context, uri).ifBlank { "PDF_${uri.hashCode()}.pdf" }
+                        val bytes = FileUtils.readBytes(context, uri)
+                        if (bytes.isEmpty()) null else FileUtils.SavedFile(uri, name)
+                    }
+                }
+            }.onSuccess { items ->
+                mergeItems = items
+                mergeOutName = "合并_${System.currentTimeMillis() / 1000}.pdf"
+                snackbar.showSnackbar("✓ 已选取 ${items.size} 份 PDF")
+            }.onFailure {
+                errorMessage = friendlyError(it)
+                showErrorDialog = true
+            }
+            busy = false
+        }
     }
 
     /** 加页码：实际执行处理 */
@@ -272,8 +308,34 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                             progress = if (total > 0) done.toFloat() / total else 0f
                         }
                     }
-                    val saved = ArrayList<Pair<String, FileUtils.SavedFile>>(outputs.size)
-                    outputs.forEachIndexed { i, bytes ->
+                    // 可选：对每份拆分输出加页码
+                    val finalOutputs = if (splitAddPageNum) {
+                        var globalOffset = 1
+                        outputs.mapIndexed { i, bytes ->
+                            val segmentPageCount = segments.getOrNull(i)?.let {
+                                (it.end - it.start + 1).coerceAtLeast(1)
+                            } ?: 1
+                            // splitNumStartAt==0 → 每份从第1页重新编号；==1 → 按原 PDF 顺序全局连续
+                            val startPage = if (splitNumStartAt == 0) 1 else globalOffset
+                            val opts = PdfPageNum.Options(
+                                position = position,
+                                startPage = startPage,
+                                fontSize = fontSize.toIntOrNull()?.coerceIn(4, 72) ?: 4,
+                                marginMm = marginMm.toDoubleOrNull()?.coerceIn(0.0, 50.0) ?: 10.0,
+                                colorR = colorPreset.r,
+                                colorG = colorPreset.g,
+                                colorB = colorPreset.b,
+                                prefix = prefix
+                            )
+                            val numbered = PdfPageNum.addPageNumbersRobust(bytes, opts) { _, _ -> }
+                            globalOffset += segmentPageCount
+                            numbered
+                        }
+                    } else {
+                        outputs
+                    }
+                    val saved = ArrayList<Pair<String, FileUtils.SavedFile>>(finalOutputs.size)
+                    finalOutputs.forEachIndexed { i, bytes ->
                         val name = PdfEvidenceExtract.outputName(i, names.getOrElse(i) { "" })
                         saved += name to FileUtils.saveToDownloads(context, name, bytes, FileUtils.PDF_MIME)
                     }
@@ -281,7 +343,7 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                 }
             }.onSuccess { saved ->
                 splitResults = saved
-                scope.launch { snackbar.showSnackbar("✓ 已提取 ${saved.size} 份证据") }
+                scope.launch { snackbar.showSnackbar("✓ 已拆分 ${saved.size} 份") }
             }.onFailure {
                 errorMessage = friendlyError(it)
                 showErrorDialog = true
@@ -299,6 +361,59 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
             )
         }.onFailure {
             scope.launch { snackbar.showSnackbar(friendlyError(it)) }
+        }
+    }
+
+    /** 合并多个 PDF，可选加页码 */
+    fun executeMerge() {
+        val sources = mergeItems
+        if (sources.isEmpty()) return
+        scope.launch {
+            busy = true
+            processedPages = 0
+            totalPages = sources.size
+            progress = 0f
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val srcItems = sources.map { src ->
+                        PdfMerge.SourceItem(src.displayPath, FileUtils.readBytes(context, src.uri))
+                    }
+                    var merged = PdfMerge.merge(srcItems) { done, total ->
+                        scope.launch(Dispatchers.Main.immediate) {
+                            processedPages = done
+                            totalPages = total
+                            progress = if (total > 0) done.toFloat() / total else 0f
+                        }
+                    }
+                    if (mergeAddPageNum) {
+                        val opts = PdfPageNum.Options(
+                            position = position,
+                            startPage = 1,
+                            fontSize = fontSize.toIntOrNull()?.coerceIn(4, 72) ?: 4,
+                            marginMm = marginMm.toDoubleOrNull()?.coerceIn(0.0, 50.0) ?: 10.0,
+                            colorR = colorPreset.r,
+                            colorG = colorPreset.g,
+                            colorB = colorPreset.b,
+                            prefix = prefix
+                        )
+                        merged = PdfPageNum.addPageNumbersRobust(merged, opts) { _, _ -> }
+                    }
+                    merged
+                }
+            }.onSuccess { bytes ->
+                val outFileName = mergeOutName.ifBlank { "合并_${System.currentTimeMillis() / 1000}.pdf" }
+                savedFile = FileUtils.saveToDownloads(context, outFileName, bytes, FileUtils.PDF_MIME)
+                savedFile?.let {
+                    outName = outFileName
+                    savedPath = it.displayPath
+                }
+                stage = PdfStage.DONE
+                scope.launch { snackbar.showSnackbar("✓ 已合并 ${sources.size} 份 PDF") }
+            }.onFailure {
+                errorMessage = friendlyError(it)
+                showErrorDialog = true
+            }
+            busy = false
         }
     }
 
@@ -325,15 +440,16 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                     Text(
                         when (tab) {
                             PdfTab.SEAL -> "正在盖章…"
-                            PdfTab.SPLIT -> "正在提取证据…"
+                            PdfTab.SPLIT -> "正在拆分…"
                             PdfTab.PAGE_NUM -> "正在添加页码…"
+                            PdfTab.MERGE -> "正在合并…"
                         },
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(Modifier.height(14.dp))
-                    if (tab == PdfTab.SPLIT && totalPages > 0) {
+                    if ((tab == PdfTab.SPLIT || tab == PdfTab.MERGE) && totalPages > 0) {
                         LinearProgressIndicator(
                             progress = { progress.coerceIn(0f, 1f) },
                             modifier = Modifier
@@ -345,7 +461,7 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                         )
                         Spacer(Modifier.height(8.dp))
                         Text(
-                            "已生成 $processedPages / $totalPages 份（${(progress * 100).toInt()}%）",
+                            "已处理 $processedPages / $totalPages 份（${(progress * 100).toInt()}%）",
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -424,14 +540,54 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
             items = listOf(
                 "加页码" to Icons.Default.Subject,
                 "盖章" to Icons.Default.GppGood,
-                "提取证据" to Icons.Default.ContentCut
+                "拆分" to Icons.Default.ContentCut,
+                "合并" to Icons.Default.MergeType
             ),
             selectedIndex = tab.ordinal,
             onSelect = { tab = PdfTab.values()[it] },
             modifier = Modifier.fillMaxWidth()
         )
 
-        // ---------- 步骤 1 选择文件（两个功能共用） ----------
+        // ---------- 步骤 1 选择文件 ----------
+        if (tab == PdfTab.MERGE) {
+            // 合并：独立多选
+            ElevatedCard(shape = RoundedCornerShape(16.dp)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    StepTitle(1, "选择多个 PDF 文件")
+                    Text(
+                        "按选取顺序依次合并为一份；可先在文件管理器中长按多选。",
+                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Button(
+                        onClick = { mergePicker.launch(arrayOf("application/pdf")) },
+                        enabled = !busy,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(Icons.Default.FolderOpen, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(if (mergeItems.isEmpty()) "选取多个 PDF 文件" else "重新选取")
+                    }
+                    if (mergeItems.isNotEmpty()) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text("已选取 ${mergeItems.size} 份：", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                mergeItems.forEachIndexed { i, sf ->
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text("${i + 1}.", fontSize = 12.sp, modifier = Modifier.width(22.dp))
+                                        Text(sf.displayPath, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
         ElevatedCard(shape = RoundedCornerShape(16.dp)) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 StepTitle(1, "选择 PDF 文件")
@@ -465,6 +621,7 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                 }
             }
         }
+        }
 
         // ---------- 最近打开（仅未载入时） ----------
         if (stage == PdfStage.IDLE && pdfRecent.isNotEmpty()) {
@@ -479,7 +636,14 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
         }
 
         // ---------- 功能内容 ----------
-        if (pdfBytes != null) {
+        if (tab == PdfTab.MERGE) {
+            MergeSection(
+                items = mergeItems, onClearItems = { mergeItems = emptyList() },
+                addPageNum = mergeAddPageNum, onAddPageNum = { mergeAddPageNum = it },
+                outName = mergeOutName, onOutName = { mergeOutName = it },
+                onMerge = { executeMerge() }, busy = busy
+            )
+        } else if (pdfBytes != null) {
             when (tab) {
                 PdfTab.PAGE_NUM -> PageNumberSection(
                     stage = stage, position = position, onPosition = { position = it },
@@ -506,6 +670,8 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                     onTotalPages = { splitTotalPages = it },
                     pdfBytes = pdfBytes!!,
                     busy = busy,
+                    addPageNum = splitAddPageNum, onAddPageNum = { splitAddPageNum = it },
+                    numStartAt = splitNumStartAt, onNumStartAt = { splitNumStartAt = it },
                     onExtract = { segments -> executeSplit(segments, splitNames.toList()) },
                     onError = { errorMessage = it; showErrorDialog = true }
                 )
@@ -541,14 +707,43 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
             }
         }
 
-        // ---------- 提取证据结果 ----------
+        // ---------- 合并结果 ----------
+        if (tab == PdfTab.MERGE && stage == PdfStage.DONE && savedFile != null) {
+            ElevatedCard(shape = RoundedCornerShape(16.dp)) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = BrandTokens.StatusSuccess)
+                        Spacer(Modifier.width(8.dp))
+                        Text("✓ 已合并并保存", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    }
+                    Text(outName, fontWeight = FontWeight.Medium)
+                    Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+                        Text("保存位置：$savedPath", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(10.dp))
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedButton(onClick = { shareResult(open = true) }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp)) {
+                            Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null)
+                            Spacer(Modifier.width(6.dp))
+                            Text("打开文件")
+                        }
+                        Button(onClick = { shareResult(open = false) }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp)) {
+                            Icon(Icons.Default.Share, contentDescription = null)
+                            Spacer(Modifier.width(6.dp))
+                            Text("分享文件")
+                        }
+                    }
+                }
+            }
+        }
+
+        // ---------- 拆分结果 ----------
         if (tab == PdfTab.SPLIT && splitResults.isNotEmpty()) {
             ElevatedCard(shape = RoundedCornerShape(16.dp)) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.CheckCircle, contentDescription = null, tint = BrandTokens.StatusSuccess)
                         Spacer(Modifier.width(8.dp))
-                        Text("✓ 已提取 ${splitResults.size} 份证据并保存", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        Text("✓ 已拆分 ${splitResults.size} 份并保存", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     }
                     splitResults.forEach { (name, sf) ->
                         Surface(
@@ -619,7 +814,7 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                     Spacer(Modifier.height(2.dp))
                     Text("• 加页码：在每页按所选位置叠加页码，不改变原文字与版式", fontSize = 13.sp)
                     Text("• 盖章：选择透明印章 PNG，拖拽定位后衬在文字下方导出", fontSize = 13.sp)
-                    Text("• 提取证据：按页号一次拆成多份独立 PDF，命名为「证据1-名称」等", fontSize = 13.sp)
+                    Text("• 拆分：按页号一次拆成多份独立 PDF，命名为「证据1-名称」等\n• 合并：多份 PDF 按顺序合成一份，可选加页码", fontSize = 13.sp)
                     Text("• 纯本地处理，文件不上传任何服务器", fontSize = 13.sp)
                     Spacer(Modifier.height(4.dp))
                     Text("暂不支持已加密（设密码）的 PDF。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -731,7 +926,7 @@ private fun PageNumberSection(
 }
 
 // =====================================================================
-// 提取证据功能区
+// 拆分功能区
 // =====================================================================
 @Composable
 private fun SplitSection(
@@ -740,6 +935,8 @@ private fun SplitSection(
     totalPages: Int, onTotalPages: (Int) -> Unit,
     pdfBytes: ByteArray,
     busy: Boolean,
+    addPageNum: Boolean, onAddPageNum: (Boolean) -> Unit,
+    numStartAt: Int, onNumStartAt: (Int) -> Unit,
     onExtract: (List<PdfEvidenceExtract.Segment>) -> Unit,
     onError: (String) -> Unit
 ) {
@@ -816,6 +1013,39 @@ private fun SplitSection(
                 }
             }
         }
+
+        // 可选：拆分后为每份产物加页码
+        ElevatedCard(shape = RoundedCornerShape(16.dp)) {
+            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                StepTitle(4, "加页码（可选）")
+                Row(
+                    modifier = Modifier.fillMaxWidth().clickable { onAddPageNum(!addPageNum) },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(checked = addPageNum, onCheckedChange = { onAddPageNum(it) })
+                    Text("为每份拆分产物添加页码")
+                }
+                if (addPageNum) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = numStartAt == 1,
+                            onClick = { onNumStartAt(1) },
+                            label = { Text("全局连续编号") }
+                        )
+                        FilterChip(
+                            selected = numStartAt == 0,
+                            onClick = { onNumStartAt(0) },
+                            label = { Text("每份从第 1 页重新编号") }
+                        )
+                    }
+                    Text(
+                        if (numStartAt == 1) "按整份原 PDF 顺序编号（如证据2 首页延续证据1 末页页码）"
+                        else "每份产物页码独立从 1 开始",
+                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
     }
 
     Button(
@@ -833,11 +1063,80 @@ private fun SplitSection(
         if (busy) {
             CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
             Spacer(Modifier.width(10.dp))
-            Text("提取中…")
+            Text("拆分中…")
         } else {
             Icon(Icons.Default.ContentCut, contentDescription = null)
             Spacer(Modifier.width(8.dp))
-            Text("提取并保存 ${segments.size} 份", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Text("拆分并保存 ${segments.size} 份", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+// =====================================================================
+// 合并功能区
+// =====================================================================
+@Composable
+private fun MergeSection(
+    items: List<FileUtils.SavedFile>,
+    onClearItems: () -> Unit,
+    addPageNum: Boolean, onAddPageNum: (Boolean) -> Unit,
+    outName: String, onOutName: (String) -> Unit,
+    onMerge: () -> Unit,
+    busy: Boolean
+) {
+    ElevatedCard(shape = RoundedCornerShape(16.dp)) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            StepTitle(2, "合并选项")
+            Row(
+                modifier = Modifier.fillMaxWidth().clickable { onAddPageNum(!addPageNum) },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Checkbox(checked = addPageNum, onCheckedChange = { onAddPageNum(it) })
+                Text("为合并后的 PDF 添加页码")
+            }
+            OutlinedTextField(
+                value = outName,
+                onValueChange = onOutName,
+                label = { Text("输出文件名") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            if (items.isNotEmpty()) {
+                Text(
+                    "合并后共 ${items.size} 份 PDF",
+                    fontSize = 12.sp, color = BrandTokens.StatusSuccess
+                )
+            }
+        }
+    }
+
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        OutlinedButton(
+            onClick = onClearItems,
+            enabled = !busy && items.isNotEmpty(),
+            modifier = Modifier.weight(0.4f), shape = RoundedCornerShape(16.dp)
+        ) {
+            Icon(Icons.Default.Delete, contentDescription = null)
+            Spacer(Modifier.width(6.dp))
+            Text("清空")
+        }
+        Button(
+            onClick = onMerge,
+            enabled = !busy && items.size >= 2,
+            modifier = Modifier.weight(1f), shape = RoundedCornerShape(16.dp)
+        ) {
+            if (busy) {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                Spacer(Modifier.width(10.dp))
+                Text("合并中…")
+            } else {
+                Icon(Icons.Default.MergeType, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("合并并保存", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            }
         }
     }
 }

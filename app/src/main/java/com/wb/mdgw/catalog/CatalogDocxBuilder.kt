@@ -148,10 +148,8 @@ object CatalogDocxBuilder {
         // 表格后必须有一个段落
         sb.append(paragraphXml("", spec.bodyFont, spec.bodySizePt, bold = false,
             align = CatalogAlign.LEFT, beforePt = 0.0, afterPt = 4.0))
-        for (line in footerLines) {
-            sb.append(paragraphXml(line, spec.footerFont, spec.footerSizePt, bold = false,
-                align = CatalogAlign.RIGHT, beforePt = 2.0, afterPt = 2.0))
-        }
+        // 落款（提交人 / 日期）右对齐但距右边距缩进 4 字符：与 Markdown `rrr` 落款逻辑一致
+        emitFooterLines(sb, spec, footerLines)
 
         // 页面设置
         sb.append("<w:sectPr>")
@@ -259,19 +257,61 @@ object CatalogDocxBuilder {
 
     private fun paragraphXml(
         text: String, font: String, sizePt: Double, bold: Boolean,
-        align: CatalogAlign, beforePt: Double, afterPt: Double
+        align: CatalogAlign, beforePt: Double, afterPt: Double,
+        leftChars: Int = 0
     ): String {
         val sb = StringBuilder()
         sb.append("<w:p><w:pPr>")
         sb.append("<w:spacing w:before=\"").append(ptToTwips(beforePt))
             .append("\" w:after=\"").append(ptToTwips(afterPt))
             .append("\" w:line=\"240\" w:lineRule=\"auto\"/>")
-        sb.append("<w:ind w:firstLine=\"0\" w:firstLineChars=\"0\"/>")
+        if (leftChars > 0) {
+            sb.append("<w:ind w:left=\"").append(leftChars * 12)  // 12 twips per char at 12pt
+                .append("\" w:leftChars=\"").append(leftChars).append("\"/>")
+        } else {
+            sb.append("<w:ind w:firstLine=\"0\" w:firstLineChars=\"0\"/>")
+        }
         sb.append("<w:jc w:val=\"").append(align.xml).append("\"/>")
         sb.append("</w:pPr>")
         if (text.isNotEmpty()) sb.append(runXml(text, font, sizePt, bold))
         sb.append("</w:p>")
         return sb.toString()
+    }
+
+    /** 计算字符串的视觉宽度（以1/100字符为单位）：ASCII=50，CJK/全角=100 */
+    private fun visualWidthHundredths(s: String): Int {
+        var w = 0
+        for (c in s) {
+            w += if (c.code < 256) 50 else 100
+        }
+        return w
+    }
+
+    /**
+     * 输出落款行（提交人/日期），与 Markdown `rrr` 落款逻辑一致：
+     * - 右对齐但距右边距缩进 4 字符
+     * - 使用左对齐+左缩进实现，使各行首字对齐
+     */
+    private fun emitFooterLines(sb: StringBuilder, spec: Spec, lines: List<String>) {
+        if (lines.isEmpty()) return
+        // 计算版心可用字符数：A4宽度 - 左右边距，换算成 12pt 字体的字符数
+        val usableChars = ((PAGE_W_CM - spec.marginLeftCm - spec.marginRightCm) * 72.0 / 2.54 / spec.footerSizePt * 100).toInt()
+        val SIGN_RIGHT_CHARS = 4
+        val firstWidth = visualWidthHundredths(lines.first())
+        val leftChars = (usableChars - firstWidth - SIGN_RIGHT_CHARS * 100).coerceAtLeast(0)
+
+        for (line in lines) {
+            sb.append(paragraphXml(
+                text = line,
+                font = spec.footerFont,
+                sizePt = spec.footerSizePt,
+                bold = false,
+                align = CatalogAlign.LEFT,
+                beforePt = 2.0,
+                afterPt = 2.0,
+                leftChars = leftChars
+            ))
+        }
     }
 
     private fun runXml(text: String, font: String, sizePt: Double, bold: Boolean): String {
