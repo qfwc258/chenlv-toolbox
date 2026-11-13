@@ -63,15 +63,15 @@ internal fun ExportNameDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(dialogIcon, null, tint = MaterialTheme.colorScheme.primary) },
-        title = { Text(dialogTitle, fontWeight = FontWeight.Bold, fontSize = 17.sp) },
+        title = { Text(dialogTitle, fontWeight = FontWeight.Bold, fontSize = 16.sp) },
         text = {
             Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
                 OutlinedTextField(value = name, onValueChange = onNameChange, label = { Text("文件名") }, singleLine = true,
-                    suffix = { Text(".$ext", fontSize = 13.sp) }, modifier = Modifier.fillMaxWidth(), textStyle = TextStyle(fontSize = 15.sp))
+                    suffix = { Text(".$ext", fontSize = 14.sp) }, modifier = Modifier.fillMaxWidth(), textStyle = TextStyle(fontSize = 14.sp))
                 if (isCustom) {
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(value = suffix, onValueChange = onSuffixChange, label = { Text("自定义后缀（不含点）") }, singleLine = true,
-                        suffix = { Text(".xxx", fontSize = 13.sp) }, modifier = Modifier.fillMaxWidth(), textStyle = TextStyle(fontSize = 15.sp))
+                        suffix = { Text(".xxx", fontSize = 14.sp) }, modifier = Modifier.fillMaxWidth(), textStyle = TextStyle(fontSize = 14.sp))
                 }
                 Spacer(Modifier.height(6.dp))
                 Text(
@@ -99,7 +99,7 @@ internal fun TemplateListDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Default.Description, null, tint = MaterialTheme.colorScheme.primary) },
-        title = { Text("我的模板", fontWeight = FontWeight.Bold, fontSize = 17.sp) },
+        title = { Text("我的模板", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
         text = {
             Column(Modifier.fillMaxWidth()) {
                 if (templates.isEmpty()) {
@@ -111,18 +111,18 @@ internal fun TemplateListDialog(
                             Surface(
                                 onClick = { onApply(t) },
                                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                                shape = RoundedCornerShape(12.dp),
+                                shape = UI_RADIUS_MD,
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
                                     Column(Modifier.weight(1f)) {
-                                        Text(t.name, fontWeight = FontWeight.Medium, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Text(t.name, fontWeight = FontWeight.Medium, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                         val previewLine = t.content.lineSequence().firstOrNull { it.isNotBlank() }
                                         Text(previewLine ?: "（空模板）", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     }
                                     Spacer(Modifier.width(6.dp))
-                                    Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(8.dp)) {
-                                        Text("." + t.ext, fontSize = 10.sp, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                    Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = UI_RADIUS_SM) {
+                                        Text("." + t.ext, fontSize = 11.sp, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
                                     }
                                     IconButton(onClick = { onEdit(t) }, modifier = Modifier.size(30.dp)) {
                                         Icon(Icons.Default.Edit, "编辑模板", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -165,11 +165,11 @@ internal fun TemplateEditDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Default.EditNote, null, tint = MaterialTheme.colorScheme.primary) },
-        title = { Text(if (editing == null) "新建模板" else "编辑模板", fontWeight = FontWeight.Bold, fontSize = 17.sp) },
+        title = { Text(if (editing == null) "新建模板" else "编辑模板", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
         text = {
             Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
                 OutlinedTextField(value = name, onValueChange = onNameChange, label = { Text("模板名称") }, singleLine = true,
-                    modifier = Modifier.fillMaxWidth(), textStyle = TextStyle(fontSize = 15.sp))
+                    modifier = Modifier.fillMaxWidth(), textStyle = TextStyle(fontSize = 14.sp))
                 Spacer(Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     listOf("md", "txt").forEach { e ->
@@ -177,7 +177,7 @@ internal fun TemplateEditDialog(
                             onClick = { onExtChange(e) },
                             color = if (ext == e) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                            shape = RoundedCornerShape(12.dp),
+                            shape = UI_RADIUS_MD,
                             modifier = Modifier.height(30.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 14.dp)) {
@@ -191,7 +191,7 @@ internal fun TemplateEditDialog(
                 }
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(value = content, onValueChange = onContentChange, label = { Text("模板内容") },
-                    modifier = Modifier.fillMaxWidth().height(200.dp), textStyle = TextStyle(fontSize = 13.sp, fontFamily = FontFamily.Monospace))
+                    modifier = Modifier.fillMaxWidth().height(200.dp), textStyle = TextStyle(fontSize = 14.sp, fontFamily = FontFamily.Monospace))
             }
         },
         confirmButton = { Button(onClick = onSave) { Text("保存") } },
@@ -212,11 +212,11 @@ internal fun SaveNameDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Default.Save, null, tint = MaterialTheme.colorScheme.primary) },
-        title = { Text("保存文件", fontWeight = FontWeight.Bold, fontSize = 17.sp) },
+        title = { Text("保存文件", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
         text = {
             Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
                 OutlinedTextField(value = name, onValueChange = onNameChange, label = { Text("文件名") }, singleLine = true,
-                    suffix = { Text(if (isDocxSource) ".docx" else ".md", fontSize = 13.sp) }, modifier = Modifier.fillMaxWidth(), textStyle = TextStyle(fontSize = 15.sp))
+                    suffix = { Text(if (isDocxSource) ".docx" else ".md", fontSize = 14.sp) }, modifier = Modifier.fillMaxWidth(), textStyle = TextStyle(fontSize = 14.sp))
                 Spacer(Modifier.height(6.dp))
                 Text(
                     if (isDocxSource) "当前为 Word 文档，编辑后将另存为新的 .docx（原文件无法被覆盖写回）"
@@ -247,7 +247,7 @@ internal fun GovDraftRestoreDialog(
     AlertDialog(
         onDismissRequest = onDiscard,
         icon = { Icon(Icons.Default.Restore, null, tint = MaterialTheme.colorScheme.primary) },
-        title = { Text("恢复上次未保存的公文草稿？", fontWeight = FontWeight.Bold, fontSize = 17.sp) },
+        title = { Text("恢复上次未保存的公文草稿？", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
         text = {
             Column(Modifier.fillMaxWidth()) {
                 Text("标题：${draft.title.ifBlank { "（未命名）" }}", fontSize = 14.sp, fontWeight = FontWeight.Medium)
@@ -294,14 +294,14 @@ internal fun InPlaceEditDialog(
         },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()).fillMaxWidth()) {
-                Surface(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
+                Surface(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), shape = UI_RADIUS_SM, modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
                     Text("整段内容：${runs.joinToString("") { it.text }}", fontSize = 11.sp, lineHeight = 16.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(10.dp))
                 }
                 Column(Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
                     Row(Modifier.fillMaxWidth().padding(top = 6.dp)) {
                         FmtChip("全局查找替换", false, onOpenFindReplace)
                     }
-                    Text("提示：修改文字后点「保存」即可写入并刷新预览。", fontSize = 10.sp, lineHeight = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+                    Text("提示：修改文字后点「保存」即可写入并刷新预览。", fontSize = 11.sp, lineHeight = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
                 }
                 if (splitMode) {
                     groups.forEachIndexed { gi, g ->
@@ -313,7 +313,7 @@ internal fun InPlaceEditDialog(
                             }
                         }
                         OutlinedTextField(value = groupTexts[gi], onValueChange = { newVal -> groupTexts = groupTexts.toMutableList().also { it[gi] = newVal } },
-                            modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp), singleLine = false, shape = RoundedCornerShape(12.dp), textStyle = TextStyle(fontSize = 14.sp))
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp), singleLine = false, shape = UI_RADIUS_MD, textStyle = TextStyle(fontSize = 14.sp))
                     }
                 } else {
                     if (hasFormat) {
@@ -324,7 +324,7 @@ internal fun InPlaceEditDialog(
                         }
                         Text("带格式的字段会保持原样（下划线不丢失）；如需单独改某个字段的长度，打开右上角「按字段拆分」。", fontSize = 11.sp, lineHeight = 16.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))
                     }
-                    OutlinedTextField(value = fullText, onValueChange = { fullText = it }, modifier = Modifier.fillMaxWidth(), singleLine = false, minLines = 3, shape = RoundedCornerShape(12.dp), textStyle = TextStyle(fontSize = 14.sp))
+                    OutlinedTextField(value = fullText, onValueChange = { fullText = it }, modifier = Modifier.fillMaxWidth(), singleLine = false, minLines = 3, shape = UI_RADIUS_MD, textStyle = TextStyle(fontSize = 14.sp))
                 }
             }
         },
@@ -347,13 +347,13 @@ internal fun FindReplaceDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("全局查找替换", fontWeight = FontWeight.Bold, fontSize = 17.sp) },
+        title = { Text("全局查找替换", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
         text = {
             Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
                 OutlinedTextField(value = findText, onValueChange = onFindChange,
-                    label = { Text("查找") }, singleLine = true, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp))
+                    label = { Text("查找") }, singleLine = true, shape = UI_RADIUS_MD, modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp))
                 OutlinedTextField(value = replaceText, onValueChange = onReplaceChange,
-                    label = { Text("替换为") }, singleLine = true, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth())
+                    label = { Text("替换为") }, singleLine = true, shape = UI_RADIUS_MD, modifier = Modifier.fillMaxWidth())
                 Text("替换对全文生效（含表格），每个 run 内独立匹配。", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
             }
         },
@@ -371,8 +371,8 @@ internal fun FindReplaceDialog(
 
 @Composable
 internal fun StyleTag(label: String) {
-    Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(8.dp)) {
-        Text(label, fontSize = 10.sp, color = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+    Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = UI_RADIUS_SM) {
+        Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
     }
 }
 
@@ -383,8 +383,8 @@ internal fun FmtChip(text: String, active: Boolean, onClick: () -> Unit) {
     val fg = if (active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
     Surface(
         color = bg,
-        shape = RoundedCornerShape(8.dp),
-        modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick)
+        shape = UI_RADIUS_SM,
+        modifier = Modifier.clip(UI_RADIUS_SM).clickable(onClick = onClick)
     ) {
         Text(
             text, fontSize = 12.sp, color = fg,

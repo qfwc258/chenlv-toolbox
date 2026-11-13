@@ -33,6 +33,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.wb.mdgw.FileUtils
+import com.wb.mdgw.UI_RADIUS_MD
+import com.wb.mdgw.UI_RADIUS_SM
 import java.nio.charset.Charset
 import java.text.DecimalFormat
 
@@ -232,7 +234,7 @@ fun InjuryScreen() {
                                 Modifier.fillMaxWidth().padding(vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("劳动关系", fontSize = 15.sp, modifier = Modifier.weight(1f))
+                                Text("劳动关系", fontSize = 14.sp, modifier = Modifier.weight(1f))
                                 Text(
                                     "保留劳动关系（依法不得解除）",
                                     fontSize = 14.sp,
@@ -319,7 +321,7 @@ fun InjuryScreen() {
                     Row(
                         Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
+                            .clip(UI_RADIUS_SM)
                             .clickable {
                                 val nid = (fees.maxOfOrNull { it.id } ?: 0L) + 1L
                                 fees = fees + FeeDraft(nid, "", "")
@@ -354,7 +356,7 @@ fun InjuryScreen() {
                         Spacer(Modifier.height(6.dp))
                         Text(
                             "¥ ${"%,.2f".format(result.grandTotal)}",
-                            fontSize = 30.sp, fontWeight = FontWeight.Bold,
+                            fontSize = 28.sp, fontWeight = FontWeight.Bold,
                             color = com.wb.mdgw.BrandTokens.BrandRed
                         )
                         Spacer(Modifier.height(10.dp))
@@ -372,7 +374,7 @@ fun InjuryScreen() {
                             ) {
                                 Icon(Icons.Default.ContentCopy, contentDescription = null,
                                     modifier = Modifier.size(16.dp))
-                                Text(" 复制", fontSize = 13.sp)
+                                Text(" 复制", fontSize = 14.sp)
                             }
                             OutlinedButton(
                                 onClick = {
@@ -394,7 +396,7 @@ fun InjuryScreen() {
                             ) {
                                 Icon(Icons.Default.Share, contentDescription = null,
                                     modifier = Modifier.size(16.dp))
-                                Text(" 导出", fontSize = 13.sp)
+                                Text(" 导出", fontSize = 14.sp)
                             }
                         }
                         if (result.note.isNotEmpty()) {
@@ -405,7 +407,7 @@ fun InjuryScreen() {
                         Spacer(Modifier.height(4.dp))
                         Text(
                             "计算口径依据《工伤保险条例》及湖南省实施办法（2025）。本结果仅供参考，以社保 / 仲裁 / 法院认定为准。",
-                            fontSize = 10.sp, color = MaterialTheme.colorScheme.outline
+                            fontSize = 11.sp, color = MaterialTheme.colorScheme.outline
                         )
                     }
                 }
@@ -424,7 +426,7 @@ fun InjuryScreen() {
                 OutlinedButton(
                     onClick = { resetAll(); toast("已重置") },
                     modifier = Modifier.heightIn(min = 42.dp)
-                ) { Text("重置", fontSize = 13.sp) }
+                ) { Text("重置", fontSize = 14.sp) }
                 Button(
                     onClick = {
                         InjuryStore.saveCase(context, parseCase())
@@ -448,7 +450,7 @@ fun InjuryScreen() {
                         Row(
                             Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
+                                .clip(UI_RADIUS_SM)
                                 .clickable { p.onPick(v); picker = null }
                                 .padding(vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -457,7 +459,7 @@ fun InjuryScreen() {
                                 selected = p.selected == v,
                                 onClick = { p.onPick(v); picker = null }
                             )
-                            Text(" $l", fontSize = 15.sp)
+                            Text(" $l", fontSize = 14.sp)
                         }
                     }
                 }
@@ -523,7 +525,7 @@ fun InjuryScreen() {
                         Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(title, fontSize = 17.sp, fontWeight = FontWeight.SemiBold,
+                        Text(title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
                             modifier = Modifier.weight(1f))
                         IconButton(onClick = { panel = Panel.NONE }) {
                             Icon(Icons.Default.Close, contentDescription = "关闭")
@@ -550,15 +552,15 @@ fun InjuryScreen() {
                             Panel.METHOD -> {
                                 val lines = buildCalcMethodLines(parseCase(), params)
                                 if (lines.isEmpty()) {
-                                    Text("请先填写伤残等级 / 工亡相关项。", fontSize = 13.sp,
+                                    Text("请先填写伤残等级 / 工亡相关项。", fontSize = 14.sp,
                                         color = MaterialTheme.colorScheme.outline)
                                 } else lines.forEach {
-                                    Text("· $it", fontSize = 13.sp,
+                                    Text("· $it", fontSize = 14.sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
                             Panel.POLICY -> POLICY_NOTES.forEach {
-                                Text("· $it", fontSize = 13.sp,
+                                Text("· $it", fontSize = 14.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             Panel.NONE -> {}
@@ -588,7 +590,7 @@ private fun RankChip(
             )
         },
         modifier = modifier,
-        shape = RoundedCornerShape(12.dp)
+        shape = UI_RADIUS_MD
     )
 }
 
@@ -669,7 +671,7 @@ private fun ParamsPanel(
 /** 参数卡片内的分组小标题 */
 @Composable
 private fun SectionTitle(text: String) {
-    Text(text, fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
+    Text(text, fontWeight = FontWeight.SemiBold, fontSize = 14.sp,
         color = MaterialTheme.colorScheme.primary)
     Spacer(Modifier.height(4.dp))
 }
@@ -719,7 +721,7 @@ private fun LevelMonthField(level: Int, value: Float, modifier: Modifier = Modif
             },
             singleLine = true,
             placeholder = { Text("月", fontSize = 11.sp) },
-            textStyle = TextStyle(fontSize = 13.sp, textAlign = TextAlign.End),
+            textStyle = TextStyle(fontSize = 14.sp, textAlign = TextAlign.End),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             modifier = Modifier.weight(1f)
         )
@@ -746,7 +748,7 @@ private fun MonthlyResultCard(title: String, items: Map<String, Float>) {
             Modifier.fillMaxWidth().padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Text(title, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+            Text(title, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
             items.forEach { (k, v) ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(k, fontSize = 12.sp, modifier = Modifier.weight(1f))
@@ -780,7 +782,7 @@ private fun ModeTab(label: String, selected: Boolean, modifier: Modifier, onClic
     Surface(
         onClick = onClick,
         modifier = modifier,
-        shape = RoundedCornerShape(12.dp),
+        shape = UI_RADIUS_MD,
         color = if (selected) MaterialTheme.colorScheme.primaryContainer
         else MaterialTheme.colorScheme.surfaceVariant
     ) {
@@ -882,11 +884,11 @@ private fun SelectRow(
     Row(
         Modifier
             .fillMaxWidth()
-            .let { if (enabled) it.clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick) else it }
+            .let { if (enabled) it.clip(UI_RADIUS_SM).clickable(onClick = onClick) else it }
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(label, fontSize = 15.sp, modifier = Modifier.weight(1f),
+        Text(label, fontSize = 14.sp, modifier = Modifier.weight(1f),
             color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outline)
         Text(
             if (value.isBlank()) placeholder else value,
@@ -969,7 +971,7 @@ private fun FeeRow(
             onValueChange = onName,
             singleLine = true,
             placeholder = { Text("费用名称", fontSize = 12.sp) },
-            textStyle = TextStyle(fontSize = 13.sp),
+            textStyle = TextStyle(fontSize = 14.sp),
             modifier = Modifier.weight(1f)
         )
         Spacer(Modifier.width(8.dp))
@@ -978,7 +980,7 @@ private fun FeeRow(
             onValueChange = onAmount,
             singleLine = true,
             placeholder = { Text("金额", fontSize = 12.sp) },
-            textStyle = TextStyle(fontSize = 13.sp, textAlign = TextAlign.End),
+            textStyle = TextStyle(fontSize = 14.sp, textAlign = TextAlign.End),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
             modifier = Modifier.width(92.dp)
         )
@@ -996,7 +998,7 @@ private fun ResultGroupCard(title: String, items: Map<String, Float>, subtotal: 
             Modifier.fillMaxWidth().padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Text(title, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+            Text(title, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
             if (items.isEmpty()) {
                 Text("（无）", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
             } else {

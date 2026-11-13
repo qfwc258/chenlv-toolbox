@@ -31,6 +31,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.wb.mdgw.FileUtils
+import com.wb.mdgw.UI_BTN_RADIUS
+import com.wb.mdgw.UI_PRIMARY_BUTTON_HEIGHT
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -174,7 +176,7 @@ private fun EvidenceScreen(onBack: () -> Unit) {
                     title = {
                         Text(
                             "证据目录",
-                            style = com.wb.mdgw.BrandTokens.BrandTopBarTitleStyle.copy(fontSize = 20.sp)
+                            style = com.wb.mdgw.BrandTokens.BrandTopBarTitleStyle.copy(fontSize = 22.sp)
                         )
                     },
                     navigationIcon = {
@@ -199,8 +201,8 @@ private fun EvidenceScreen(onBack: () -> Unit) {
             Button(
                 onClick = { doGenerate() },
                 enabled = !busy,
-                modifier = Modifier.fillMaxWidth().padding(12.dp).height(50.dp),
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
+                modifier = Modifier.fillMaxWidth().padding(12.dp).height(UI_PRIMARY_BUTTON_HEIGHT),
+                shape = UI_BTN_RADIUS
             ) {
                 if (busy) {
                     CircularProgressIndicator(Modifier.size(20.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
@@ -221,7 +223,7 @@ private fun EvidenceScreen(onBack: () -> Unit) {
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                    shape = androidx.compose.foundation.shape.UI_RADIUS_LG,
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                 ) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -257,7 +259,7 @@ private fun EvidenceScreen(onBack: () -> Unit) {
                 OutlinedButton(
                     onClick = { items = items + EvidenceItem() },
                     modifier = Modifier.fillMaxWidth().height(46.dp),
-                    shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
+                    shape = androidx.compose.foundation.shape.UI_RADIUS_MD
                 ) {
                     Icon(Icons.Default.Add, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp)); Text("添加证据")
@@ -298,18 +300,18 @@ private fun EvidenceCard(
     var menu by remember { mutableStateOf(false) }
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
+        shape = androidx.compose.foundation.shape.UI_RADIUS_LG
     ) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
                     color = MaterialTheme.colorScheme.primaryContainer,
-                    shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
+                    shape = androidx.compose.foundation.shape.UI_RADIUS_SM
                 ) {
                     Text(
                         "证据 ${index + 1}",
                         fontWeight = FontWeight.SemiBold,
-                        fontSize = 13.sp,
+                        fontSize = 14.sp,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                     )
@@ -426,7 +428,7 @@ private fun ArchiveScreen(onBack: () -> Unit) {
                     title = {
                         Text(
                             "法援目录",
-                            style = com.wb.mdgw.BrandTokens.BrandTopBarTitleStyle.copy(fontSize = 20.sp)
+                            style = com.wb.mdgw.BrandTokens.BrandTopBarTitleStyle.copy(fontSize = 22.sp)
                         )
                     },
                     navigationIcon = {
@@ -451,8 +453,8 @@ private fun ArchiveScreen(onBack: () -> Unit) {
             Button(
                 onClick = { doGenerate() },
                 enabled = !busy,
-                modifier = Modifier.fillMaxWidth().padding(12.dp).height(50.dp),
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
+                modifier = Modifier.fillMaxWidth().padding(12.dp).height(UI_PRIMARY_BUTTON_HEIGHT),
+                shape = UI_BTN_RADIUS
             ) {
                 if (busy) {
                     CircularProgressIndicator(Modifier.size(20.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
@@ -471,7 +473,7 @@ private fun ArchiveScreen(onBack: () -> Unit) {
         ) {
             item {
                 Card(
-                    shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                    shape = androidx.compose.foundation.shape.UI_RADIUS_LG,
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                 ) {
                     CatalogField(title, { title = it }, "标题",
@@ -479,7 +481,7 @@ private fun ArchiveScreen(onBack: () -> Unit) {
                 }
             }
             itemsIndexed(items, key = { i, _ -> i }) { i, item ->
-                Card(shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)) {
+                Card(shape = androidx.compose.foundation.shape.UI_RADIUS_MD) {
                     Row(
                         Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -492,7 +494,7 @@ private fun ArchiveScreen(onBack: () -> Unit) {
                         )
                         Text(
                             item.name,
-                            fontSize = 13.sp,
+                            fontSize = 14.sp,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier
@@ -525,7 +527,7 @@ private fun ArchiveScreen(onBack: () -> Unit) {
                                 },
                                 onDone = { focusManager.clearFocus() }
                             ),
-                            shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
+                            shape = androidx.compose.foundation.shape.UI_RADIUS_MD
                         )
                     }
                 }
@@ -596,7 +598,7 @@ private fun CatalogField(
         singleLine = singleLine,
         minLines = minLines,
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
+        shape = androidx.compose.foundation.shape.UI_RADIUS_MD
     )
 }
 

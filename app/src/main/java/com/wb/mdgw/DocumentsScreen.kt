@@ -248,7 +248,7 @@ fun DocumentsScreen(
                     title = {
                         Text(
                             "我的文档",
-                            style = com.wb.mdgw.BrandTokens.BrandTopBarTitleStyle.copy(fontSize = 20.sp)
+                            style = com.wb.mdgw.BrandTokens.BrandTopBarTitleStyle.copy(fontSize = 22.sp)
                         )
                     },
                     navigationIcon = {
@@ -357,7 +357,7 @@ private fun DocRow(
     // 与主页卡片同语言：宣纸色 + 1dp 金色左线 + 朱砂红圆形图标底 + Serif Semibold 标题
     Card(
         onClick = onOpen,
-        shape = RoundedCornerShape(8.dp),
+        shape = UI_RADIUS_SM,
         colors = CardDefaults.cardColors(containerColor = com.wb.mdgw.BrandTokens.BrandParchment),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp, pressedElevation = 1.dp),
         modifier = Modifier.fillMaxWidth()

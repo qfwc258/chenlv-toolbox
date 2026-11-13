@@ -78,7 +78,7 @@ fun SettingsScreen() {
             }
             SettingsRow(title = "关于", desc = "版本、开发者与联系方式") {
                 TextButton(onClick = { showAbout = true }) {
-                    Text("查看", fontSize = 13.sp)
+                    Text("查看", fontSize = 14.sp)
                 }
             }
             // 检查更新：有新版时标题旁亮红点，描述变为「发现新版本」
@@ -104,7 +104,7 @@ fun SettingsScreen() {
                             Spacer(Modifier.width(8.dp))
                         }
                         TextButton(onClick = { updateController.check() }) {
-                            Text("检查", fontSize = 13.sp)
+                            Text("检查", fontSize = 14.sp)
                         }
                     }
                 }
@@ -135,14 +135,14 @@ fun SettingsScreen() {
                             } else {
                                 Toast.makeText(context, "暂无崩溃日志", Toast.LENGTH_SHORT).show()
                             }
-                        }) { Text("导出", fontSize = 13.sp) }
+                        }) { Text("导出", fontSize = 14.sp) }
                         TextButton(onClick = {
                             CrashLogStore.clear(context)
                             crashCount = 0
                             Toast.makeText(context, "已清除崩溃日志", Toast.LENGTH_SHORT).show()
-                        }) { Text("清除", fontSize = 13.sp) }
+                        }) { Text("清除", fontSize = 14.sp) }
                     } else {
-                        Text("—", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("—", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -157,7 +157,7 @@ fun SettingsScreen() {
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(UI_RADIUS_MD)
                         .background(if (sel) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
                         .clickable { AppSettings.chooseWordSpec(context, spec) }
                         .padding(horizontal = 10.dp, vertical = 8.dp)
@@ -170,7 +170,7 @@ fun SettingsScreen() {
                     )
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(spec.specName, fontWeight = FontWeight.SemiBold, fontSize = 13.5.sp)
+                        Text(spec.specName, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                         Text(
                             when (spec.specName) {
                                 "国标通用" -> "默认标准格式"
@@ -205,7 +205,7 @@ fun SettingsScreen() {
                 ) { Text("−", fontSize = 16.sp) }
                 Text(
                     "${signRightChars} 字",
-                    fontSize = 13.sp, fontWeight = FontWeight.Medium,
+                    fontSize = 14.sp, fontWeight = FontWeight.Medium,
                     modifier = Modifier.padding(horizontal = 10.dp)
                 )
                 OutlinedButton(
@@ -228,7 +228,7 @@ fun SettingsScreen() {
                     FilterChip(
                         selected = titleFont == v,
                         onClick = { AppSettings.setTitleFont(context, v) },
-                        label = { Text(label, fontSize = 13.sp, maxLines = 1, softWrap = false) },
+                        label = { Text(label, fontSize = 14.sp, maxLines = 1, softWrap = false) },
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -244,7 +244,7 @@ fun SettingsScreen() {
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(UI_RADIUS_MD)
                         .background(if (sel) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
                         .clickable { AppSettings.setWechatTheme(context, theme.key) }
                         .padding(horizontal = 10.dp, vertical = 8.dp)
@@ -256,7 +256,7 @@ fun SettingsScreen() {
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(Modifier.width(10.dp))
-                    Text(theme.name, fontWeight = FontWeight.Medium, fontSize = 13.5.sp)
+                    Text(theme.name, fontWeight = FontWeight.Medium, fontSize = 14.sp)
                 }
             }
             Row(
@@ -270,7 +270,7 @@ fun SettingsScreen() {
                 ) {
                     Icon(Icons.Default.Edit, null, Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("自定义 CSS", fontSize = 12.5.sp, maxLines = 1, softWrap = false)
+                    Text("自定义 CSS", fontSize = 12.sp, maxLines = 1, softWrap = false)
                 }
                 OutlinedButton(
                     onClick = {
@@ -283,7 +283,7 @@ fun SettingsScreen() {
                 ) {
                     Icon(Icons.Default.RestartAlt, null, Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("恢复默认", fontSize = 12.5.sp, maxLines = 1, softWrap = false)
+                    Text("恢复默认", fontSize = 12.sp, maxLines = 1, softWrap = false)
                 }
             }
         }
@@ -384,7 +384,7 @@ private fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> 
         Modifier
             .fillMaxWidth()
             .padding(bottom = 12.dp)
-            .clip(RoundedCornerShape(16.dp))
+            .clip(UI_RADIUS_LG)
             .background(MaterialTheme.colorScheme.surface)
             .padding(12.dp)
     ) {

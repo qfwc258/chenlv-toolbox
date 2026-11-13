@@ -89,7 +89,7 @@ internal fun PptxSettingsDialog(
         contentAlignment = Alignment.Center
     ) {
         Surface(
-            shape = RoundedCornerShape(16.dp),
+            shape = UI_RADIUS_LG,
             tonalElevation = 6.dp,
             color = MaterialTheme.colorScheme.surface,
             modifier = Modifier
@@ -113,7 +113,7 @@ internal fun PptxSettingsDialog(
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 4.dp)) {
                     Icon(Icons.Default.Tune, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("设置", fontWeight = FontWeight.Bold, fontSize = 17.sp, modifier = Modifier.weight(1f))
+                    Text("设置", fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.weight(1f))
                     IconButton(onClick = onDismiss, modifier = Modifier.size(30.dp)) {
                         Icon(Icons.Filled.Close, "关闭", Modifier.size(18.dp))
                     }
@@ -154,7 +154,7 @@ internal fun PptxSettingsDialog(
                 // 波浪参数（始终显示）：高度 / 透明度 / 层次对比，100% = 出厂效果
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = UI_RADIUS_MD,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
@@ -175,7 +175,7 @@ internal fun PptxSettingsDialog(
                 // 直线色块参数（始终显示）：高度可调（默认 1/60 页高），颜色跟随主题主色调
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = UI_RADIUS_MD,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
@@ -184,7 +184,7 @@ internal fun PptxSettingsDialog(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text("直线色块高度", fontSize = 13.sp, modifier = Modifier.weight(1f))
+                            Text("直线色块高度", fontSize = 14.sp, modifier = Modifier.weight(1f))
                             Text(
                                 "1/${barHeightDenom} 页高",
                                 fontSize = 12.sp, fontWeight = FontWeight.Medium,
@@ -211,7 +211,7 @@ internal fun PptxSettingsDialog(
                 Spacer(Modifier.height(6.dp))
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = UI_RADIUS_MD,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
@@ -227,7 +227,7 @@ internal fun PptxSettingsDialog(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text("大小", fontSize = 13.sp, modifier = Modifier.weight(1f))
+                            Text("大小", fontSize = 14.sp, modifier = Modifier.weight(1f))
                             Text(
                                 "${(logoScale * 100).roundToInt()}%",
                                 fontSize = 12.sp, fontWeight = FontWeight.Medium,
@@ -248,7 +248,7 @@ internal fun PptxSettingsDialog(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Text("水平", fontSize = 13.sp, modifier = Modifier.weight(0.3f))
+                            Text("水平", fontSize = 14.sp, modifier = Modifier.weight(0.3f))
                             Pill("左", logoHAlign == "left") { onLogoHAlign("left") }
                             Pill("右", logoHAlign == "right") { onLogoHAlign("right") }
                         }
@@ -259,7 +259,7 @@ internal fun PptxSettingsDialog(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Text("垂直", fontSize = 13.sp, modifier = Modifier.weight(0.3f))
+                            Text("垂直", fontSize = 14.sp, modifier = Modifier.weight(0.3f))
                             Pill("上", logoVAlign == "top") { onLogoVAlign("top") }
                             Pill("下", logoVAlign == "bottom") { onLogoVAlign("bottom") }
                         }
@@ -404,7 +404,7 @@ internal fun PptxStyleDialog(
         contentAlignment = Alignment.Center
     ) {
         Surface(
-            shape = RoundedCornerShape(16.dp),
+            shape = UI_RADIUS_LG,
             tonalElevation = 6.dp,
             color = MaterialTheme.colorScheme.surface,
             modifier = Modifier
@@ -428,7 +428,7 @@ internal fun PptxStyleDialog(
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 2.dp)) {
                     Icon(Icons.Default.Palette, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("自定义样式（CSS）", fontWeight = FontWeight.Bold, fontSize = 17.sp, modifier = Modifier.weight(1f))
+                    Text("自定义样式（CSS）", fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.weight(1f))
                     IconButton(onClick = onDismiss, modifier = Modifier.size(30.dp)) {
                         Icon(Icons.Filled.Close, "关闭", Modifier.size(18.dp))
                     }
@@ -481,7 +481,7 @@ internal fun WaveParamSlider(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text(label, fontSize = 13.sp, modifier = Modifier.weight(1f))
+            Text(label, fontSize = 14.sp, modifier = Modifier.weight(1f))
             Text(
                 "${(value * 100).roundToInt()}%",
                 fontSize = 12.sp, fontWeight = FontWeight.Medium,
@@ -541,7 +541,7 @@ internal fun CompositionSelector(
                 )
                 Text(
                     "全部应用",
-                    fontSize = 10.sp,
+                    fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.outline,
                     maxLines = 1,
                     modifier = Modifier.padding(end = 4.dp)
@@ -607,7 +607,7 @@ internal fun CompositionSelector(
                 if (comp.hasBigBlock) {
                     Text(
                         "有色块时不可用",
-                        fontSize = 10.sp,
+                        fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
                         modifier = Modifier.padding(horizontal = 4.dp)
                     )
@@ -633,7 +633,7 @@ internal fun AxisSection(title: String, content: @Composable ColumnScope.() -> U
     Column(Modifier.fillMaxWidth().padding(top = 4.dp)) {
         Text(
             title,
-            fontSize = 10.sp,
+            fontSize = 11.sp,
             color = MaterialTheme.colorScheme.outline,
             maxLines = 1,
             modifier = Modifier.padding(bottom = 3.dp)
@@ -674,14 +674,14 @@ internal fun ColumnWidthSlider(
         ) {
             Text(
                 if (colRatio == null) "智能" else "${colRatio}%",
-                fontSize = 9.sp,
+                fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1
             )
             if (colRatio != null) {
                 Text(
                     "✕",
-                    fontSize = 9.sp,
+                    fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.outline,
                     modifier = Modifier.clickable { onRatioChange(null) }
                 )
@@ -737,7 +737,7 @@ internal fun PillWithIcon(
             Box(
                 modifier = Modifier
                     .size(width = 8.dp, height = 14.dp)
-                    .clip(RoundedCornerShape(8.dp))
+                    .clip(UI_RADIUS_SM)
                     .background(
                         when (iconShape) {
                             ColorBlock.NONE -> grayColor
@@ -750,7 +750,7 @@ internal fun PillWithIcon(
                     )
             )
             Spacer(Modifier.width(4.dp))
-            Text(text, fontSize = 10.sp, color = fg, maxLines = 1)
+            Text(text, fontSize = 11.sp, color = fg, maxLines = 1)
         }
     }
 }
@@ -765,7 +765,7 @@ internal fun AlignmentCell(text: String, selected: Boolean, onClick: () -> Unit)
         modifier = Modifier.size(width = 38.dp, height = 26.dp)
     ) {
         Box(contentAlignment = Alignment.Center) {
-            Text(text, fontSize = 10.sp, color = fg, maxLines = 1)
+            Text(text, fontSize = 11.sp, color = fg, maxLines = 1)
         }
     }
 }
@@ -829,7 +829,7 @@ internal fun Pill(text: String, selected: Boolean, compact: Boolean = false, onC
     ) {
         Text(
             text,
-            fontSize = 10.sp,
+            fontSize = 11.sp,
             color = fg,
             maxLines = 1,
             modifier = Modifier.padding(horizontal = 6.dp)

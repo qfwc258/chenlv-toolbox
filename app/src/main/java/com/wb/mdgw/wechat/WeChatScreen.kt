@@ -399,7 +399,7 @@ private fun ThemeToolbar(
                 ) {
                     Text(
                         currentName,
-                        fontSize = 13.sp,
+                        fontSize = 14.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -473,7 +473,7 @@ private fun ActionBar(
             Button(onClick = onCopy, shape = UI_BTN_RADIUS, modifier = btnMod, contentPadding = btnPad) {
                 Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(17.dp))
                 Spacer(Modifier.width(5.dp))
-                Text("复制", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
+                Text("复制", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
             }
             OutlinedButton(
                 onClick = onClear, shape = UI_BTN_RADIUS, modifier = btnMod,
@@ -482,7 +482,7 @@ private fun ActionBar(
             ) {
                 Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(17.dp))
                 Spacer(Modifier.width(5.dp))
-                Text("清空", fontSize = 13.sp, maxLines = 1, softWrap = false)
+                Text("清空", fontSize = 14.sp, maxLines = 1, softWrap = false)
             }
             // 低频操作（载入示例 / 导入 MD）收进「更多」菜单，主操作更聚焦
             Box(modifier = btnMod) {
@@ -494,7 +494,7 @@ private fun ActionBar(
                 ) {
                     Icon(Icons.Default.MoreHoriz, contentDescription = null, modifier = Modifier.size(17.dp))
                     Spacer(Modifier.width(5.dp))
-                    Text("更多", fontSize = 13.sp, maxLines = 1, softWrap = false)
+                    Text("更多", fontSize = 14.sp, maxLines = 1, softWrap = false)
                 }
                 DropdownMenu(
                     expanded = expanded,

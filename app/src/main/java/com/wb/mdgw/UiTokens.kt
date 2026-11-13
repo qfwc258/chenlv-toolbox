@@ -26,20 +26,31 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** ===== 统一设计令牌：圆角阶梯（全 App 只允许这三档，消除 14 种散乱值）===== */
-val UI_RADIUS_SM = RoundedCornerShape(8.dp)    // 小：标签、内嵌块、小芯片
-val UI_RADIUS_MD = RoundedCornerShape(12.dp)   // 中：卡片、分区、按钮（主力）
-val UI_RADIUS_LG = RoundedCornerShape(16.dp)   // 大：弹窗、大卡片
-/** ===== 统一间距阶梯 ===== */
+/** ===== 统一设计令牌：圆角阶梯（M3 规范 8dp 栅格）===== */
+val UI_RADIUS_SM = UI_RADIUS_SM    // 小：标签、内嵌块、小芯片
+val UI_RADIUS_MD = UI_RADIUS_MD   // 中：卡片（M3 Card 12dp）
+val UI_RADIUS_LG = UI_RADIUS_LG   // 大：按钮（M3 FilledButton 16dp）、弹窗、大卡片
+/** ===== 统一间距阶梯（M3 8dp 栅格）===== */
 val UI_SPACE_XS = 4.dp
 val UI_SPACE_SM = 8.dp
-val UI_SPACE_MD = 12.dp
-val UI_SPACE_LG = 16.dp
-/** 兼容旧引用：统一指向中圆角，旧代码自动收敛 */
+val UI_SPACE_MD = 16.dp
+val UI_SPACE_LG = 24.dp
+/** 兼容旧引用 */
 val UI_SECTION_RADIUS = UI_RADIUS_MD
 val UI_CARD_RADIUS = UI_RADIUS_MD
-val UI_BTN_RADIUS = UI_RADIUS_MD
-val UI_ACTION_HEIGHT = 46.dp
+val UI_BTN_RADIUS = UI_RADIUS_LG
+val UI_ACTION_HEIGHT = 48.dp
+
+/**
+ * 统一主操作按钮高度：M3 FilledButton 规范 48dp。
+ */
+val UI_PRIMARY_BUTTON_HEIGHT = 48.dp
+
+/**
+ * 统一按钮文字：允许换行（softWrap 默认 true）并保留 maxLines=2，
+ * 避免长文案在窄屏上被截断成「...」。
+ */
+const val UI_BUTTON_MAX_LINES = 2
 
 /**
  * 分段控件（胶囊背景 + 选中态主色填充 + 图标），用于「编辑/预览」「加页码/盖章」等二选一切换。
@@ -70,7 +81,7 @@ fun SegmentedTabs(
                         ) {
                             Icon(icon, null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(17.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text(label, color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, softWrap = false)
+                            Text(label, color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 1, softWrap = false)
                         }
                     }
                 } else {
@@ -78,7 +89,7 @@ fun SegmentedTabs(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(icon, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(17.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, maxLines = 1, softWrap = false)
+                            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp, maxLines = 1, softWrap = false)
                         }
                     }
                 }
@@ -159,30 +170,30 @@ fun ExportResultDialog(
         AlertDialog(
             onDismissRequest = onDismiss,
             icon = { Icon(Icons.Default.CheckCircle, null, tint = BrandTokens.StatusSuccess, modifier = Modifier.size(30.dp)) },
-            title = { Text(title, fontWeight = FontWeight.Bold, fontSize = 17.sp) },
+            title = { Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp) },
             text = {
                 Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = UI_RADIUS_SM, modifier = Modifier.fillMaxWidth()) {
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(10.dp)) {
                             Icon(fileIcon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text(fileName, fontWeight = FontWeight.Medium, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            Text(fileName, fontWeight = FontWeight.Medium, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         }
                     }
                     Text("保存位置：$savePath", fontSize = 11.sp, lineHeight = 16.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(2.dp))
                     OutlinedButton(onClick = onOpen, modifier = Modifier.fillMaxWidth().height(UI_ACTION_HEIGHT), shape = UI_BTN_RADIUS) {
-                        Icon(Icons.AutoMirrored.Filled.OpenInNew, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
-                        Text("用其他应用打开", fontSize = 14.sp, maxLines = 1, softWrap = false)
+                        Icon(Icons.AutoMirrored.Filled.OpenInNew, null, modifier = Modifier.size(20.dp)); Spacer(Modifier.width(8.dp))
+                        Text("用其他应用打开", fontSize = 14.sp, maxLines = UI_BUTTON_MAX_LINES)
                     }
                     Button(onClick = onShare, modifier = Modifier.fillMaxWidth().height(UI_ACTION_HEIGHT), shape = UI_BTN_RADIUS) {
-                        Icon(Icons.Default.Share, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
-                        Text("分享文件", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
+                        Icon(Icons.Default.Share, null, modifier = Modifier.size(20.dp)); Spacer(Modifier.width(8.dp))
+                        Text("分享文件", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = UI_BUTTON_MAX_LINES)
                     }
                     if (extraActionText != null && onExtraAction != null) {
                         OutlinedButton(onClick = onExtraAction, modifier = Modifier.fillMaxWidth().height(UI_ACTION_HEIGHT), shape = UI_BTN_RADIUS) {
-                            Icon(Icons.Default.PictureAsPdf, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
-                            Text(extraActionText, fontSize = 14.sp, maxLines = 1, softWrap = false)
+                            Icon(Icons.Default.PictureAsPdf, null, modifier = Modifier.size(20.dp)); Spacer(Modifier.width(8.dp))
+                            Text(extraActionText, fontSize = 14.sp, maxLines = UI_BUTTON_MAX_LINES)
                         }
                     }
                 }

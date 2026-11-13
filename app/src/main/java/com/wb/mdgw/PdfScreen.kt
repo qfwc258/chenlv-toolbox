@@ -426,7 +426,7 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .size(240.dp)
-                    .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(16.dp))
+                    .background(MaterialTheme.colorScheme.surface, UI_RADIUS_LG)
                     .padding(24.dp)
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -454,7 +454,7 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(8.dp)
-                                .clip(RoundedCornerShape(8.dp)),
+                                .clip(UI_RADIUS_SM),
                             color = MaterialTheme.colorScheme.primary,
                             trackColor = MaterialTheme.colorScheme.surfaceVariant
                         )
@@ -470,7 +470,7 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(8.dp)
-                                .clip(RoundedCornerShape(8.dp)),
+                                .clip(UI_RADIUS_SM),
                             color = MaterialTheme.colorScheme.primary,
                             trackColor = MaterialTheme.colorScheme.surfaceVariant
                         )
@@ -550,7 +550,7 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
         // ---------- 步骤 1 选择文件 ----------
         if (tab == PdfTab.MERGE) {
             // 合并：独立多选
-            ElevatedCard(shape = RoundedCornerShape(16.dp)) {
+            ElevatedCard(shape = UI_RADIUS_LG) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     StepTitle(1, "选择多个 PDF 文件")
                     Text(
@@ -561,7 +561,7 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                         onClick = { mergePicker.launch(arrayOf("application/pdf")) },
                         enabled = !busy,
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
+                        shape = UI_RADIUS_MD
                     ) {
                         Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(20.dp))
                         Spacer(Modifier.width(8.dp))
@@ -570,7 +570,7 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                     if (mergeItems.isNotEmpty()) {
                         Surface(
                             color = MaterialTheme.colorScheme.surfaceVariant,
-                            shape = RoundedCornerShape(12.dp),
+                            shape = UI_RADIUS_MD,
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -587,14 +587,14 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                 }
             }
         } else {
-        ElevatedCard(shape = RoundedCornerShape(16.dp)) {
+        ElevatedCard(shape = UI_RADIUS_LG) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 StepTitle(1, "选择 PDF 文件")
                 Button(
                     onClick = { pdfPicker.launch(arrayOf("application/pdf")) },
                     enabled = !busy,
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = UI_RADIUS_MD
                 ) {
                     Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(8.dp))
@@ -603,7 +603,7 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                 if (fileName.isNotBlank()) {
                     Surface(
                         color = MaterialTheme.colorScheme.surfaceVariant,
-                        shape = RoundedCornerShape(12.dp),
+                        shape = UI_RADIUS_MD,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -680,7 +680,7 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
 
         // ---------- 加页码结果 ----------
         if (tab == PdfTab.PAGE_NUM && stage == PdfStage.DONE) {
-            ElevatedCard(shape = RoundedCornerShape(16.dp)) {
+            ElevatedCard(shape = UI_RADIUS_LG) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.CheckCircle, contentDescription = null, tint = BrandTokens.StatusSuccess)
@@ -688,16 +688,16 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                         Text("✓ 页码已添加并保存", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     }
                     Text(outName, fontWeight = FontWeight.Medium)
-                    Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+                    Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = UI_RADIUS_MD, modifier = Modifier.fillMaxWidth()) {
                         Text("保存位置：$savedPath", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(10.dp))
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        OutlinedButton(onClick = { shareResult(open = true) }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp)) {
+                        OutlinedButton(onClick = { shareResult(open = true) }, modifier = Modifier.weight(1f), shape = UI_BTN_RADIUS) {
                             Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(6.dp))
                             Text("打开文件")
                         }
-                        Button(onClick = { shareResult(open = false) }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp)) {
+                        Button(onClick = { shareResult(open = false) }, modifier = Modifier.weight(1f), shape = UI_BTN_RADIUS) {
                             Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(6.dp))
                             Text("分享文件")
@@ -709,7 +709,7 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
 
         // ---------- 合并结果 ----------
         if (tab == PdfTab.MERGE && stage == PdfStage.DONE && savedFile != null) {
-            ElevatedCard(shape = RoundedCornerShape(16.dp)) {
+            ElevatedCard(shape = UI_RADIUS_LG) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.CheckCircle, contentDescription = null, tint = BrandTokens.StatusSuccess)
@@ -717,16 +717,16 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                         Text("✓ 已合并并保存", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     }
                     Text(outName, fontWeight = FontWeight.Medium)
-                    Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+                    Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = UI_RADIUS_MD, modifier = Modifier.fillMaxWidth()) {
                         Text("保存位置：$savedPath", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(10.dp))
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        OutlinedButton(onClick = { shareResult(open = true) }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp)) {
+                        OutlinedButton(onClick = { shareResult(open = true) }, modifier = Modifier.weight(1f), shape = UI_BTN_RADIUS) {
                             Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(6.dp))
                             Text("打开文件")
                         }
-                        Button(onClick = { shareResult(open = false) }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp)) {
+                        Button(onClick = { shareResult(open = false) }, modifier = Modifier.weight(1f), shape = UI_BTN_RADIUS) {
                             Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(6.dp))
                             Text("分享文件")
@@ -738,7 +738,7 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
 
         // ---------- 拆分结果 ----------
         if (tab == PdfTab.SPLIT && splitResults.isNotEmpty()) {
-            ElevatedCard(shape = RoundedCornerShape(16.dp)) {
+            ElevatedCard(shape = UI_RADIUS_LG) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.CheckCircle, contentDescription = null, tint = BrandTokens.StatusSuccess)
@@ -748,7 +748,7 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                     splitResults.forEach { (name, sf) ->
                         Surface(
                             color = MaterialTheme.colorScheme.surfaceVariant,
-                            shape = RoundedCornerShape(12.dp),
+                            shape = UI_RADIUS_MD,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
@@ -764,7 +764,7 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                                 Icon(Icons.Default.PictureAsPdf, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.width(8.dp))
                                 Column(Modifier.weight(1f)) {
-                                    Text(name, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(name, fontSize = 14.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     Text(sf.displayPath, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
                                 Spacer(Modifier.width(8.dp))
@@ -781,7 +781,7 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                                     )
                                 }.onFailure { scope.launch { snackbar.showSnackbar(friendlyError(it)) } }
                             },
-                            modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp)
+                            modifier = Modifier.weight(1f), shape = UI_RADIUS_MD
                         ) {
                             Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(6.dp))
@@ -795,7 +795,7 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                                     )
                                 }.onFailure { scope.launch { snackbar.showSnackbar(friendlyError(it)) } }
                             },
-                            modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp)
+                            modifier = Modifier.weight(1f), shape = UI_RADIUS_MD
                         ) {
                             Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(6.dp))
@@ -808,14 +808,14 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
 
         // ---------- 说明 ----------
         if (stage == PdfStage.IDLE) {
-            ElevatedCard(shape = RoundedCornerShape(16.dp)) {
+            ElevatedCard(shape = UI_RADIUS_LG) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("功能说明", fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(2.dp))
-                    Text("• 加页码：在每页按所选位置叠加页码，不改变原文字与版式", fontSize = 13.sp)
-                    Text("• 盖章：选择透明印章 PNG，拖拽定位后衬在文字下方导出", fontSize = 13.sp)
-                    Text("• 拆分：按页号一次拆成多份独立 PDF，命名为「证据1-名称」等\n• 合并：多份 PDF 按顺序合成一份，可选加页码", fontSize = 13.sp)
-                    Text("• 纯本地处理，文件不上传任何服务器", fontSize = 13.sp)
+                    Text("• 加页码：在每页按所选位置叠加页码，不改变原文字与版式", fontSize = 14.sp)
+                    Text("• 盖章：选择透明印章 PNG，拖拽定位后衬在文字下方导出", fontSize = 14.sp)
+                    Text("• 拆分：按页号一次拆成多份独立 PDF，命名为「证据1-名称」等\n• 合并：多份 PDF 按顺序合成一份，可选加页码", fontSize = 14.sp)
+                    Text("• 纯本地处理，文件不上传任何服务器", fontSize = 14.sp)
                     Spacer(Modifier.height(4.dp))
                     Text("暂不支持已加密（设密码）的 PDF。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -839,7 +839,7 @@ private fun PageNumberSection(
     colorPreset: PdfPageNum.ColorPreset, onColorPreset: (PdfPageNum.ColorPreset) -> Unit,
     onProcess: () -> Unit, busy: Boolean
 ) {
-    ElevatedCard(shape = RoundedCornerShape(16.dp)) {
+    ElevatedCard(shape = UI_RADIUS_LG) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             StepTitle(2, "页码设置")
             Text("页码位置", fontWeight = FontWeight.Medium)
@@ -911,7 +911,7 @@ private fun PageNumberSection(
 
     Button(
         onClick = onProcess, enabled = !busy,
-        modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(16.dp)
+        modifier = Modifier.fillMaxWidth().height(UI_PRIMARY_BUTTON_HEIGHT), shape = UI_BTN_RADIUS
     ) {
         if (busy) {
             CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
@@ -963,7 +963,7 @@ private fun SplitSection(
         if (totalPages > 0 && segments.isNotEmpty()) PdfEvidenceExtract.validate(segments, totalPages) else null
     }
 
-    ElevatedCard(shape = RoundedCornerShape(16.dp)) {
+    ElevatedCard(shape = UI_RADIUS_LG) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             StepTitle(2, "页号规则")
             Text(
@@ -994,7 +994,7 @@ private fun SplitSection(
     }
 
     if (segments.isNotEmpty()) {
-        ElevatedCard(shape = RoundedCornerShape(16.dp)) {
+        ElevatedCard(shape = UI_RADIUS_LG) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 StepTitle(3, "自定义名称")
                 Text(
@@ -1015,7 +1015,7 @@ private fun SplitSection(
         }
 
         // 可选：拆分后为每份产物加页码
-        ElevatedCard(shape = RoundedCornerShape(16.dp)) {
+        ElevatedCard(shape = UI_RADIUS_LG) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 StepTitle(4, "加页码（可选）")
                 Row(
@@ -1058,7 +1058,7 @@ private fun SplitSection(
             }
         },
         enabled = !busy && segments.isNotEmpty() && rangeError == null && boundsError == null,
-        modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(16.dp)
+        modifier = Modifier.fillMaxWidth().height(UI_PRIMARY_BUTTON_HEIGHT), shape = UI_BTN_RADIUS
     ) {
         if (busy) {
             CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
@@ -1084,7 +1084,7 @@ private fun MergeSection(
     onMerge: () -> Unit,
     busy: Boolean
 ) {
-    ElevatedCard(shape = RoundedCornerShape(16.dp)) {
+    ElevatedCard(shape = UI_RADIUS_LG) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             StepTitle(2, "合并选项")
             Row(
@@ -1117,7 +1117,7 @@ private fun MergeSection(
         OutlinedButton(
             onClick = onClearItems,
             enabled = !busy && items.isNotEmpty(),
-            modifier = Modifier.weight(0.4f), shape = RoundedCornerShape(16.dp)
+            modifier = Modifier.weight(0.4f), shape = UI_RADIUS_LG
         ) {
             Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(6.dp))
@@ -1126,7 +1126,7 @@ private fun MergeSection(
         Button(
             onClick = onMerge,
             enabled = !busy && items.size >= 2,
-            modifier = Modifier.weight(1f), shape = RoundedCornerShape(16.dp)
+            modifier = Modifier.weight(1f), shape = UI_RADIUS_LG
         ) {
             if (busy) {
                 CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
@@ -1263,13 +1263,13 @@ private fun SealSection(
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         // 步骤 2 选择印章图片
-        ElevatedCard(shape = RoundedCornerShape(16.dp)) {
+        ElevatedCard(shape = UI_RADIUS_LG) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 StepTitle(2, "选择印章图片")
                 Text("请选择一张透明背景的 PNG 印章（带白底会遮挡文字）。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Button(
                     onClick = { sealPicker.launch(arrayOf("image/png", "image/*")) },
-                    modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)
+                    modifier = Modifier.fillMaxWidth(), shape = UI_RADIUS_MD
                 ) {
                     Icon(Icons.Default.AddPhotoAlternate, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
@@ -1281,8 +1281,8 @@ private fun SealSection(
                             bitmap = it, contentDescription = "已选印章预览",
                             modifier = Modifier
                                 .size(48.dp)
-                                .background(Color.White, RoundedCornerShape(8.dp))
-                                .border(1.dp, BrandTokens.Hairline, RoundedCornerShape(8.dp))
+                                .background(Color.White, UI_RADIUS_SM)
+                                .border(1.dp, BrandTokens.Hairline, UI_RADIUS_SM)
                                 .padding(4.dp)
                         )
                         Spacer(Modifier.width(8.dp))
@@ -1293,7 +1293,7 @@ private fun SealSection(
         }
 
         // 步骤 3 尺寸与透明度
-        ElevatedCard(shape = RoundedCornerShape(16.dp)) {
+        ElevatedCard(shape = UI_RADIUS_LG) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 StepTitle(3, "印章尺寸与透明度")
                 Text("预设规格（直径/边长）", fontWeight = FontWeight.Medium)
@@ -1326,7 +1326,7 @@ private fun SealSection(
                         modifier = Modifier.weight(1f)
                     )
                     Spacer(Modifier.width(8.dp))
-                    Text("${(alpha * 100).toInt()}%", fontSize = 13.sp, fontWeight = FontWeight.Medium, modifier = Modifier.width(44.dp))
+                    Text("${(alpha * 100).toInt()}%", fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.width(44.dp))
                 }
                 Text("旋转角度", fontWeight = FontWeight.Medium)
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1335,7 +1335,7 @@ private fun SealSection(
                         valueRange = 0f..360f, modifier = Modifier.weight(1f)
                     )
                     Spacer(Modifier.width(8.dp))
-                    Text("${sealRotation.toInt()}°", fontSize = 13.sp, fontWeight = FontWeight.Medium, modifier = Modifier.width(48.dp))
+                    Text("${sealRotation.toInt()}°", fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.width(48.dp))
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = { sealRotation = normDeg(sealRotation - 90f) }, modifier = Modifier.weight(1f)) { Text("↺ -90°") }
@@ -1357,7 +1357,7 @@ private fun SealSection(
         }
 
         // 步骤 4 预览与拖拽定位
-        ElevatedCard(shape = RoundedCornerShape(16.dp)) {
+        ElevatedCard(shape = UI_RADIUS_LG) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 StepTitle(4, "预览与定位")
                 // 页码输入框：用独立 String 状态管理文本，避免「value 直接派生自 currentPage」
@@ -1369,7 +1369,7 @@ private fun SealSection(
                     if (pageInput != expected) pageInput = expected
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("页码", fontSize = 13.sp)
+                    Text("页码", fontSize = 14.sp)
                     OutlinedTextField(
                         value = pageInput,
                         onValueChange = { txt ->
@@ -1384,7 +1384,7 @@ private fun SealSection(
                         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.width(72.dp)
                     )
-                    Text("/ 共 $pageCount 页", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("/ 共 $pageCount 页", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Text("手指拖动移动印章，双指捏合缩放大小。预览区印章置顶便于编辑；导出后自动衬到文字下方。", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
@@ -1418,8 +1418,8 @@ private fun SealSection(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(with(density) { vh.toDp() })
-                            .background(Color.White, RoundedCornerShape(8.dp))
-                            .border(1.dp, BrandTokens.Hairline, RoundedCornerShape(8.dp))
+                            .background(Color.White, UI_RADIUS_SM)
+                            .border(1.dp, BrandTokens.Hairline, UI_RADIUS_SM)
                     ) {
                         previewBmp?.let {
                             Image(bitmap = it, contentDescription = "PDF 页面预览", modifier = Modifier.fillMaxSize())
@@ -1524,7 +1524,7 @@ private fun SealSection(
                     }
                 }
             },
-            modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(16.dp)
+            modifier = Modifier.fillMaxWidth().height(UI_PRIMARY_BUTTON_HEIGHT), shape = UI_BTN_RADIUS
         ) {
             Icon(Icons.Default.GppGood, contentDescription = null, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(8.dp))
@@ -1552,8 +1552,8 @@ private fun PagePreview(
         Modifier
             .width(96.dp)
             .height(132.dp)
-            .background(Color.White, RoundedCornerShape(8.dp))
-            .border(1.dp, BrandTokens.Hairline, RoundedCornerShape(8.dp))
+            .background(Color.White, UI_RADIUS_SM)
+            .border(1.dp, BrandTokens.Hairline, UI_RADIUS_SM)
             .padding(8.dp)
     ) {
         Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -1562,12 +1562,12 @@ private fun PagePreview(
                     Modifier
                         .fillMaxWidth(fraction = if (it == 4) 0.6f else 0.85f)
                         .height(4.dp)
-                        .background(BrandTokens.SubtleGray, RoundedCornerShape(8.dp))
+                        .background(BrandTokens.SubtleGray, UI_RADIUS_SM)
                 )
             }
         }
         Box(Modifier.fillMaxSize(), contentAlignment = align) {
-            Surface(color = dotColor, shape = RoundedCornerShape(8.dp)) {
+            Surface(color = dotColor, shape = UI_RADIUS_SM) {
                 Text(
                     "${prefix.ifBlank { "" }}1",
                     color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold,
@@ -1587,6 +1587,6 @@ private fun StepTitle(step: Int, text: String) {
             }
         }
         Spacer(Modifier.width(8.dp))
-        Text(text, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+        Text(text, fontWeight = FontWeight.Bold, fontSize = 14.sp)
     }
 }

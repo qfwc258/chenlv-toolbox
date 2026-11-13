@@ -30,6 +30,8 @@ import com.wb.mdgw.FileUtils
 import com.wb.mdgw.RecentFile
 import com.wb.mdgw.RecentFilesSection
 import com.wb.mdgw.RecentFilesStore
+import com.wb.mdgw.UI_RADIUS_MD
+import com.wb.mdgw.UI_RADIUS_SM
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -283,7 +285,7 @@ fun TableFormScreen(onBack: () -> Unit) {
                         Column {
                             Text(
                                 "通用表格填报",
-                                style = com.wb.mdgw.BrandTokens.BrandTopBarTitleStyle.copy(fontSize = 20.sp),
+                                style = com.wb.mdgw.BrandTokens.BrandTopBarTitleStyle.copy(fontSize = 22.sp),
                                 maxLines = 1
                             )
                             if (phase == TfPhase.FILL && fileName.isNotBlank())
@@ -534,10 +536,10 @@ private fun EmptyState(
         Icon(Icons.Default.GridView, null, modifier = Modifier.size(64.dp),
             tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f))
         Spacer(Modifier.height(16.dp))
-        Text("导入含表格的 Word（.docx）", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+        Text("导入含表格的 Word（.docx）", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(8.dp))
         Text("自动识别表头、空白格与合并单元格，\n生成手机填报界面，导出时保留原表格格式。",
-            fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
             lineHeight = 20.sp)
         Spacer(Modifier.height(24.dp))
         Button(
@@ -614,7 +616,7 @@ private fun FillArea(
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             Spacer(Modifier.width(6.dp))
                             Text("文档正文（${paraValues.size}/${paras.size} 段）",
-                                fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                             Spacer(Modifier.weight(1f))
                             Text("格式保留", fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.outline)
@@ -717,7 +719,7 @@ private fun FillArea(
                                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
                                         .heightIn(min = if (long) 76.dp else 48.dp),
                                     textStyle = LocalTextStyle.current.copy(fontSize = 14.sp, lineHeight = 19.sp),
-                                    shape = RoundedCornerShape(12.dp),
+                                    shape = UI_RADIUS_MD,
                                     minLines = if (long) 2 else 1
                                 )
                             }
@@ -749,7 +751,7 @@ private fun FillArea(
                         .replace(Regex("\\s+"), " ")
                     ElevatedCard(Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp)) {
-                            Text(label, fontSize = 13.sp, fontWeight = FontWeight.Medium,
+                            Text(label, fontSize = 14.sp, fontWeight = FontWeight.Medium,
                                 maxLines = 3, overflow = TextOverflow.Ellipsis)
                             Spacer(Modifier.height(6.dp))
                             blanks.forEach { bc ->
@@ -779,14 +781,14 @@ private fun FillArea(
                                     value = cellValues[domRow to c.domCell].orEmpty(),
                                     onValueChange = { onCellValue(domRow, c.domCell, it) },
                                     modifier = Modifier.width(w).heightIn(min = 48.dp),
-                                    textStyle = LocalTextStyle.current.copy(fontSize = 13.sp),
-                                    shape = RoundedCornerShape(8.dp),
+                                    textStyle = LocalTextStyle.current.copy(fontSize = 14.sp),
+                                    shape = UI_RADIUS_SM,
                                     singleLine = true
                                 )
                             } else {
                                 Surface(
                                     color = MaterialTheme.colorScheme.surfaceVariant,
-                                    shape = RoundedCornerShape(8.dp),
+                                    shape = UI_RADIUS_SM,
                                     modifier = Modifier.width(w)
                                 ) {
                                     Text(
@@ -823,6 +825,6 @@ private fun TfInput(value: String, onValue: (String) -> Unit, label: String) {
         label = { Text(label, fontSize = 12.sp) },
         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
         textStyle = LocalTextStyle.current.copy(fontSize = 14.sp),
-        shape = RoundedCornerShape(12.dp)
+        shape = UI_RADIUS_MD
     )
 }

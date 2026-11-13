@@ -30,6 +30,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.wb.mdgw.ExportResultDialog
 import com.wb.mdgw.FileUtils
+import com.wb.mdgw.UI_BTN_RADIUS
+import com.wb.mdgw.UI_PRIMARY_BUTTON_HEIGHT
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -68,7 +70,7 @@ private fun StepTitle(step: Int, text: String) {
             }
         }
         Spacer(Modifier.width(8.dp))
-        Text(text, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+        Text(text, fontWeight = FontWeight.Bold, fontSize = 14.sp)
     }
 }
 
@@ -253,7 +255,7 @@ fun ShotScreen(initialUri: Uri? = null, snackbar: SnackbarHostState, onOpenPdf: 
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .size(240.dp)
-                    .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(16.dp))
+                    .background(MaterialTheme.colorScheme.surface, UI_RADIUS_LG)
                     .padding(24.dp)
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -364,14 +366,14 @@ fun ShotScreen(initialUri: Uri? = null, snackbar: SnackbarHostState, onOpenPdf: 
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         // ---------- 步骤 1：选择长截图 ----------
-        ElevatedCard(shape = RoundedCornerShape(16.dp)) {
+        ElevatedCard(shape = UI_RADIUS_LG) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 StepTitle(1, "选择长截图（可多选）")
                 Button(
                     onClick = { imagePicker.launch(arrayOf("image/*")) },
                     enabled = !busy,
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = UI_RADIUS_MD
                 ) {
                     Icon(Icons.Default.PhotoLibrary, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
@@ -380,14 +382,14 @@ fun ShotScreen(initialUri: Uri? = null, snackbar: SnackbarHostState, onOpenPdf: 
                 selected.forEachIndexed { i, img ->
                     Surface(
                         color = MaterialTheme.colorScheme.surfaceVariant,
-                        shape = RoundedCornerShape(12.dp),
+                        shape = UI_RADIUS_MD,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.Image, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(10.dp))
                             Column(Modifier.weight(1f)) {
-                                Text("${i + 1}. ${img.displayName}", fontWeight = FontWeight.Medium, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text("${i + 1}. ${img.displayName}", fontWeight = FontWeight.Medium, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text(
                                     "${img.widthPx}×${img.heightPx}px",
                                     fontSize = 11.sp,
@@ -412,7 +414,7 @@ fun ShotScreen(initialUri: Uri? = null, snackbar: SnackbarHostState, onOpenPdf: 
 
         // ---------- 步骤 2：切分设置 ----------
         if (selected.isNotEmpty()) {
-            ElevatedCard(shape = RoundedCornerShape(16.dp)) {
+            ElevatedCard(shape = UI_RADIUS_LG) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     StepTitle(2, "排版设置")
 
@@ -486,14 +488,14 @@ fun ShotScreen(initialUri: Uri? = null, snackbar: SnackbarHostState, onOpenPdf: 
                         val posNames = listOf("底部居中", "左下角", "右下角", "顶部居中", "左上角", "右上角")
                         var posMenuOpen by remember { mutableStateOf(false) }
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("页码位置：", fontSize = 13.sp)
+                            Text("页码位置：", fontSize = 14.sp)
                             Box {
                                 OutlinedButton(
                                     onClick = { posMenuOpen = true },
-                                    shape = RoundedCornerShape(12.dp),
+                                    shape = UI_RADIUS_MD,
                                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
                                 ) {
-                                    Text(posNames[pageNumberPos], fontSize = 13.sp)
+                                    Text(posNames[pageNumberPos], fontSize = 14.sp)
                                     Icon(Icons.Default.ArrowDropDown, null, Modifier.size(18.dp))
                                 }
                                 DropdownMenu(expanded = posMenuOpen, onDismissRequest = { posMenuOpen = false }) {
@@ -522,8 +524,8 @@ fun ShotScreen(initialUri: Uri? = null, snackbar: SnackbarHostState, onOpenPdf: 
             Button(
                 onClick = { doProcess() },
                 enabled = !busy && selected.isNotEmpty(),
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-                shape = RoundedCornerShape(16.dp)
+                modifier = Modifier.fillMaxWidth().height(UI_PRIMARY_BUTTON_HEIGHT),
+                shape = UI_BTN_RADIUS
             ) {
                 if (busy) {
                     CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
@@ -539,18 +541,18 @@ fun ShotScreen(initialUri: Uri? = null, snackbar: SnackbarHostState, onOpenPdf: 
 
         // ---------- 结果：双格式导出 ----------
         if (stage == ShotStage.DONE && result != null) {
-            ElevatedCard(shape = RoundedCornerShape(16.dp)) {
+            ElevatedCard(shape = UI_RADIUS_LG) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.CheckCircle, contentDescription = null, tint = BrandTokens.StatusSuccess)
                         Spacer(Modifier.width(8.dp))
-                        Text("✓ 排版完成（${result!!.plan.segments.size} 张/段 · ${result!!.plan.cols} 列 × ${result!!.plan.rows} 行 · ${result!!.plan.pages} 页）", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        Text("✓ 排版完成（${result!!.plan.segments.size} 张/段 · ${result!!.plan.cols} 列 × ${result!!.plan.rows} 行 · ${result!!.plan.pages} 页）", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         OutlinedButton(
                             onClick = { export("docx") },
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp)
+                            shape = UI_RADIUS_MD
                         ) {
                             Icon(Icons.Default.Description, contentDescription = null)
                             Spacer(Modifier.width(6.dp))
@@ -559,7 +561,7 @@ fun ShotScreen(initialUri: Uri? = null, snackbar: SnackbarHostState, onOpenPdf: 
                         Button(
                             onClick = { export("pdf") },
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp)
+                            shape = UI_RADIUS_MD
                         ) {
                             Icon(Icons.Default.PictureAsPdf, contentDescription = null)
                             Spacer(Modifier.width(6.dp))
@@ -581,7 +583,7 @@ fun ShotScreen(initialUri: Uri? = null, snackbar: SnackbarHostState, onOpenPdf: 
 
         // ---------- 功能说明 ----------
         if (selected.isEmpty()) {
-            ElevatedCard(shape = RoundedCornerShape(16.dp)) {
+            ElevatedCard(shape = UI_RADIUS_LG) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("功能说明", fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(2.dp))
@@ -594,7 +596,7 @@ fun ShotScreen(initialUri: Uri? = null, snackbar: SnackbarHostState, onOpenPdf: 
                             "· 支持一次选择多张，按选择顺序合并进同一文档\n" +
                             "· 相册「分享」图片到本应用可直达此页\n" +
                             "· 纯本地处理，图片不会上传",
-                        fontSize = 13.sp,
+                        fontSize = 14.sp,
                         lineHeight = 20.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

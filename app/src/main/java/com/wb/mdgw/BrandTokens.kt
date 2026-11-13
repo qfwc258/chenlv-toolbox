@@ -114,94 +114,56 @@ object BrandTokens {
      *  - body 系列用 SansSerif 但加重 lineHeight，中文长段落更舒展
      *  - label 系列收紧字距 + Medium，提升按钮/标签的精致度
      */
+    /**
+     * 字版 — 严格遵循 Material 3 文字层级规范。
+     * 用户规范 → Compose 层级映射：
+     *   Display Medium 28/500/36 → displayMedium
+     *   Headline Small 24/500/32 → headlineMedium
+     *   Title Large    22/500/28 → titleLarge
+     *   Title Medium   16/500/24 → titleMedium
+     *   Body Large     16/400/24 → bodyLarge
+     *   Body Medium    14/400/20 → bodyMedium
+     *   Label Large    14/500/20 → labelLarge
+     *   Label Medium   12/400/16 → labelMedium
+     *   Label Small    11/400/16 → labelSmall
+     * 字体族保留品牌 Serif（公文印刷感）+ Sans（UI），仅对齐 size / weight / lineHeight。
+     */
     val BrandTypography = Typography(
-        // —— 标题：Serif，传达印刷品质感 ——
-        displaySmall = TextStyle(
-            fontFamily = BrandSerif,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 32.sp,
-            lineHeight = 40.sp,
-            letterSpacing = (-0.5).sp
-        ),
-        headlineLarge = TextStyle(
-            fontFamily = BrandSerif,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 26.sp,
-            lineHeight = 34.sp,
-            letterSpacing = (-0.25).sp
+        displayMedium = TextStyle(
+            fontFamily = BrandSerif, fontWeight = FontWeight.Medium,
+            fontSize = 28.sp, lineHeight = 36.sp
         ),
         headlineMedium = TextStyle(
-            fontFamily = BrandSerif,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 22.sp,
-            lineHeight = 30.sp
+            fontFamily = BrandSerif, fontWeight = FontWeight.Medium,
+            fontSize = 24.sp, lineHeight = 32.sp
         ),
         titleLarge = TextStyle(
-            fontFamily = BrandSerif,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 20.sp,
-            lineHeight = 28.sp,
-            letterSpacing = 0.sp
+            fontFamily = BrandSerif, fontWeight = FontWeight.Medium,
+            fontSize = 22.sp, lineHeight = 28.sp, letterSpacing = 0.sp
         ),
         titleMedium = TextStyle(
-            fontFamily = BrandSerif,
-            fontWeight = FontWeight.Medium,
-            fontSize = 17.sp,
-            lineHeight = 24.sp,
-            letterSpacing = 0.1.sp
+            fontFamily = BrandSerif, fontWeight = FontWeight.Medium,
+            fontSize = 16.sp, lineHeight = 24.sp, letterSpacing = 0.1.sp
         ),
-        titleSmall = TextStyle(
-            fontFamily = BrandSerif,
-            fontWeight = FontWeight.Medium,
-            fontSize = 14.sp,
-            lineHeight = 20.sp,
-            letterSpacing = 0.1.sp
-        ),
-
-        // —— 正文：SansSerif，加 lineHeight ——
         bodyLarge = TextStyle(
-            fontFamily = BrandSans,
-            fontWeight = FontWeight.Normal,
-            fontSize = 16.sp,
-            lineHeight = 26.sp,        // 中文正文 1.6x 行高，更舒展
-            letterSpacing = 0.15.sp
+            fontFamily = BrandSans, fontWeight = FontWeight.Normal,
+            fontSize = 16.sp, lineHeight = 24.sp, letterSpacing = 0.15.sp
         ),
         bodyMedium = TextStyle(
-            fontFamily = BrandSans,
-            fontWeight = FontWeight.Normal,
-            fontSize = 14.sp,
-            lineHeight = 22.sp,
-            letterSpacing = 0.15.sp
+            fontFamily = BrandSans, fontWeight = FontWeight.Normal,
+            fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = 0.15.sp
         ),
-        bodySmall = TextStyle(
-            fontFamily = BrandSans,
-            fontWeight = FontWeight.Normal,
-            fontSize = 12.sp,
-            lineHeight = 18.sp,
-            letterSpacing = 0.2.sp
-        ),
-
-        // —— 标签/按钮：收紧字距 + Medium ——
         labelLarge = TextStyle(
-            fontFamily = BrandSans,
-            fontWeight = FontWeight.Medium,
-            fontSize = 14.sp,
-            lineHeight = 20.sp,
-            letterSpacing = 0.5.sp
+            fontFamily = BrandSans, fontWeight = FontWeight.Medium,
+            fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = 0.5.sp
         ),
         labelMedium = TextStyle(
-            fontFamily = BrandSans,
-            fontWeight = FontWeight.Medium,
-            fontSize = 12.sp,
-            lineHeight = 16.sp,
-            letterSpacing = 0.5.sp
+            fontFamily = BrandSans, fontWeight = FontWeight.Normal,
+            fontSize = 12.sp, lineHeight = 16.sp, letterSpacing = 0.5.sp
         ),
         labelSmall = TextStyle(
-            fontFamily = BrandSans,
-            fontWeight = FontWeight.Medium,
-            fontSize = 11.sp,
-            lineHeight = 16.sp,
-            letterSpacing = 0.5.sp
+            fontFamily = BrandSans, fontWeight = FontWeight.Normal,
+            fontSize = 11.sp, lineHeight = 16.sp, letterSpacing = 0.5.sp
         )
     )
 }

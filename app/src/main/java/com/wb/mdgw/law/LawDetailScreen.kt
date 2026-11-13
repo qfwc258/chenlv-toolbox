@@ -69,7 +69,7 @@ fun LawDetailScreen(
                     title = {
                         Text(
                             law.title,
-                            style = com.wb.mdgw.BrandTokens.BrandTopBarTitleStyle.copy(fontSize = 20.sp),
+                            style = com.wb.mdgw.BrandTokens.BrandTopBarTitleStyle.copy(fontSize = 22.sp),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -175,7 +175,7 @@ fun LawDetailScreen(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         CircularProgressIndicator(modifier = Modifier.size(32.dp))
                         Spacer(modifier = Modifier.height(8.dp))
-                        Text("加载中...", fontSize = 13.sp, color = MaterialTheme.colorScheme.outline)
+                        Text("加载中...", fontSize = 14.sp, color = MaterialTheme.colorScheme.outline)
                     }
                 }
             }

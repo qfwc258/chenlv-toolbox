@@ -1,5 +1,7 @@
 package com.wb.mdgw.ftp
 
+import a
+import com.wb.mdgw.UI_RADIUS_SM
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -136,7 +138,7 @@ fun FtpScreen(onBack: () -> Unit) {
                     title = {
                         Text(
                             "FTP 服务",
-                            style = com.wb.mdgw.BrandTokens.BrandTopBarTitleStyle.copy(fontSize = 20.sp)
+                            style = com.wb.mdgw.BrandTokens.BrandTopBarTitleStyle.copy(fontSize = 22.sp)
                         )
                     },
                     navigationIcon = {
@@ -164,7 +166,7 @@ fun FtpScreen(onBack: () -> Unit) {
         ) {
             // ---------- 状态 + 开关：紧凑横条（不再垂直居中占用整张卡片） ----------
             Card(
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                shape = androidx.compose.foundation.shape.UI_RADIUS_SM,
                 colors = androidx.compose.material3.CardDefaults.cardColors(
                     containerColor = com.wb.mdgw.BrandTokens.BrandParchment
                 )
@@ -188,7 +190,7 @@ fun FtpScreen(onBack: () -> Unit) {
                         Text(
                             if (running) "运行中" else "已停止",
                             fontFamily = FontFamily.Serif,
-                            fontSize = 15.sp,
+                            fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = if (running) MaterialTheme.colorScheme.onBackground
                                     else MaterialTheme.colorScheme.onSurfaceVariant
@@ -227,7 +229,7 @@ fun FtpScreen(onBack: () -> Unit) {
 
             // ---------- 连接设置：拆成 SettingsCard ----------
             Card(
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                shape = androidx.compose.foundation.shape.UI_RADIUS_SM,
                 colors = androidx.compose.material3.CardDefaults.cardColors(
                     containerColor = com.wb.mdgw.BrandTokens.BrandParchment
                 )
@@ -236,7 +238,7 @@ fun FtpScreen(onBack: () -> Unit) {
                     Text(
                         "连接设置",
                         fontFamily = FontFamily.Serif,
-                        fontSize = 15.sp,
+                        fontSize = 14.sp,
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
@@ -284,7 +286,7 @@ fun FtpScreen(onBack: () -> Unit) {
 
             // ---------- 说明 ----------
             Card(
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                shape = androidx.compose.foundation.shape.UI_RADIUS_SM,
                 colors = androidx.compose.material3.CardDefaults.cardColors(
                     containerColor = com.wb.mdgw.BrandTokens.BrandParchment
                 )
@@ -293,7 +295,7 @@ fun FtpScreen(onBack: () -> Unit) {
                     Text(
                         "使用说明",
                         fontFamily = FontFamily.Serif,
-                        fontSize = 15.sp,
+                        fontSize = 14.sp,
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.padding(bottom = 4.dp)
                     )
@@ -313,10 +315,10 @@ fun FtpScreen(onBack: () -> Unit) {
             title = { Text("设置静态 IP") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("普通应用无权直接修改网络，需在系统设置中完成：", fontSize = 13.sp)
-                    Text("1. 点「去设置」进入当前 WiFi 的 IP 设置；", fontSize = 13.sp)
-                    Text("2. 将 IP 设置由「DHCP / 动态」改为「静态」；", fontSize = 13.sp)
-                    Text("3. 填写 IP 地址、网关、子网掩码（前缀长度）、DNS 后保存。", fontSize = 13.sp)
+                    Text("普通应用无权直接修改网络，需在系统设置中完成：", fontSize = 14.sp)
+                    Text("1. 点「去设置」进入当前 WiFi 的 IP 设置；", fontSize = 14.sp)
+                    Text("2. 将 IP 设置由「DHCP / 动态」改为「静态」；", fontSize = 14.sp)
+                    Text("3. 填写 IP 地址、网关、子网掩码（前缀长度）、DNS 后保存。", fontSize = 14.sp)
                     Spacer(Modifier.height(4.dp))
                     Text(
                         "注意：填错网关或 DNS 会导致无法上网。更省心的方式是在路由器后台按手机 MAC 绑定固定 IP，手机端保持自动获取即可。",
@@ -376,13 +378,13 @@ private fun SettingsRow(
     ) {
         Text(
             label,
-            fontSize = 13.sp,
+            fontSize = 14.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.width(72.dp)
         )
         Text(
             value,
-            fontSize = 13.sp,
+            fontSize = 14.sp,
             fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onBackground,
             maxLines = 1,

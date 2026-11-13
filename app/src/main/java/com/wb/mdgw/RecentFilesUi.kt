@@ -84,7 +84,7 @@ fun RecentFilesSection(
     Column(modifier) {
         Text(
             title,
-            fontSize = 13.sp,
+            fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 4.dp, bottom = 6.dp)
@@ -103,7 +103,7 @@ private fun RecentFileRow(
     var menuOpen by remember { mutableStateOf(false) }
     Surface(
         onClick = { onOpen(item) },
-        shape = RoundedCornerShape(12.dp),
+        shape = UI_RADIUS_MD,
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
         modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)
     ) {

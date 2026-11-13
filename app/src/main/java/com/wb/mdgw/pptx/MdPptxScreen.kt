@@ -587,7 +587,7 @@ fun MdPptxScreen(snackbar: SnackbarHostState, onBack: () -> Unit) {
         AlertDialog(
             onDismissRequest = { showNameDialog = false },
             icon = { Icon(Icons.Filled.Save, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(30.dp)) },
-            title = { Text("命名并导出 PPTX", fontWeight = FontWeight.Bold, fontSize = 17.sp) },
+            title = { Text("命名并导出 PPTX", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
             text = {
                 Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     OutlinedTextField(
@@ -690,7 +690,7 @@ private fun PptxActionBar(
             Button(onClick = onExport, shape = UI_BTN_RADIUS, modifier = btnMod, contentPadding = btnPad) {
                 Icon(Icons.Default.Upload, contentDescription = null, modifier = Modifier.size(17.dp))
                 Spacer(Modifier.width(5.dp))
-                Text("导出PPTX", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
+                Text("导出PPTX", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
             }
             Box {
                 OutlinedButton(
@@ -700,7 +700,7 @@ private fun PptxActionBar(
                 ) {
                     Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(17.dp))
                     Spacer(Modifier.width(5.dp))
-                    Text("导入/互传", fontSize = 13.sp, maxLines = 1, softWrap = false)
+                    Text("导入/互传", fontSize = 14.sp, maxLines = 1, softWrap = false)
                 }
                 DropdownMenu(expanded = importMenuOpen, onDismissRequest = { importMenuOpen = false }) {
                     DropdownMenuItem(text = { Text("导入 MD 文件") }, onClick = { importMenuOpen = false; onImport() })
@@ -716,7 +716,7 @@ private fun PptxActionBar(
             ) {
                 Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(17.dp))
                 Spacer(Modifier.width(5.dp))
-                Text("清空", fontSize = 13.sp, maxLines = 1, softWrap = false)
+                Text("清空", fontSize = 14.sp, maxLines = 1, softWrap = false)
             }
         }
     }
@@ -730,7 +730,7 @@ private fun PptxActionBar(
 @Composable
 private fun ColorPalette(selected: String, onPick: (String) -> Unit) {
     Surface(
-        shape = RoundedCornerShape(12.dp),
+        shape = UI_RADIUS_MD,
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
         modifier = Modifier.padding(horizontal = 2.dp)
     ) {
@@ -880,7 +880,7 @@ private fun PreviewPager(
             ) {
                 Text(
                     "${current + 1} / ${slides.size}",
-                    fontSize = 13.sp,
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.primary,
                     textAlign = TextAlign.Center,
@@ -900,7 +900,7 @@ private fun PreviewPager(
             TextField(
                 value = jumpText,
                 onValueChange = { jumpText = it.filter { c -> c.isDigit() }.take(4) },
-                placeholder = { Text("⇢", fontSize = 13.sp, color = Color.Gray) },
+                placeholder = { Text("⇢", fontSize = 14.sp, color = Color.Gray) },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Go),
                 keyboardActions = KeyboardActions(onGo = {
                     val target = jumpText.toIntOrNull()
@@ -911,7 +911,7 @@ private fun PreviewPager(
                 singleLine = true,
                 // 文字色跟随主题：深色模式下原硬编码 Color.Black 会与深色背景融为一体
                 textStyle = LocalTextStyle.current.copy(
-                    fontSize = 13.sp,
+                    fontSize = 14.sp,
                     textAlign = TextAlign.Center,
                     color = MaterialTheme.colorScheme.onSurface
                 ),
@@ -1047,7 +1047,7 @@ private fun SlideCanvas(slide: PptLayoutEngine.LaidOutSlide, theme: PptTheme, mo
                     Modifier.offset {
                         IntOffset((b.x * scale * density).roundToInt(), (b.y * scale * density).roundToInt())
                     }.width((b.w * scale).dp).height((b.h * scale).dp)
-                        .background(hexToColor(theme.quoteBg), shape = RoundedCornerShape(8.dp))
+                        .background(hexToColor(theme.quoteBg), shape = UI_RADIUS_SM)
                 )
             }
             slide.units.forEach { unit -> UnitBox(unit, theme, scale, slide.cover, accentBg) }
@@ -1203,7 +1203,7 @@ private fun BoxScope.UnitBox(unit: PptLayoutEngine.LaidOutUnit, theme: PptTheme,
         if (unit.overflow) {
             Text(
                 "⚠ 内容超长",
-                fontSize = 10.sp,
+                fontSize = 11.sp,
                 color = OVERFLOW_WARN,
                 modifier = Modifier.align(Alignment.BottomEnd)
             )

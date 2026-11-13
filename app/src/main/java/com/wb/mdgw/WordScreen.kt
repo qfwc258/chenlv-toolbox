@@ -1164,8 +1164,8 @@ private fun WordToolbar(
         }
         Spacer(Modifier.width(10.dp))
         Column(Modifier.padding(vertical = 2.dp)) {
-            Text("WORD", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = MaterialTheme.colorScheme.primary, letterSpacing = 1.sp)
-            Text("Markdown 一键转公文", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("WORD", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MaterialTheme.colorScheme.primary, letterSpacing = 1.sp)
+            Text("Markdown 一键转公文", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Spacer(Modifier.weight(1f))
         FilledTonalIconButton(onClick = onSave, modifier = Modifier.size(38.dp)) {
@@ -1290,9 +1290,9 @@ private fun PaperPreview(
                     Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.Article, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(38.dp)) }
                 }
                 Spacer(Modifier.height(18.dp))
-                Text("公文预览", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                Text("公文预览", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 Spacer(Modifier.height(8.dp))
-                Text("在「编辑」页写好 Markdown，\n切到「预览」即自动生成公文并在此排版、点字直接改；\n也可点底部「打开」载入 .md 或 .docx 文件。", fontSize = 13.sp, lineHeight = 20.sp, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("在「编辑」页写好 Markdown，\n切到「预览」即自动生成公文并在此排版、点字直接改；\n也可点底部「打开」载入 .md 或 .docx 文件。", fontSize = 14.sp, lineHeight = 20.sp, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         return
@@ -1321,7 +1321,7 @@ private fun PaperPreview(
                 if (searchOpen) {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp).padding(bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                         IconButton(onClick = onToggleSearch) { Icon(Icons.Default.ArrowBack, "退出检索", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) }
-                        OutlinedTextField(value = query, onValueChange = onQueryChange, placeholder = { Text("搜索正文 / 表格…", fontSize = 13.sp) }, singleLine = true, modifier = Modifier.weight(1f), textStyle = TextStyle(fontSize = 14.sp),
+                        OutlinedTextField(value = query, onValueChange = onQueryChange, placeholder = { Text("搜索正文 / 表格…", fontSize = 14.sp) }, singleLine = true, modifier = Modifier.weight(1f), textStyle = TextStyle(fontSize = 14.sp),
                             trailingIcon = if (query.isNotEmpty()) { { IconButton(onClick = { onQueryChange("") }) { Icon(Icons.Default.Close, "清空检索词", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp)) } } } else null)
                     }
                 }
@@ -1356,13 +1356,13 @@ private fun PaperPreview(
                                 Surface(
                                     onClick = { onStartEdit(EditTarget(h.blockIndex, h.row, h.col)); onToggleSearch() },
                                     color = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp, shadowElevation = 2.dp,
-                                    shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)),
+                                    shape = UI_RADIUS_MD, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)),
                                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
                                 ) {
                                     Column(Modifier.padding(12.dp)) {
                                         Text(label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
                                         Spacer(Modifier.height(4.dp))
-                                        Text(h.preview, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface)
+                                        Text(h.preview, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface)
                                     }
                                 }
                             }
@@ -1370,7 +1370,7 @@ private fun PaperPreview(
                     }
                 } else {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("未找到「$query」", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("未找到「$query」", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             } else {
@@ -1517,7 +1517,7 @@ private fun SimpleTextFallback(
     ) {
         Surface(
             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
-            shape = RoundedCornerShape(8.dp),
+            shape = UI_RADIUS_SM,
             modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
         ) {
             Text(
@@ -1533,7 +1533,7 @@ private fun SimpleTextFallback(
                     val fullText = b.runs.joinToString("") { it.text }
                     Surface(
                         onClick = { onStartEdit(EditTarget(idx, runIndex = -1)) },
-                        color = Color.White, shape = RoundedCornerShape(8.dp),
+                        color = Color.White, shape = UI_RADIUS_SM,
                         modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)
                     ) {
                         Text(
@@ -1545,7 +1545,7 @@ private fun SimpleTextFallback(
                 }
                 is Block.Table -> {
                     Surface(
-                        color = Color.White, shape = RoundedCornerShape(8.dp),
+                        color = Color.White, shape = UI_RADIUS_SM,
                         modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)
                     ) {
                         Column(Modifier.padding(8.dp)) {
@@ -1558,7 +1558,7 @@ private fun SimpleTextFallback(
                                         Surface(
                                             onClick = { onStartEdit(EditTarget(idx, ri, ci)) },
                                             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                                            shape = RoundedCornerShape(8.dp),
+                                            shape = UI_RADIUS_SM,
                                             modifier = Modifier.weight(1f).padding(horizontal = 1.dp)
                                         ) {
                                             Text(

@@ -299,7 +299,7 @@ private fun HomeScreen(onOpen: (Route) -> Unit) {
                     Column {
                         Text(
                             "陈律工具箱",
-                            style = BrandTokens.BrandTopBarTitleStyle.copy(fontSize = 20.sp)
+                            style = BrandTokens.BrandTopBarTitleStyle.copy(fontSize = 22.sp)
                         )
                         Text(
                             "常用工具一站式聚合",
@@ -371,14 +371,14 @@ private fun HomeSectionLabel(
         Box(
             Modifier
                 .size(width = 4.dp, height = 14.dp)
-                .background(accent, RoundedCornerShape(8.dp))
+                .background(accent, UI_RADIUS_SM)
         )
         Spacer(Modifier.width(8.dp))
         Text(
             label,
             fontFamily = FontFamily.Serif,
             fontWeight = FontWeight.Medium,
-            fontSize = 15.sp,
+            fontSize = 14.sp,
             color = MaterialTheme.colorScheme.onBackground,
             letterSpacing = 1.sp
         )
@@ -415,7 +415,7 @@ private fun FeatureCard(feature: Feature, onClick: () -> Unit) {
             // 剩余 26dp 留白比例约 30%，比原 46dp/45% 更紧凑，一屏多看一行。
             .height(92.dp)
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(8.dp),     // 直角微圆，比 Material3 默认 12dp 略小，更稳重
+        shape = UI_RADIUS_SM,     // 直角微圆，比 Material3 默认 12dp 略小，更稳重
         colors = CardDefaults.cardColors(
             containerColor = if (highlighted) BrandTokens.BrandParchmentStrong
                 else BrandTokens.BrandParchment
@@ -465,7 +465,7 @@ private fun FeatureCard(feature: Feature, onClick: () -> Unit) {
                 Text(
                     feature.title,
                     fontFamily = FontFamily.Serif,
-                    fontSize = 13.sp,
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -500,7 +500,7 @@ private fun SimpleScreenFrame(
                 title = {
                     Text(
                         title,
-                        style = BrandTokens.BrandTopBarTitleStyle.copy(fontSize = 20.sp)  // P2：20sp
+                        style = BrandTokens.BrandTopBarTitleStyle.copy(fontSize = 22.sp)  // P2：20sp
                     )
                 },
                 navigationIcon = {
@@ -539,20 +539,20 @@ fun AboutDialog(onDismiss: () -> Unit) {
         },
         text = {
             Column(Modifier.fillMaxWidth()) {
-                Text("版本  V${BuildConfig.VERSION_NAME}", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("构建号  ${BuildConfig.VERSION_CODE}", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("版本  V${BuildConfig.VERSION_NAME}", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("构建号  ${BuildConfig.VERSION_CODE}", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(12.dp))
                 HorizontalDivider()
                 Spacer(Modifier.height(12.dp))
-                Text("开发者：陈伟律师", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                Text("开发者：陈伟律师", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                 Spacer(Modifier.height(4.dp))
                 Text(
                     "联系电话：139 7589 2485",
-                    fontSize = 15.sp,
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(UI_RADIUS_SM)
                         .clickable {
                             runCatching {
                                 context.startActivity(
@@ -564,7 +564,7 @@ fun AboutDialog(onDismiss: () -> Unit) {
                 Spacer(Modifier.height(12.dp))
                 Text(
                     "集 Markdown 编辑、公文生成、PDF 处理、微信公众号排版、PPT 制作、批量文书与法律查询于一体的移动办公工具。",
-                    fontSize = 13.sp,
+                    fontSize = 14.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     lineHeight = 19.sp
                 )

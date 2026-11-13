@@ -113,14 +113,14 @@ fun MdEditorPane(
                     if (!hint.isNullOrBlank()) {
                         Text(
                             hint,
-                            fontSize = 10.sp, color = MaterialTheme.colorScheme.outline,
+                            fontSize = 11.sp, color = MaterialTheme.colorScheme.outline,
                             maxLines = 1, overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.padding(end = 8.dp)
                         )
                     }
                     Surface(
                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                        shape = RoundedCornerShape(16.dp)
+                        shape = UI_RADIUS_LG
                     ) {
                         Text(
                             "$charCount 字 · $lineCount 行",
@@ -143,7 +143,7 @@ fun MdEditorPane(
                             Surface(
                                 onClick = { onInsert(s) },
                                 color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
-                                shape = RoundedCornerShape(16.dp),
+                                shape = UI_RADIUS_LG,
                                 modifier = Modifier.height(26.dp)
                             ) {
                                 Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 9.dp)) {
@@ -168,7 +168,7 @@ fun MdEditorPane(
                         Surface(
                             onClick = { onTemplates() },
                             color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f),
-                            shape = RoundedCornerShape(16.dp),
+                            shape = UI_RADIUS_LG,
                             modifier = Modifier.height(26.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 9.dp)) {
@@ -240,7 +240,7 @@ fun MdEditorPane(
                                     Surface(
                                         onClick = { onInsert(s) },
                                         color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
-                                        shape = RoundedCornerShape(16.dp),
+                                        shape = UI_RADIUS_LG,
                                         modifier = Modifier.padding(vertical = 2.dp)
                                     ) {
                                         Text(
@@ -265,7 +265,7 @@ fun MdEditorPane(
 private fun FontSizeStepper(fontSize: Int, onChange: (Int) -> Unit) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-        shape = RoundedCornerShape(16.dp),
+        shape = UI_RADIUS_LG,
         modifier = Modifier.height(26.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {

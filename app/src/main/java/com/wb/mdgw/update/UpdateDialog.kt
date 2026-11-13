@@ -235,7 +235,7 @@ private fun UpdateAvailableDialog(
                 Spacer(Modifier.height(8.dp))
                 Text(
                     UpdateChecker.cleanNotes(info.notes),
-                    fontSize = 13.sp,
+                    fontSize = 14.sp,
                     lineHeight = 19.sp
                 )
             }
@@ -245,8 +245,8 @@ private fun UpdateAvailableDialog(
         },
         dismissButton = {
             Row {
-                TextButton(onClick = onBrowser) { Text("浏览器下载", fontSize = 13.sp) }
-                TextButton(onClick = onDismiss) { Text("稍后", fontSize = 13.sp) }
+                TextButton(onClick = onBrowser) { Text("浏览器下载", fontSize = 14.sp) }
+                TextButton(onClick = onDismiss) { Text("稍后", fontSize = 14.sp) }
             }
         }
     )
@@ -269,7 +269,7 @@ private fun DownloadDialog(
                         modifier = Modifier.fillMaxWidth()
                     )
                     Spacer(Modifier.height(8.dp))
-                    Text("${(fraction * 100).toInt()}%", fontFamily = FontFamily.Monospace, fontSize = 13.sp)
+                    Text("${(fraction * 100).toInt()}%", fontFamily = FontFamily.Monospace, fontSize = 14.sp)
                 } else {
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                     Spacer(Modifier.height(8.dp))
@@ -282,7 +282,7 @@ private fun DownloadDialog(
             TextButton(onClick = onBackground) { Text("后台下载") }
         },
         dismissButton = {
-            TextButton(onClick = onCancel) { Text("取消", fontSize = 13.sp) }
+            TextButton(onClick = onCancel) { Text("取消", fontSize = 14.sp) }
         }
     )
 }

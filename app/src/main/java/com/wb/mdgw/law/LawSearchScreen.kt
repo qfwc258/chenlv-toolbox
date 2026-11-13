@@ -1,5 +1,8 @@
 package com.wb.mdgw.law
 
+import a
+import com.wb.mdgw.UI_RADIUS_MD
+import com.wb.mdgw.UI_RADIUS_SM
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -81,7 +84,7 @@ fun LawSearchScreen(
                 Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(20.dp))
             },
             singleLine = true,
-            shape = RoundedCornerShape(12.dp)
+            shape = UI_RADIUS_MD
         )
 
         Spacer(modifier = Modifier.height(12.dp))
@@ -194,7 +197,7 @@ private fun LawItemCard(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
+        shape = UI_RADIUS_MD,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
         )
@@ -205,7 +208,7 @@ private fun LawItemCard(
             // 标题
             Text(
                 text = law.title,
-                fontSize = 15.sp,
+                fontSize = 14.sp,
                 fontWeight = FontWeight.Medium,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -229,7 +232,7 @@ private fun LawItemCard(
                         modifier = Modifier
                             .background(
                                 color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-                                shape = RoundedCornerShape(8.dp)
+                                shape = UI_RADIUS_SM
                             )
                             .padding(horizontal = 6.dp, vertical = 2.dp)
                     )
@@ -250,7 +253,7 @@ private fun LawItemCard(
                         modifier = Modifier
                             .background(
                                 color = statusColor.copy(alpha = 0.1f),
-                                shape = RoundedCornerShape(8.dp)
+                                shape = UI_RADIUS_SM
                             )
                             .padding(horizontal = 6.dp, vertical = 2.dp)
                     )
