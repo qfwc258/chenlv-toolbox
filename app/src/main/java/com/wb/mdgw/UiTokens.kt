@@ -27,9 +27,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /** ===== 统一设计令牌：圆角阶梯（M3 规范 8dp 栅格）===== */
-val UI_RADIUS_SM = UI_RADIUS_SM    // 小：标签、内嵌块、小芯片
-val UI_RADIUS_MD = UI_RADIUS_MD   // 中：卡片（M3 Card 12dp）
-val UI_RADIUS_LG = UI_RADIUS_LG   // 大：按钮（M3 FilledButton 16dp）、弹窗、大卡片
+val UI_RADIUS_SM = RoundedCornerShape(8.dp)    // 小：标签、内嵌块、小芯片
+val UI_RADIUS_MD = RoundedCornerShape(12.dp)   // 中：卡片（M3 Card 12dp）
+val UI_RADIUS_LG = RoundedCornerShape(16.dp)   // 大：按钮（M3 FilledButton 16dp）、弹窗、大卡片
 /** ===== 统一间距阶梯（M3 8dp 栅格）===== */
 val UI_SPACE_XS = 4.dp
 val UI_SPACE_SM = 8.dp

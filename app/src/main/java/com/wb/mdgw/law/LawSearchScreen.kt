@@ -1,9 +1,8 @@
 package com.wb.mdgw.law
 
-import a
+import androidx.compose.foundation.background
 import com.wb.mdgw.UI_RADIUS_MD
 import com.wb.mdgw.UI_RADIUS_SM
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box

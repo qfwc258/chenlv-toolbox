@@ -1,8 +1,7 @@
 package com.wb.mdgw.ftp
 
-import a
-import com.wb.mdgw.UI_RADIUS_SM
 import android.content.ClipData
+import com.wb.mdgw.UI_RADIUS_SM
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
