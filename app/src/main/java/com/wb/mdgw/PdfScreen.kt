@@ -18,7 +18,6 @@ import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -675,6 +674,7 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                     onExtract = { segments -> executeSplit(segments, splitNames.toList()) },
                     onError = { errorMessage = it; showErrorDialog = true }
                 )
+                PdfTab.MERGE -> {}
             }
         }
 
