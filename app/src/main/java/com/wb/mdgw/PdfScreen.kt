@@ -692,12 +692,12 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                         Text("保存位置：$savedPath", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(10.dp))
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        OutlinedButton(onClick = { shareResult(open = true) }, modifier = Modifier.weight(1f), shape = UI_BTN_RADIUS) {
+                        OutlinedButton(onClick = { shareResult(open = true) }, modifier = Modifier.weight(1f).height(UI_PRIMARY_BUTTON_HEIGHT), shape = UI_BTN_RADIUS) {
                             Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(6.dp))
                             Text("打开文件")
                         }
-                        Button(onClick = { shareResult(open = false) }, modifier = Modifier.weight(1f), shape = UI_BTN_RADIUS) {
+                        Button(onClick = { shareResult(open = false) }, modifier = Modifier.weight(1f).height(UI_PRIMARY_BUTTON_HEIGHT), shape = UI_BTN_RADIUS) {
                             Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(6.dp))
                             Text("分享文件")
@@ -721,12 +721,12 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                         Text("保存位置：$savedPath", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(10.dp))
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        OutlinedButton(onClick = { shareResult(open = true) }, modifier = Modifier.weight(1f), shape = UI_BTN_RADIUS) {
+                        OutlinedButton(onClick = { shareResult(open = true) }, modifier = Modifier.weight(1f).height(UI_PRIMARY_BUTTON_HEIGHT), shape = UI_BTN_RADIUS) {
                             Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(6.dp))
                             Text("打开文件")
                         }
-                        Button(onClick = { shareResult(open = false) }, modifier = Modifier.weight(1f), shape = UI_BTN_RADIUS) {
+                        Button(onClick = { shareResult(open = false) }, modifier = Modifier.weight(1f).height(UI_PRIMARY_BUTTON_HEIGHT), shape = UI_BTN_RADIUS) {
                             Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(6.dp))
                             Text("分享文件")
@@ -781,7 +781,7 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                                     )
                                 }.onFailure { scope.launch { snackbar.showSnackbar(friendlyError(it)) } }
                             },
-                            modifier = Modifier.weight(1f), shape = UI_RADIUS_MD
+                            modifier = Modifier.weight(1f).height(UI_PRIMARY_BUTTON_HEIGHT), shape = UI_RADIUS_MD
                         ) {
                             Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(6.dp))
@@ -795,7 +795,7 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                                     )
                                 }.onFailure { scope.launch { snackbar.showSnackbar(friendlyError(it)) } }
                             },
-                            modifier = Modifier.weight(1f), shape = UI_RADIUS_MD
+                            modifier = Modifier.weight(1f).height(UI_PRIMARY_BUTTON_HEIGHT), shape = UI_RADIUS_MD
                         ) {
                             Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(6.dp))
@@ -1117,7 +1117,7 @@ private fun MergeSection(
         OutlinedButton(
             onClick = onClearItems,
             enabled = !busy && items.isNotEmpty(),
-            modifier = Modifier.weight(0.4f), shape = UI_RADIUS_LG
+            modifier = Modifier.weight(0.4f).height(UI_PRIMARY_BUTTON_HEIGHT), shape = UI_RADIUS_LG
         ) {
             Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(6.dp))
@@ -1126,7 +1126,7 @@ private fun MergeSection(
         Button(
             onClick = onMerge,
             enabled = !busy && items.size >= 2,
-            modifier = Modifier.weight(1f), shape = UI_RADIUS_LG
+            modifier = Modifier.weight(1f).height(UI_PRIMARY_BUTTON_HEIGHT), shape = UI_RADIUS_LG
         ) {
             if (busy) {
                 CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
@@ -1338,8 +1338,8 @@ private fun SealSection(
                     Text("${sealRotation.toInt()}°", fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.width(48.dp))
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { sealRotation = normDeg(sealRotation - 90f) }, modifier = Modifier.weight(1f)) { Text("↺ -90°") }
-                    OutlinedButton(onClick = { sealRotation = normDeg(sealRotation + 90f) }, modifier = Modifier.weight(1f)) { Text("↻ +90°") }
+                    OutlinedButton(onClick = { sealRotation = normDeg(sealRotation - 90f) }, modifier = Modifier.weight(1f).height(UI_PRIMARY_BUTTON_HEIGHT)) { Text("↺ -90°") }
+                    OutlinedButton(onClick = { sealRotation = normDeg(sealRotation + 90f) }, modifier = Modifier.weight(1f).height(UI_PRIMARY_BUTTON_HEIGHT)) { Text("↻ +90°") }
                 }
                 Text("印章层级", fontWeight = FontWeight.Medium)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
