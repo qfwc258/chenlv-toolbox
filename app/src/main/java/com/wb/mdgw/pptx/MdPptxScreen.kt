@@ -275,14 +275,14 @@ fun MdPptxScreen(snackbar: SnackbarHostState, onBack: () -> Unit) {
 
     // ---------- 跨编辑器 Markdown 互传 ----------
     fun sendTo(target: String) {
-        MarkdownExchange.send(context, MarkdownExchange.PPTX, target, mdTfv.text)
-        android.widget.Toast.makeText(
-            context, "已发送，打开${MarkdownExchange.sourceName(target)}即可导入",
-            android.widget.Toast.LENGTH_SHORT
-        ).show()
+        val overwritten = MarkdownExchange.send(context, MarkdownExchange.PPTX, target, mdTfv.text)
+        val msg = if (overwritten)
+            "已发送（覆盖了之前发给${MarkdownExchange.sourceName(target)}的未导入内容），打开即可导入"
+        else "已发送，打开${MarkdownExchange.sourceName(target)}即可导入"
+        android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
     }
     fun openImportExchange() {
-        val p = MarkdownExchange.peek(context)
+        val p = MarkdownExchange.peek(context, MarkdownExchange.PPTX)
         if (p != null && p.text.isNotBlank()) incomingMd = p
         else android.widget.Toast.makeText(context, "暂无可导入的内容", android.widget.Toast.LENGTH_SHORT).show()
     }
@@ -294,7 +294,7 @@ fun MdPptxScreen(snackbar: SnackbarHostState, onBack: () -> Unit) {
         } else p.text
         mdTfv = TextFieldValue(merged, TextRange(merged.length))
         undoStack = emptyList(); redoStack = emptyList()
-        MarkdownExchange.consume(context)
+        MarkdownExchange.consume(context, MarkdownExchange.PPTX)
         incomingMd = null
         subView = SubView.EDIT
     }
@@ -620,7 +620,7 @@ fun MdPptxScreen(snackbar: SnackbarHostState, onBack: () -> Unit) {
             sourceName = MarkdownExchange.sourceName(p.source),
             onReplace = { applyIncoming(false) },
             onAppend = { applyIncoming(true) },
-            onDismiss = { MarkdownExchange.consume(context); incomingMd = null }
+            onDismiss = { MarkdownExchange.consume(context, MarkdownExchange.PPTX); incomingMd = null }
         )
     }
 }

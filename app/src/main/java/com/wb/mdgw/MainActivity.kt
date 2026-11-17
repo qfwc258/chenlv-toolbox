@@ -13,10 +13,12 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -172,6 +174,10 @@ fun AppScreen(initialUri: Uri? = null) {
     }
 
     var route by remember { mutableStateOf(initialRoute) }
+    // 主页「最近使用」：每次进入非主页功能即置顶记录（冷启动时 initialRoute 也会记录）
+    LaunchedEffect(route) {
+        if (route != Route.HOME) RecentRoutesStore.touch(context, route.name)
+    }
     var selectedLaw by remember { mutableStateOf<Law?>(null) }
     // 跨页流转：截图排版等产物一键带入「PDF 处理」（加页码/盖章）
     var pendingPdfUri by remember { mutableStateOf<Uri?>(null) }
@@ -188,7 +194,7 @@ fun AppScreen(initialUri: Uri? = null) {
             Box(Modifier.padding(pad).fillMaxSize()) {
                 // 主页宫格
                 AnimatedVisibility(route == Route.HOME, enter = fadeIn(), exit = fadeOut()) {
-                    HomeScreen(onOpen = { route = it })
+                    HomeScreen(onOpen = { route = it }, refreshKey = route)
                 }
 
                 // WORD / PPTX / 公众号：全屏编辑器，常驻切换条左侧「主页」按钮可回主页
@@ -290,7 +296,15 @@ fun AppScreen(initialUri: Uri? = null) {
 /** 功能主页：平铺宫格（不分组） */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun HomeScreen(onOpen: (Route) -> Unit) {
+private fun HomeScreen(onOpen: (Route) -> Unit, refreshKey: Route = Route.HOME) {
+    val context = LocalContext.current
+    // refreshKey 变化（每次回到主页）时重读最近使用记录
+    val recentRoutes = remember(refreshKey) {
+        RecentRoutesStore.list(context)
+            .mapNotNull { name -> runCatching { Route.valueOf(name) }.getOrNull() }
+            .filter { it != Route.HOME && it != Route.SETTINGS }
+            .take(4)
+    }
     Scaffold(
         containerColor = BrandTokens.BrandPaper,
         topBar = {
@@ -326,10 +340,64 @@ private fun HomeScreen(onOpen: (Route) -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            // 最近使用：横向胶囊，点击直达（只展示有记录的）
+            if (recentRoutes.isNotEmpty()) {
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    Column(Modifier.fillMaxWidth()) {
+                        Text(
+                            "最近使用",
+                            fontFamily = FontFamily.Serif,
+                            fontWeight = FontWeight.Medium,
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(start = 2.dp, bottom = 6.dp)
+                        )
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(recentRoutes, key = { it.name }) { r ->
+                                val feature = HOME_FEATURES.firstOrNull { it.route == r } ?: return@items
+                                RecentChip(feature = feature, onClick = { onOpen(r) })
+                            }
+                        }
+                        Spacer(Modifier.height(4.dp))
+                    }
+                }
+            }
             // 不分组：13 个功能按 HOME_FEATURES 声明顺序平铺
             items(HOME_FEATURES, key = { it.route.name }) { f ->
                 FeatureCard(feature = f, onClick = { onOpen(f.route) })
             }
+        }
+    }
+}
+
+/** 最近使用胶囊：小图标 + 标题，紧凑横向排布 */
+@Composable
+private fun RecentChip(feature: Feature, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = UI_RADIUS_LG,
+        color = BrandTokens.BrandParchmentStrong,
+        shadowElevation = 1.dp
+    ) {
+        Row(
+            Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Icon(
+                feature.icon, contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = BrandTokens.BrandRed
+            )
+            Text(
+                feature.title,
+                fontFamily = FontFamily.Serif,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                color = BrandTokens.BrandInk,
+                maxLines = 1,
+                softWrap = false
+            )
         }
     }
 }

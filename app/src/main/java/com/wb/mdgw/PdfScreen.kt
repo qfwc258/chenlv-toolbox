@@ -761,8 +761,12 @@ fun PdfScreen(initialUri: Uri? = null, snackbar: SnackbarHostState) {
                                 Modifier.padding(10.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(Icons.Default.PictureAsPdf, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(8.dp))
+                                PdfThumb(
+                                    uri = sf.uri,
+                                    modifier = Modifier.size(width = 34.dp, height = 46.dp)
+                                        .clip(UI_RADIUS_MD).background(MaterialTheme.colorScheme.surface)
+                                )
+                                Spacer(Modifier.width(10.dp))
                                 Column(Modifier.weight(1f)) {
                                     Text(name, fontSize = 14.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     Text(sf.displayPath, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -928,6 +932,51 @@ private fun PageNumberSection(
 // =====================================================================
 // 拆分功能区
 // =====================================================================
+
+/**
+ * 拆分结果缩略图：用 PdfRenderer 渲染每份 PDF 的首页（96px 宽小图）。
+ * 渲染在 IO 线程完成；uri 无效 / 加密 / 无页面时返回 null，由调用方回退 PDF 图标。
+ */
+@Composable
+private fun PdfThumb(uri: Uri, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val thumb by produceState<androidx.compose.ui.graphics.ImageBitmap?>(initialValue = null, uri) {
+        value = withContext(Dispatchers.IO) {
+            runCatching {
+                context.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
+                    val renderer = PdfRenderer(pfd)
+                    try {
+                        if (renderer.pageCount > 0) {
+                            renderer.openPage(0).use { page ->
+                                val ratio = page.height.toFloat() / page.width.toFloat()
+                                val w = 96
+                                val h = (w * ratio).roundToInt().coerceIn(64, 160)
+                                val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+                                bmp.eraseColor(android.graphics.Color.WHITE)
+                                page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                                bmp.asImageBitmap()
+                            }
+                        } else null
+                    } finally {
+                        renderer.close()
+                    }
+                }
+            }.getOrNull()
+        }
+    }
+    if (thumb != null) {
+        Image(
+            bitmap = thumb!!, contentDescription = null, modifier = modifier,
+            contentScale = androidx.compose.ui.layout.ContentScale.Crop
+        )
+    } else {
+        Icon(
+            Icons.Default.PictureAsPdf, contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary, modifier = modifier.size(18.dp)
+        )
+    }
+}
+
 @Composable
 private fun SplitSection(
     rule: String, onRule: (String) -> Unit,

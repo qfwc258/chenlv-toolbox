@@ -29,6 +29,10 @@ object SettingsStore {
     private const val K_DOCGEN_TEMPLATE_DIR = "docgen_template_dir"
     private const val K_DOCGEN_SELECTED_TYPES = "docgen_selected_types"
     private const val K_DOCGEN_CASE_TYPE = "docgen_case_type"
+    /** Word 编辑器界面偏好：字号、顶栏/底栏折叠状态 */
+    private const val K_WORD_FONT_SIZE = "word_font_size"
+    private const val K_WORD_TOP_EXPANDED = "word_top_expanded"
+    private const val K_WORD_BOTTOM_EXPANDED = "word_bottom_expanded"
     /** 合并后的「类型」单选 code（旧的两个 key 保留，供一次性迁移读取） */
     private const val K_DOCGEN_SELECTED_TYPE = "docgen_selected_type"
 
@@ -169,5 +173,31 @@ object SettingsStore {
 
     fun saveDocgenCaseType(ctx: Context, caseTypeId: String) {
         prefs(ctx).edit().putString(K_DOCGEN_CASE_TYPE, caseTypeId).apply()
+    }
+
+    // ---------- Word 编辑器界面偏好 ----------
+
+    /** 正文字号（sp），范围 12–24，默认 15 */
+    fun wordFontSize(ctx: Context): Int =
+        prefs(ctx).getInt(K_WORD_FONT_SIZE, 15).coerceIn(12, 24)
+
+    fun saveWordFontSize(ctx: Context, v: Int) {
+        prefs(ctx).edit().putInt(K_WORD_FONT_SIZE, v.coerceIn(12, 24)).apply()
+    }
+
+    /** 顶部格式工具栏是否展开，默认收起 */
+    fun wordTopExpanded(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(K_WORD_TOP_EXPANDED, false)
+
+    fun saveWordTopExpanded(ctx: Context, v: Boolean) {
+        prefs(ctx).edit().putBoolean(K_WORD_TOP_EXPANDED, v).apply()
+    }
+
+    /** 底部操作栏是否展开，默认展开 */
+    fun wordBottomExpanded(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(K_WORD_BOTTOM_EXPANDED, true)
+
+    fun saveWordBottomExpanded(ctx: Context, v: Boolean) {
+        prefs(ctx).edit().putBoolean(K_WORD_BOTTOM_EXPANDED, v).apply()
     }
 }

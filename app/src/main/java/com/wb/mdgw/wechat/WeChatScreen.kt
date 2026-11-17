@@ -158,14 +158,14 @@ fun WeChatScreen(snackbar: SnackbarHostState, onBack: () -> Unit) {
 
     // ---------- 跨编辑器 Markdown 互传 ----------
     fun sendTo(target: String) {
-        MarkdownExchange.send(context, MarkdownExchange.WECHAT, target, mdTfv.text)
-        Toast.makeText(
-            context, "已发送，打开${MarkdownExchange.sourceName(target)}即可导入",
-            Toast.LENGTH_SHORT
-        ).show()
+        val overwritten = MarkdownExchange.send(context, MarkdownExchange.WECHAT, target, mdTfv.text)
+        val msg = if (overwritten)
+            "已发送（覆盖了之前发给${MarkdownExchange.sourceName(target)}的未导入内容），打开即可导入"
+        else "已发送，打开${MarkdownExchange.sourceName(target)}即可导入"
+        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
     }
     fun openImportExchange() {
-        val p = MarkdownExchange.peek(context)
+        val p = MarkdownExchange.peek(context, MarkdownExchange.WECHAT)
         if (p != null && p.text.isNotBlank()) incomingMd = p
         else Toast.makeText(context, "暂无可导入的内容", Toast.LENGTH_SHORT).show()
     }
@@ -178,7 +178,7 @@ fun WeChatScreen(snackbar: SnackbarHostState, onBack: () -> Unit) {
         mdTfv = TextFieldValue(merged, TextRange(merged.length))
         undoStack = emptyList(); redoStack = emptyList()
         subView = SubView.EDIT
-        MarkdownExchange.consume(context)
+        MarkdownExchange.consume(context, MarkdownExchange.WECHAT)
         incomingMd = null
     }
     LaunchedEffect(Unit) {
@@ -362,7 +362,7 @@ fun WeChatScreen(snackbar: SnackbarHostState, onBack: () -> Unit) {
             sourceName = MarkdownExchange.sourceName(p.source),
             onReplace = { applyIncoming(false) },
             onAppend = { applyIncoming(true) },
-            onDismiss = { MarkdownExchange.consume(context); incomingMd = null }
+            onDismiss = { MarkdownExchange.consume(context, MarkdownExchange.WECHAT); incomingMd = null }
         )
     }
 }

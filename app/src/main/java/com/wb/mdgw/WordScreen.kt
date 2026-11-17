@@ -104,13 +104,16 @@ fun WordScreen(
     var tfv by remember { mutableStateOf(TextFieldValue(restoredMd?.text ?: "")) }
     var originalUri by remember { mutableStateOf<Uri?>(null) }
     var dirty by remember { mutableStateOf(restoredMd != null && restoredMd.text.isNotBlank()) }
-    var fontSize by remember { mutableStateOf(15) }
+    var fontSize by remember { mutableStateOf(SettingsStore.wordFontSize(context)) }
     var busy by remember { mutableStateOf(false) }
     var subView by remember { mutableStateOf(SubView.EDIT) }
-    // 沉浸式布局：顶部工具面板默认收起；底部操作栏（打开/导出/转PDF）默认展开，
-    // 常用动作不再需要先点切换条才看得到。切换条仍在，随时可收起。
-    var topExpanded by remember { mutableStateOf(false) }
-    var bottomExpanded by remember { mutableStateOf(true) }
+    // 沉浸式布局：顶栏/底栏折叠状态与字号持久化，下次进入沿用上次的布局。
+    var topExpanded by remember { mutableStateOf(SettingsStore.wordTopExpanded(context)) }
+    var bottomExpanded by remember { mutableStateOf(SettingsStore.wordBottomExpanded(context)) }
+    // 布局与字号变化即时落盘（IO 线程，不阻塞编辑）
+    LaunchedEffect(fontSize) { withContext(Dispatchers.IO) { SettingsStore.saveWordFontSize(context, fontSize) } }
+    LaunchedEffect(topExpanded) { withContext(Dispatchers.IO) { SettingsStore.saveWordTopExpanded(context, topExpanded) } }
+    LaunchedEffect(bottomExpanded) { withContext(Dispatchers.IO) { SettingsStore.saveWordBottomExpanded(context, bottomExpanded) } }
     // 上次用于生成公文的源 Markdown；切到「预览」时若与当前不一致则自动重新生成
     var lastGenSource by remember { mutableStateOf("") }
 
@@ -176,6 +179,9 @@ fun WordScreen(
     var govEditVersion by remember { mutableStateOf(0) }
     var showRestoreGov by remember { mutableStateOf(false) }
     var pendingGovDraft by remember { mutableStateOf<GovDoc?>(null) }
+    // 恢复弹窗串行化：公文档案 > 互传草稿 > Markdown 草稿，一次只弹一个
+    var govRestoreChecked by remember { mutableStateOf(false) }
+    var exchangeChecked by remember { mutableStateOf(false) }
 
     // WebView 引用，用于导出前收集编辑内容
     var webView by remember { mutableStateOf<WebView?>(null) }
@@ -249,6 +255,27 @@ fun WordScreen(
         scope.launch { snackbar.showSnackbar("已清空编辑器，可点撤销恢复") }
     }
 
+    /** 常驻「新建空白」：清空编辑器 + 清文件名 + 清草稿 + 退出公文/原文件态，文本可撤销恢复 */
+    fun newBlank() {
+        if (busy || govBusy) return
+        if (tfv.text.isNotBlank()) {
+            undoStack = (undoStack + UndoHistoryStore.MdUndoSnapshot.of(tfv)).takeLast(60)
+            redoStack = emptyList()
+        }
+        tfv = TextFieldValue("")
+        fileName = "未命名.md"
+        originalUri = null
+        govDoc = null
+        subView = SubView.EDIT
+        dirty = false
+        autoSaved = false
+        recentHidden = true
+        scope.launch {
+            withContext(Dispatchers.IO) { DraftStore.clear(context) }
+            snackbar.showSnackbar("已新建空白，可点撤销恢复文本")
+        }
+    }
+
     fun insertSnippet(s: MarkdownSnippets.Snippet) {
         if (busy || govBusy) return
         undoStack = (undoStack + UndoHistoryStore.MdUndoSnapshot.of(tfv)).takeLast(60)
@@ -278,14 +305,14 @@ fun WordScreen(
 
     // ---------- 跨编辑器 Markdown 互传 ----------
     fun sendTo(target: String) {
-        MarkdownExchange.send(context, MarkdownExchange.WORD, target, tfv.text)
-        android.widget.Toast.makeText(
-            context, "已发送，打开${MarkdownExchange.sourceName(target)}即可导入",
-            android.widget.Toast.LENGTH_SHORT
-        ).show()
+        val overwritten = MarkdownExchange.send(context, MarkdownExchange.WORD, target, tfv.text)
+        val msg = if (overwritten)
+            "已发送（覆盖了之前发给${MarkdownExchange.sourceName(target)}的未导入内容），打开即可导入"
+        else "已发送，打开${MarkdownExchange.sourceName(target)}即可导入"
+        android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
     }
     fun openImportExchange() {
-        val p = MarkdownExchange.peek(context)
+        val p = MarkdownExchange.peek(context, MarkdownExchange.WORD)
         if (p != null && p.text.isNotBlank()) incomingMd = p
         else android.widget.Toast.makeText(context, "暂无可导入的内容", android.widget.Toast.LENGTH_SHORT).show()
     }
@@ -297,7 +324,7 @@ fun WordScreen(
         } else p.text
         tfv = TextFieldValue(merged, TextRange(merged.length))
         undoStack = emptyList(); redoStack = emptyList(); dirty = true; autoSaved = false
-        MarkdownExchange.consume(context)
+        MarkdownExchange.consume(context, MarkdownExchange.WORD)
         incomingMd = null
         subView = SubView.EDIT
     }
@@ -456,10 +483,13 @@ fun WordScreen(
             GovDocDraftSession.handled = true
             GovDocDraftStore.load(context)?.let { g -> pendingGovDraft = g; showRestoreGov = true }
         }
+        govRestoreChecked = true
     }
-    // 进入时检测来自其他编辑器的 Markdown（延迟以错开草稿恢复弹窗）
-    LaunchedEffect(Unit) {
-        delay(600)
+    // 互传草稿：等公文档案弹窗处理完再检测，避免两个恢复弹窗叠加；只检测一次
+    LaunchedEffect(govRestoreChecked, showRestoreGov) {
+        if (!govRestoreChecked || showRestoreGov || exchangeChecked) return@LaunchedEffect
+        exchangeChecked = true
+        delay(300) // 给上一个弹窗的关闭动画留出时间
         MarkdownExchange.pendingFor(context, MarkdownExchange.WORD)?.let { incomingMd = it }
     }
     LaunchedEffect(restoredMd) {
@@ -867,6 +897,7 @@ fun WordScreen(
                 WordActionBar(
                     onOpen = { openPicker.launch(arrayOf("text/markdown", "text/x-markdown", "text/plain", DOCX_MIME, "application/octet-stream", "*/*")) },
                     onStash = { stashNow() },
+                    onNewBlank = { newBlank() },
                     onExportDocx = { exportDocx() },
                     onExportPdf = { exportPdf() },
                     onExportText = { startExport(it) },
@@ -1149,7 +1180,7 @@ fun WordScreen(
             sourceName = MarkdownExchange.sourceName(p.source),
             onReplace = { applyIncoming(false) },
             onAppend = { applyIncoming(true) },
-            onDismiss = { MarkdownExchange.consume(context); incomingMd = null }
+            onDismiss = { MarkdownExchange.consume(context, MarkdownExchange.WORD); incomingMd = null }
         )
     }
 }
@@ -1200,6 +1231,7 @@ private fun WordToolbar(
 private fun WordActionBar(
     onOpen: () -> Unit,
     onStash: () -> Unit,
+    onNewBlank: () -> Unit,
     onExportDocx: () -> Unit,
     onExportPdf: () -> Unit,
     onExportText: (String) -> Unit,
@@ -1223,6 +1255,13 @@ private fun WordActionBar(
                 )
             ) {
                 Icon(Icons.Default.Bookmark, contentDescription = "暂存", modifier = Modifier.size(19.dp))
+            }
+            OutlinedIconButton(
+                onClick = onNewBlank,
+                modifier = Modifier.size(UI_ACTION_HEIGHT),
+                border = BorderStroke(1.2.dp, MaterialTheme.colorScheme.outline)
+            ) {
+                Icon(Icons.Default.NoteAdd, contentDescription = "新建空白", modifier = Modifier.size(19.dp))
             }
             OutlinedButton(
                 onClick = onOpen, shape = UI_BTN_RADIUS, modifier = btnMod,

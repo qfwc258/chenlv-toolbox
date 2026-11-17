@@ -26,13 +26,21 @@ object MarkdownExchange {
         val timestamp: Long = 0L
     )
 
-    private object Store : JsonFileStore<Payload>() {
-        override val fileName: String = "markdown_exchange.json"
+    /** 每个目标编辑器独立一份暂存，避免「发给 PPTX」被随后「发给公众号」静默覆盖 */
+    private class TargetStore(override val fileName: String) : JsonFileStore<Payload>() {
         override fun serializer() = Payload.serializer()
         fun save(c: Context, p: Payload) = write(c, p)
         fun load(c: Context): Payload? = read(c)
         fun reset(c: Context) = clear(c)
     }
+
+    private val stores = mapOf(
+        WORD to TargetStore("markdown_exchange_word.json"),
+        PPTX to TargetStore("markdown_exchange_pptx.json"),
+        WECHAT to TargetStore("markdown_exchange_wechat.json")
+    )
+
+    private fun storeFor(target: String): TargetStore = stores[target] ?: stores.getValue(WORD)
 
     fun sourceName(s: String): String = when (s) {
         WORD -> "WORD"
@@ -41,23 +49,29 @@ object MarkdownExchange {
         else -> "其他编辑器"
     }
 
-    /** 把 [text] 发送给 [target] 编辑器 */
-    fun send(context: Context, source: String, target: String, text: String) {
-        if (text.isBlank()) return
-        Store.save(context, Payload(text.trim(), source, target, System.currentTimeMillis()))
+    /**
+     * 把 [text] 发送给 [target] 编辑器。
+     * @return true 表示目标已有「未导入」的内容被本次覆盖（UI 应提示用户）。
+     */
+    fun send(context: Context, source: String, target: String, text: String): Boolean {
+        if (text.isBlank()) return false
+        val st = storeFor(target)
+        val overwritten = st.load(context)?.let { it.target == target && it.source != source && it.text.isNotBlank() } ?: false
+        st.save(context, Payload(text.trim(), source, target, System.currentTimeMillis()))
+        return overwritten
     }
 
-    /** 读取暂存（不清除）；无内容返回 null */
-    fun peek(context: Context): Payload? = Store.load(context)
+    /** 读取发往 [target] 的暂存（不清除）；无内容返回 null */
+    fun peek(context: Context, target: String): Payload? = storeFor(target).load(context)
 
-    /** 清除暂存（导入或忽略后调用） */
-    fun consume(context: Context) = Store.reset(context)
+    /** 清除发往 [target] 的暂存（导入或忽略后调用） */
+    fun consume(context: Context, target: String) = storeFor(target).reset(context)
 
     /**
      * 进入 [self] 编辑器时应自动提示的暂存：目标必须是自己、来源不是自己、文本非空。
      */
     fun pendingFor(context: Context, self: String): Payload? {
-        val p = Store.load(context) ?: return null
+        val p = storeFor(self).load(context) ?: return null
         return if (p.target == self && p.source != self && p.text.isNotBlank()) p else null
     }
 }
