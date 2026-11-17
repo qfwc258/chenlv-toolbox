@@ -237,6 +237,18 @@ fun WordScreen(
         govDoc = next
     }
 
+    /** 长按「编辑」tab 快速清空：与撤销栈联动，误触可一键撤销恢复 */
+    fun clearEditorKeepUndo() {
+        if (busy || govBusy) return
+        if (tfv.text.isEmpty()) return
+        undoStack = (undoStack + UndoHistoryStore.MdUndoSnapshot.of(tfv)).takeLast(60)
+        redoStack = emptyList()
+        tfv = TextFieldValue("")
+        dirty = true
+        autoSaved = false
+        scope.launch { snackbar.showSnackbar("已清空编辑器，可点撤销恢复") }
+    }
+
     fun insertSnippet(s: MarkdownSnippets.Snippet) {
         if (busy || govBusy) return
         undoStack = (undoStack + UndoHistoryStore.MdUndoSnapshot.of(tfv)).takeLast(60)
@@ -876,7 +888,8 @@ fun WordScreen(
                 bottomExpanded = bottomExpanded,
                 onToggleBottom = { bottomExpanded = !bottomExpanded },
                 onHome = onBack,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                onLongEdit = { clearEditorKeepUndo() }
             )
 
             Box(Modifier.fillMaxSize().weight(1f).padding(horizontal = 8.dp)) {

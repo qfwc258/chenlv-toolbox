@@ -52,14 +52,6 @@ class MarkdownSnippetsTest {
     }
 
     @Test
-    fun signOffsetsCaretToBlockStart() {
-        val s = snip("sign") // caretOffset=0（整块，光标回到插入点）
-        val r = MarkdownSnippets.apply("正文", 2, 2, s)
-        assertEquals("正文" + s.snippet, r.text)
-        assertEquals(2, r.caret)
-    }
-
-    @Test
     fun outOfRangeSelectionIsClamped() {
         val s = snip("hr") // "---\n", caretOffset=4
         // 越界选区被 clamp 到合法区间，不应抛异常

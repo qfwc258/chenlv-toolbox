@@ -6,7 +6,7 @@ import kotlin.math.roundToInt
  * Markdown -> 法律文书排版（参照党政机关公文 GB/T 9704 格式，无红头）。
  *
  * 排版规则（与参考实现保持一致）：
- *  - 一级标题 `#`     : 小标宋体 二号(22pt) 居中，后加一个空行
+ *  - 一级标题 `#`     : 小标宋体 20pt 居中，后加一个空行
  *  - 二级标题 `##`    : 黑体 三号(16pt)，首行缩进 2 字符
  *  - 三级标题 `###`   : 楷体_GB2312 三号，首行缩进 2 字符
  *  - 四级标题 `####`  : 仿宋_GB2312 三号，首行缩进 2 字符
@@ -52,7 +52,7 @@ data class GovDocSpec(
         val GB_STANDARD = GovDocSpec(
             specName = "国标通用",
             mainTitleFont = "方正小标宋简体",
-            mainTitleSizePt = 22.0,
+            mainTitleSizePt = 20.0,
             level2TitleFont = "黑体",
             level2TitleSizePt = 16.0,
             level3TitleFont = "楷体_GB2312",
@@ -66,7 +66,7 @@ data class GovDocSpec(
 
         /**
          * 法院诉讼文书专用规范（严格参照 Python 参考实现 md_to_official_word）：
-         *  - 主标题 `#` : 小标宋体 二号(22pt) 居中
+         *  - 主标题 `#` : 小标宋体 20pt 居中
          *  - 正文 / 二三四级标题 / 列表 : 仿宋_GB2312 四号(14pt)，首行缩进 2 字符(28pt)
          *  - 固定行距(精确值) 25pt，段前段后 0
          *  - 页面 A4，页边距 上3 / 下2.8 / 左2.5 / 右2.5 cm
@@ -75,7 +75,7 @@ data class GovDocSpec(
         val COURT_DOC = GovDocSpec(
             specName = "诉讼文书",
             mainTitleFont = "小标宋体",
-            mainTitleSizePt = 22.0,
+            mainTitleSizePt = 20.0,
             level2TitleFont = "黑体",
             level2TitleSizePt = 16.0,
             level3TitleFont = "楷体_GB2312",
@@ -91,7 +91,7 @@ data class GovDocSpec(
         val GOV_OFFICIAL = GovDocSpec(
             specName = "行政机关",
             mainTitleFont = "方正小标宋简体",
-            mainTitleSizePt = 22.0,
+            mainTitleSizePt = 20.0,
             level2TitleFont = "黑体",
             level2TitleSizePt = 16.0,
             level3TitleFont = "楷体_GB2312",
@@ -121,7 +121,7 @@ object MdToGongwen {
     const val FONT_KAI = "楷体_GB2312"
     const val FONT_FANG = "仿宋_GB2312"
 
-    const val SIZE_MAIN_TITLE = 22.0   // 二号
+    const val SIZE_MAIN_TITLE = 20.0   // 主标题字号（各规范预设的 mainTitleSizePt 同此值）
     const val SIZE_NORMAL = 16.0       // 三号
     const val INDENT_2 = 32.0          // 二字符缩进
     const val LINE_SPACING = 28.0      // 固定行距

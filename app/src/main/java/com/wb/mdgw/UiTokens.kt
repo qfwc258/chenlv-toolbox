@@ -1,6 +1,8 @@
 package com.wb.mdgw
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -56,12 +58,15 @@ const val UI_BUTTON_MAX_LINES = 2
  * 分段控件（胶囊背景 + 选中态主色填充 + 图标），用于「编辑/预览」「加页码/盖章」等二选一切换。
  * 视觉语言与 WORD tab 对齐。
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SegmentedTabs(
     items: List<Pair<String, ImageVector>>,
     selectedIndex: Int,
     onSelect: (Int) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** 长按某一格（传 index）的可选回调；仅 Word 编辑页传入，其它调用方保持普通点击行为 */
+    onLongClickAt: ((Int) -> Unit)? = null
 ) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
@@ -71,7 +76,12 @@ fun SegmentedTabs(
         Row(Modifier.fillMaxWidth().padding(4.dp)) {
             items.forEachIndexed { i, (label, icon) ->
                 val selected = selectedIndex == i
-                val cellMod = Modifier.weight(1f).height(40.dp).clickable { onSelect(i) }
+                val cellMod = Modifier.weight(1f).height(40.dp).then(
+                    if (onLongClickAt != null) Modifier.combinedClickable(
+                        onClick = { onSelect(i) },
+                        onLongClick = { onLongClickAt(i) }
+                    ) else Modifier.clickable { onSelect(i) }
+                )
                 if (selected) {
                     Surface(color = MaterialTheme.colorScheme.primary, shape = UI_SECTION_RADIUS, modifier = cellMod) {
                         Row(
@@ -113,7 +123,9 @@ fun EditPreviewBar(
     bottomExpanded: Boolean,
     onToggleBottom: () -> Unit,
     onHome: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** 长按「编辑」格的可选回调（Word 页用于快速清空编辑器） */
+    onLongEdit: (() -> Unit)? = null
 ) {
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = onHome, modifier = Modifier.size(34.dp)) {
@@ -136,7 +148,8 @@ fun EditPreviewBar(
             items = listOf("编辑" to Icons.Default.Edit, "预览" to Icons.Default.Visibility),
             selectedIndex = selectedIndex,
             onSelect = onSelect,
-            modifier = Modifier.weight(1f)
+            modifier = Modifier.weight(1f),
+            onLongClickAt = onLongEdit?.let { cb -> { i -> if (i == 0) cb() } }
         )
         IconButton(onClick = onToggleBottom, modifier = Modifier.size(34.dp)) {
             Icon(

@@ -70,12 +70,7 @@ object MarkdownSnippets {
             "| 列1 | 列2 |\n| --- | --- |\n| 内容 | 内容 |\n".length
         ),
         Snippet("hr", "分割线", "---\n", 4),
-        Snippet("tabline", "填空线", "tab 甲方（盖章）：", 4),
-        Snippet(
-            "sign", "落款",
-            "\n（此致）\n\n敬礼！\n\nrrr\n申请人：\n二〇二六年八月十一日\n",
-            0
-        )
+        Snippet("tabline", "填空线", "tab 甲方（盖章）：", 4)
     )
 
     /** 空状态提示用的精简片段（避免占位符文字干扰新手，直接给纯语法） */
