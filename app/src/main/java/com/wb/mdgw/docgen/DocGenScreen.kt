@@ -30,6 +30,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
@@ -1272,6 +1273,29 @@ fun DocGenScreen(onBack: () -> Unit) {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     Text("成功 ${out.successCount} 个，失败 ${failed.size} 个", fontSize = 14.sp)
                     Text("保存位置：下载 / 陈律文档 / ${out.caseDir}/", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    // 成功文件逐份列出，可直接打开核对内容（律师生成后第一需求）
+                    val succeeded = out.results.filter { it.success }
+                    if (succeeded.isNotEmpty()) {
+                        Spacer(Modifier.height(10.dp))
+                        Text("点击文件名可直接打开核对：", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                        succeeded.forEach { r ->
+                            TextButton(
+                                onClick = {
+                                    r.uri?.let { uri ->
+                                        val mime = if (r.outputName?.lowercase()?.endsWith(".pdf") == true)
+                                            FileUtils.PDF_MIME else FileUtils.DOCX_MIME
+                                        runCatching { context.startActivity(FileUtils.openIntent(uri, mime)) }
+                                            .onFailure { scope.launch { snackbar.showSnackbar("无法打开：${it.message ?: ""}") } }
+                                    }
+                                },
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(15.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(r.outputName ?: r.templateName, fontSize = 13.sp)
+                            }
+                        }
+                    }
                     if (out.sharedTextPath != null) {
                         Text("已归档 shared_text.txt 到该文件夹", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
                     }

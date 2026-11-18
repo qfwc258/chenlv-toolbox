@@ -85,6 +85,12 @@ private enum class SubView { EDIT, PREVIEW }
 /** 旧版二进制 .doc（Word 97-2003），本应用只支持 .docx / 文本 */
 private class LegacyWordException(val uri: Uri, val name: String) : Exception("legacy .doc")
 
+/** 把一个公文块的所有 run 文本拼成纯文本，用于字数统计 */
+private fun blockPlainText(b: Block): String = when (b) {
+    is Block.Para -> b.runs.joinToString("") { it.text }
+    is Block.Table -> b.rows.joinToString("") { row -> row.joinToString("") { cell -> cell.joinToString("") { it.text } } }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WordScreen(
@@ -157,6 +163,20 @@ fun WordScreen(
 
     // 空白编辑态：无正文、未打开文件、无公文模型时，用于在编辑区展示「最近打开」
     val isBlankEditor = tfv.text.isBlank() && originalUri == null && govDoc == null
+
+    // 实时字数 / 段落统计：编辑态按 Markdown 源，预览态按公文文本（随内容变化自动重算）
+    val statsText = run {
+        val source = if (subView == SubView.EDIT) tfv.text else govDoc?.let { d ->
+            buildString {
+                d.blocks.forEach { b -> append(blockPlainText(b)); append('\n') }
+            }
+        }.orEmpty()
+        val chars = source.count { !it.isWhitespace() }
+        val paragraphs = if (subView == SubView.EDIT)
+            source.split('\n').count { it.isNotBlank() }
+        else govDoc?.blocks?.size ?: 0
+        "$chars 字 · $paragraphs 段"
+    }
 
     // 公文撤销 / 重做（持久化版）
     //   - 当前态（govDoc）由 [GovDocDraftStore] 草稿承载；栈仅承载历史快照。
@@ -922,6 +942,18 @@ fun WordScreen(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
                 onLongEdit = { clearEditorKeepUndo() }
             )
+
+            // 实时字数 / 段落统计（编辑态与预览态共享一行小字）
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                horizontalArrangement = Arrangement.End
+            ) {
+                Text(
+                    statsText,
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
 
             Box(Modifier.fillMaxSize().weight(1f).padding(horizontal = 8.dp)) {
                 when (subView) {

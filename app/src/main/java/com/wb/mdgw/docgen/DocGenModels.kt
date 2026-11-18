@@ -1,5 +1,6 @@
 package com.wb.mdgw.docgen
 
+import android.net.Uri
 import kotlinx.serialization.Serializable
 
 /**
@@ -115,6 +116,8 @@ data class GenResult(
     val outputName: String? = null,
     /** 展示给用户的保存位置（成功时） */
     val displayPath: String? = null,
+    /** 成功文件的 uri（用于结果页直接打开单份核对） */
+    val uri: Uri? = null,
     /** 失败原因（失败时） */
     val error: String? = null
 )

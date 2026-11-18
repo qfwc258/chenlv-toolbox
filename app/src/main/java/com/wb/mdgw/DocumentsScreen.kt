@@ -24,11 +24,17 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Article
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Refresh
@@ -37,6 +43,7 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -45,6 +52,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -196,6 +204,25 @@ fun DocumentsScreen(
     var loading by remember { mutableStateOf(true) }
     var confirmDelete by remember { mutableStateOf<DocItem?>(null) }
     var menuFor by remember { mutableStateOf<DocItem?>(null) }
+    // 搜索 / 排序 / 多选批量操作
+    var query by remember { mutableStateOf("") }
+    var sortMode by remember { mutableStateOf(0) } // 0=最近修改 1=名称 2=大小
+    var sortMenuOpen by remember { mutableStateOf(false) }
+    val sortLabels = listOf("最近修改", "名称 A→Z", "大小从大到小")
+    var selectionMode by remember { mutableStateOf(false) }
+    var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var confirmBatchDelete by remember { mutableStateOf(false) }
+
+    // 过滤 + 排序后的列表
+    val visibleItems = remember(items, query, sortMode) {
+        val filtered = if (query.isBlank()) items
+        else items.filter { it.name.contains(query.trim(), ignoreCase = true) || it.relPath.contains(query.trim(), ignoreCase = true) }
+        when (sortMode) {
+            1 -> filtered.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+            2 -> filtered.sortedByDescending { it.size }
+            else -> filtered.sortedByDescending { it.modified }
+        }
+    }
 
     fun reload() {
         scope.launch {
@@ -224,6 +251,36 @@ fun DocumentsScreen(
         }
     }
 
+    fun performBatchDelete() {
+        val targets = items.filter { it.uri.toString() in selected }
+        scope.launch {
+            val deleted = withContext(Dispatchers.IO) {
+                targets.count { item ->
+                    runCatching { context.contentResolver.delete(item.uri, null, null) > 0 }
+                        .getOrDefault(false)
+                }
+            }
+            selected = emptySet()
+            selectionMode = false
+            snackbar.showSnackbar("已删除 $deleted / ${targets.size} 个文件")
+            reload()
+        }
+    }
+
+    fun shareSelected() {
+        val uris = items.filter { it.uri.toString() in selected }
+        if (uris.isEmpty()) return
+        runCatching {
+            context.startActivity(FileUtils.shareMultipleIntent(uris.map { it.uri }, "*/*"))
+        }.onFailure {
+            scope.launch { snackbar.showSnackbar("无法分享：${it.message ?: ""}") }
+        }
+    }
+
+    fun toggleSelected(uri: String) {
+        selected = if (uri in selected) selected - uri else selected + uri
+    }
+
     fun openItem(item: DocItem) {
         runCatching {
             context.startActivity(FileUtils.openIntent(item.uri, item.mime))
@@ -246,23 +303,76 @@ fun DocumentsScreen(
             Column {
                 TopAppBar(
                     title = {
-                        Text(
-                            "我的文档",
-                            style = com.wb.mdgw.BrandTokens.BrandTopBarTitleStyle.copy(fontSize = 22.sp)
-                        )
+                        if (selectionMode) {
+                            Text("已选 ${selected.size} 项", style = com.wb.mdgw.BrandTokens.BrandTopBarTitleStyle.copy(fontSize = 20.sp))
+                        } else {
+                            Text(
+                                "我的文档",
+                                style = com.wb.mdgw.BrandTokens.BrandTopBarTitleStyle.copy(fontSize = 22.sp)
+                            )
+                        }
                     },
                     navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        IconButton(onClick = {
+                            if (selectionMode) { selectionMode = false; selected = emptySet() } else onBack()
+                        }) {
+                            Icon(
+                                if (selectionMode) Icons.Default.Close else Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = if (selectionMode) "退出多选" else "返回"
+                            )
                         }
                     },
                     actions = {
-                        IconButton(onClick = { reload() }) {
-                            Icon(Icons.Default.Refresh, contentDescription = "刷新")
+                        if (selectionMode) {
+                            IconButton(onClick = { selected = if (selected.size == visibleItems.size) emptySet() else visibleItems.map { it.uri.toString() }.toSet() }) {
+                                Icon(Icons.Default.Check, contentDescription = "全选/取消")
+                            }
+                            IconButton(onClick = { shareSelected() }) {
+                                Icon(Icons.Default.Share, contentDescription = "分享所选")
+                            }
+                            IconButton(onClick = { confirmBatchDelete = true }) {
+                                Icon(Icons.Default.Delete, contentDescription = "删除所选")
+                            }
+                        } else {
+                            Box {
+                                IconButton(onClick = { sortMenuOpen = true }) {
+                                    Icon(Icons.Default.Sort, contentDescription = "排序")
+                                }
+                                DropdownMenu(expanded = sortMenuOpen, onDismissRequest = { sortMenuOpen = false }) {
+                                    sortLabels.forEachIndexed { idx, label ->
+                                        DropdownMenuItem(
+                                            text = { Text(label) },
+                                            leadingIcon = {
+                                                if (sortMode == idx) Icon(Icons.Default.Check, contentDescription = null)
+                                            },
+                                            onClick = { sortMode = idx; sortMenuOpen = false }
+                                        )
+                                    }
+                                }
+                            }
+                            IconButton(onClick = { reload() }) {
+                                Icon(Icons.Default.Refresh, contentDescription = "刷新")
+                            }
                         }
                     },
                     colors = com.wb.mdgw.BrandTokens.BrandTopAppBarColors
                 )
+                if (!selectionMode) {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        placeholder = { Text("搜索文件名 / 目录…", fontSize = 13.sp) },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                        trailingIcon = {
+                            if (query.isNotEmpty()) IconButton(onClick = { query = "" }) {
+                                Icon(Icons.Default.Close, contentDescription = "清空搜索")
+                            }
+                        },
+                        singleLine = true,
+                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.sp),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
+                    )
+                }
                 HorizontalDivider(
                     color = com.wb.mdgw.BrandTokens.BrandBronze.copy(alpha = 0.35f),
                     thickness = 1.dp
@@ -299,6 +409,18 @@ fun DocumentsScreen(
                         )
                     }
                 }
+                items.isNotEmpty() && visibleItems.isEmpty() -> {
+                    Column(
+                        Modifier.align(Alignment.Center).padding(32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(Icons.Default.Search, null, Modifier.size(48.dp), tint = MaterialTheme.colorScheme.outline)
+                        Spacer(Modifier.height(12.dp))
+                        Text("没有匹配的文档", fontWeight = FontWeight.Medium, fontSize = 16.sp)
+                        Spacer(Modifier.height(4.dp))
+                        TextButton(onClick = { query = "" }) { Text("清空搜索") }
+                    }
+                }
                 else -> {
                     LazyColumn(
                         Modifier.fillMaxSize(),
@@ -307,9 +429,12 @@ fun DocumentsScreen(
                         ),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        items(items, key = { it.uri.toString() }) { item ->
+                        items(visibleItems, key = { it.uri.toString() }) { item ->
                             DocRow(
                                 item = item,
+                                selectionMode = selectionMode,
+                                selected = item.uri.toString() in selected,
+                                onSelectToggle = { toggleSelected(item.uri.toString()) },
                                 onOpen = { openItem(item) },
                                 onShare = { shareItem(item) },
                                 onDelete = { confirmDelete = item },
@@ -342,11 +467,32 @@ fun DocumentsScreen(
             }
         )
     }
+
+    if (confirmBatchDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmBatchDelete = false },
+            title = { Text("批量删除") },
+            text = { Text("确定删除选中的 ${selected.size} 个文件吗？此操作不可恢复。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmBatchDelete = false
+                    performBatchDelete()
+                }) { Text("删除 ${selected.size} 项", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmBatchDelete = false }) { Text("取消") }
+            }
+        )
+    }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun DocRow(
     item: DocItem,
+    selectionMode: Boolean,
+    selected: Boolean,
+    onSelectToggle: () -> Unit,
     onOpen: () -> Unit,
     onShare: () -> Unit,
     onDelete: () -> Unit,
@@ -356,11 +502,16 @@ private fun DocRow(
 ) {
     // 与主页卡片同语言：宣纸色 + 1dp 金色左线 + 朱砂红圆形图标底 + Serif Semibold 标题
     Card(
-        onClick = onOpen,
         shape = UI_RADIUS_SM,
-        colors = CardDefaults.cardColors(containerColor = com.wb.mdgw.BrandTokens.BrandParchment),
+        colors = CardDefaults.cardColors(
+            containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer
+            else com.wb.mdgw.BrandTokens.BrandParchment
+        ),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp, pressedElevation = 1.dp),
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth().combinedClickable(
+            onClick = { if (selectionMode) onSelectToggle() else onOpen() },
+            onLongClick = { if (!selectionMode) onSelectToggle() }
+        )
     ) {
         Row(
             Modifier.fillMaxWidth().padding(12.dp),
@@ -374,6 +525,10 @@ private fun DocRow(
                     .background(com.wb.mdgw.BrandTokens.BrandBronze.copy(alpha = 0.6f))
             )
             Spacer(Modifier.width(12.dp))
+            if (selectionMode) {
+                Checkbox(checked = selected, onCheckedChange = { onSelectToggle() })
+                Spacer(Modifier.width(4.dp))
+            }
             // 图标：朱砂红 12% 透明圆形底 + 主色图标
             Box(
                 Modifier
@@ -415,7 +570,7 @@ private fun DocRow(
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            Box {
+            if (!selectionMode) Box {
                 IconButton(onClick = { onMenuToggle(true) }) {
                     Icon(Icons.Default.MoreVert, contentDescription = "更多操作")
                 }

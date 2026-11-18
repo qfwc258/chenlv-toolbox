@@ -130,7 +130,8 @@ object DocGenEngine {
                     templateName = template.fileName,
                     success = true,
                     outputName = outName,
-                    displayPath = saved.displayPath
+                    displayPath = saved.displayPath,
+                    uri = saved.uri
                 )
             } catch (e: Exception) {
                 results += GenResult(
