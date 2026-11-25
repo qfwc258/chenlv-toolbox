@@ -131,13 +131,54 @@ object TemplateFields {
 
         // 内置结构没有的 key（模板预留的新字段）——按扫描顺序归入模板字段分组
         val builtinKeys = builtinLines.filter { it.isField }.map { it.key }.toSet()
-        val extras = scannedKeys.filter { it !in builtinKeys }
+        val extras = scannedKeys.distinct().filter { it !in builtinKeys }
         if (extras.isNotEmpty()) {
             if (result.isNotEmpty() && result.last().type != RuleLine.TYPE_BLANK) {
                 result.add(RuleLine.blank())
             }
             result.add(RuleLine.group(TEMPLATE_GROUP))
             extras.forEach { result.add(RuleLine.field(it, valueOf(it))) }
+        }
+        return result
+    }
+
+    /**
+     * 从结构快照恢复：以用户已调整的结构为准，只把模板新扫出的 key 追加到 [TEMPLATE_GROUP] 末尾。
+     *
+     * 不重排、不改写已有字段的分组 / 顺序 / 显示名 / 值——保证「切到别的类型再切回来」时
+     * 自定义字段与排序不丢；同时模板后来新增的预留字段仍能补进表单。
+     * [scannedKeys] 里已存在于 [base] 的 key 一律跳过（值也保留快照里的，不用默认值覆盖）。
+     */
+    fun restoreSnapshot(
+        base: List<RuleLine>,
+        scannedKeys: List<String>,
+        valueOf: (String) -> String
+    ): List<RuleLine> {
+        val existing = base.filter { it.isField }.map { it.key }.toSet()
+        val extras = scannedKeys.distinct().filter { it !in existing }
+        if (extras.isEmpty()) return base
+
+        val result = base.toMutableList()
+        if (result.isNotEmpty() && result.last().type != RuleLine.TYPE_BLANK) {
+            result.add(RuleLine.blank())
+        }
+        val gIdx = result.indexOfFirst { it.isGroup && it.text == TEMPLATE_GROUP }
+        if (gIdx < 0) {
+            result.add(RuleLine.group(TEMPLATE_GROUP))
+            extras.forEach { result.add(RuleLine.field(it, valueOf(it))) }
+            return result
+        }
+        // 已有「模板字段」分组：插到该分组末尾（下一个分组标题之前）
+        var end = result.size
+        for (i in gIdx + 1 until result.size) {
+            if (result[i].isGroup) {
+                end = i
+                break
+            }
+        }
+        while (end > gIdx + 1 && result[end - 1].type == RuleLine.TYPE_BLANK) end--
+        extras.forEachIndexed { offset, key ->
+            result.add(end + offset, RuleLine.field(key, valueOf(key)))
         }
         return result
     }

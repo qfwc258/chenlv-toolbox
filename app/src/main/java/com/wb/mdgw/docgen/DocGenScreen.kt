@@ -231,6 +231,7 @@ fun DocGenScreen(onBack: () -> Unit) {
         val keptCodes = newList.map { it.code }.toSet()
         typeList.filter { it.code !in keptCodes }.forEach { removed ->
             DefaultValueStore.remove(context, removed.code)
+            TypeStructureStore.clear(context, removed.code)
         }
         typeList = newList
         DocTypeStore.save(context, newList)
@@ -351,6 +352,8 @@ fun DocGenScreen(onBack: () -> Unit) {
         scope.launch {
             val result = withContext(Dispatchers.IO) {
                 FieldRuleStore.backupCurrent(context)
+                // 重置后结构以模板为准，旧快照必须清掉，否则下次切回又恢复成自定义结构
+                TypeStructureStore.clear(context, code)
                 val overrides = DefaultValueStore.load(context, code)
                 val cacheKey = TemplateFields.signature(snapshotDir, code, snapshotTemplates)
                 val scanned = if (snapshotAccess) {
@@ -364,7 +367,9 @@ fun DocGenScreen(onBack: () -> Unit) {
                 } else {
                     DefaultFields.applyUserDefaults(context, builtin, overrides, structId)
                 }
-                FieldDoc(fresh) to scanned.isNotEmpty()
+                val doc = FieldDoc(fresh)
+                TypeStructureStore.save(context, code, doc)
+                doc to scanned.isNotEmpty()
             }
             val (doc, fromTemplate) = result
             persistLines(doc.lines)
@@ -391,11 +396,17 @@ fun DocGenScreen(onBack: () -> Unit) {
     }
 
     /**
-     * 按某类型码重建「主要字段」：扫描该类型数字前缀模板的预留字段为准、内置结构兜底，
-     * 再把当前已填内容按同名 key 并回（未改过的默认值由新类型接管，见 [DefaultFields.mergeStructure]）。
-     * 全流程不弹确认——并入规则下不会丢已填内容。
+     * 加载某类型的「主要字段」：
+     *  - 切走前把当前结构存进旧类型快照（分组 / 顺序 / 显示名 / 值全存）；
+     *  - 切回时优先恢复该类型快照，只把模板新扫出的 key 追加到末尾，不重排、不覆盖已填值；
+     *  - 无快照（首次进入 / 强制从模板重建）才按模板扫描 + 内置兜底生成。
      */
-    fun rebuildFieldsForType(code: String, announce: Boolean) {
+    fun rebuildFieldsForType(
+        code: String,
+        announce: Boolean,
+        previousCode: String = selectedType,
+        forceFromTemplate: Boolean = false
+    ) {
         val label = typeList.firstOrNull { it.code == code }?.label ?: code
         // 在切协程前快照当前状态，避免扫描期间用户编辑造成读到的 lines / 默认值错位
         val baseLines = lines
@@ -408,7 +419,13 @@ fun DocGenScreen(onBack: () -> Unit) {
 
         scope.launch {
             val built = withContext(Dispatchers.IO) {
+                // 切走前留存当前类型的结构调整；强制重建时不把旧结构写进目标快照
+                if (!forceFromTemplate && previousCode != code && baseLines.isNotEmpty()) {
+                    TypeStructureStore.save(context, previousCode, FieldDoc(baseLines))
+                }
+                if (forceFromTemplate) TypeStructureStore.clear(context, code)
                 val overrides = DefaultValueStore.load(context, code)
+                val restored = if (!forceFromTemplate) TypeStructureStore.load(context, code)?.lines else null
                 val cacheKey = TemplateFields.signature(snapshotDir, code, snapshotTemplates)
                 val scanned = if (snapshotAccess) {
                     TemplateFields.scanKeysCached(cacheKey, snapshotTemplates, code, snapshotStandardKeys)
@@ -421,30 +438,46 @@ fun DocGenScreen(onBack: () -> Unit) {
                 } else {
                     DefaultFields.applyUserDefaults(context, builtin, overrides, structId)
                 }
-                Triple(target, scanned.isNotEmpty(), overrides)
+                val valueOf: (String) -> String = { key ->
+                    DefaultFields.effectiveDefault(context, key, overrides, structId)
+                }
+                val (finalLines, source) = if (!restored.isNullOrEmpty()) {
+                    TemplateFields.restoreSnapshot(restored, scanned, valueOf) to "snapshot"
+                } else {
+                    DefaultFields.mergeStructure(baseLines, target, sourceDefaults) to
+                        (if (scanned.isNotEmpty()) "template" else "builtin")
+                }
+                // 恢复/重建后的结构写回快照；后续切走时保存的就是这份最新结果
+                if (finalLines.isNotEmpty()) TypeStructureStore.save(context, code, FieldDoc(finalLines))
+                Triple(finalLines, source, overrides)
             }
-            val (target, fromTemplate, overrides) = built
-            persistLines(DefaultFields.mergeStructure(baseLines, target, sourceDefaults))
+            val (finalLines, source, overrides) = built
+            persistLines(finalLines)
             caseTypeId = structId
             SettingsStore.saveDocgenCaseType(context, structId)
             userDefaults = overrides
-            fieldSource = if (fromTemplate) "template" else "builtin"
+            fieldSource = source
             collapsed = emptySet()
             if (announce) {
                 snackbar.showSnackbar(
-                    if (fromTemplate) "已按「$label」模板预留字段重建表单，已填内容按字段保留"
-                    else "「$label」暂无可用模板字段，已回退内置结构；已填内容按字段保留"
+                    when (source) {
+                        "snapshot" -> "已回到「$label」：自定义字段、排序与显示名已保留，模板新增字段已补入"
+                        "template" -> "已按「$label」模板预留字段重建表单，已填内容按字段保留"
+                        else -> "「$label」暂无可用模板字段，已回退内置结构；已填内容按字段保留"
+                    }
                 )
             }
         }
     }
 
-    /** 选择统一「类型」：记住 code 用于生成筛选，并立即按该类型模板联动重建主要字段 */
+    /** 选择统一「类型」：记住 code 用于生成筛选；切走前存旧类型快照，切回时恢复该类型自定义结构 */
     fun switchGenType(code: String) {
         if (typeList.none { it.code == code }) return
+        val previous = selectedType
+        if (previous == code) return
         selectedType = code
         SettingsStore.saveDocgenSelectedType(context, code)
-        rebuildFieldsForType(code, announce = true)
+        rebuildFieldsForType(code, announce = true, previousCode = previous)
     }
 
     LaunchedEffect(Unit) {
@@ -904,16 +937,20 @@ fun DocGenScreen(onBack: () -> Unit) {
                         // 字段来源提示 + 手动重建：直观看到主要字段来自哪批模板，改模板后可即时联动
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                if (fieldSource == "template")
-                                    "字段来自 ${selectedType} 号前缀模板的预留字段"
-                                else "模板无可用字段，已回退内置结构",
+                                when (fieldSource) {
+                                    "snapshot" -> "字段沿用本类型已调整的结构（模板新增字段已补入）"
+                                    "template" -> "字段来自 ${selectedType} 号前缀模板的预留字段"
+                                    else -> "模板无可用字段，已回退内置结构"
+                                },
                                 fontSize = 11.sp,
-                                color = if (fieldSource == "template") MaterialTheme.colorScheme.primary
-                                        else MaterialTheme.colorScheme.outline,
+                                color = if (fieldSource == "builtin") MaterialTheme.colorScheme.outline
+                                        else MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.weight(1f)
                             )
                             TextButton(
-                                onClick = { rebuildFieldsForType(selectedType, announce = true) },
+                                onClick = {
+                                    rebuildFieldsForType(selectedType, announce = true, forceFromTemplate = true)
+                                },
                                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp)
                             ) {
                                 Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(15.dp))

@@ -140,4 +140,76 @@ class TemplateFieldsTest {
         assertTrue(TemplateFields.pickTemplates(files, "1").all { it.isDocx })
         assertTrue(t1.exists() && t10.exists() && t9.exists() && pdf.exists())
     }
+
+    // ---------- 快照恢复：切走再切回时保留自定义结构 ----------
+
+    @Test
+    fun `restore snapshot keeps custom order groups aliases and values`() {
+        // 用户改了分组名、调了顺序、加了中文别名、填了值；模板扫出的 key 全是老的
+        val snapshot = listOf(
+            RuleLine.group("我的授权"),
+            RuleLine.field("jied", "二审", "阶段"),
+            RuleLine.field("weitr", "张三", "委托人"),
+            RuleLine.comment("#备注"),
+            RuleLine.field("cbdw", "某银行")
+        )
+        val restored = TemplateFields.restoreSnapshot(
+            snapshot, listOf("jied", "weitr", "cbdw")
+        ) { "默认值" }
+        // 无新增字段时原样返回，一字节都不重排
+        assertEquals(snapshot, restored)
+        assertEquals("我的授权", restored.first { it.isGroup }.text)
+        assertEquals("张三", restored.first { it.key == "weitr" }.value)
+        assertEquals("委托人", restored.first { it.key == "weitr" }.alias)
+        assertEquals(listOf("jied", "weitr", "cbdw"), restored.filter { it.isField }.map { it.key })
+        assertTrue(restored.any { it.isComment && it.text == "#备注" })
+    }
+
+    @Test
+    fun `restore snapshot appends new scanned keys into template group before next group`() {
+        val snapshot = listOf(
+            RuleLine.group("委托授权"),
+            RuleLine.field("weitr", "张三"),
+            RuleLine.group(TemplateFields.TEMPLATE_GROUP),
+            RuleLine.field("oldnew", "旧值"),
+            RuleLine.group("结案"),
+            RuleLine.field("anhao", "案号")
+        )
+        val restored = TemplateFields.restoreSnapshot(
+            snapshot, listOf("weitr", "oldnew", "extra1", "extra2")
+        ) { "模板默认:$it" }
+        assertEquals(
+            listOf("weitr", "oldnew", "extra1", "extra2", "anhao"),
+            restored.filter { it.isField }.map { it.key }
+        )
+        // 新字段插在「模板字段」组内、结案分组之前
+        assertTrue(restored.indexOfFirst { it.key == "extra1" } <
+            restored.indexOfFirst { it.isGroup && it.text == "结案" })
+        assertEquals("模板默认:extra2", restored.first { it.key == "extra2" }.value)
+        // 快照里已有的字段值不被默认值覆盖
+        assertEquals("张三", restored.first { it.key == "weitr" }.value)
+        assertEquals("旧值", restored.first { it.key == "oldnew" }.value)
+    }
+
+    @Test
+    fun `restore snapshot creates template group when missing`() {
+        val snapshot = listOf(
+            RuleLine.group("委托授权"),
+            RuleLine.field("weitr", "张三")
+        )
+        val restored = TemplateFields.restoreSnapshot(snapshot, listOf("weitr", "newkey")) { "v" }
+        assertEquals(
+            listOf("委托授权", TemplateFields.TEMPLATE_GROUP),
+            restored.filter { it.isGroup }.map { it.text }
+        )
+        assertEquals("v", restored.first { it.key == "newkey" }.value)
+        assertEquals("张三", restored.first { it.key == "weitr" }.value)
+    }
+
+    @Test
+    fun `restore snapshot does not duplicate new keys`() {
+        val snapshot = listOf(RuleLine.field("a", "1"))
+        val restored = TemplateFields.restoreSnapshot(snapshot, listOf("a", "b", "b")) { "x" }
+        assertEquals(2, restored.count { it.isField })
+    }
 }
