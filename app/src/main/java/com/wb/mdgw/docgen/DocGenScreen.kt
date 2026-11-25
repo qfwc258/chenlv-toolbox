@@ -696,7 +696,7 @@ fun DocGenScreen(onBack: () -> Unit) {
                 .fillMaxSize()
                 .padding(pad)
                 .padding(horizontal = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             // ---------- 模板目录（默认折叠为一行状态条） ----------
             item {
@@ -705,45 +705,46 @@ fun DocGenScreen(onBack: () -> Unit) {
                     shape = UI_RADIUS_LG,
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                 ) {
-                    Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
-                        // 折叠状态条：图标 + 标题 + 路径/数量 + 扫描 + 展开
+                    Column(Modifier.padding(horizontal = 10.dp, vertical = 5.dp)) {
+                        // 折叠状态条压成一行：图标 + 标题 + 状态 + 扫描 + 展开
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
                                 Icons.Default.Folder,
                                 contentDescription = null,
-                                modifier = Modifier.size(20.dp),
+                                modifier = Modifier.size(18.dp),
                                 tint = MaterialTheme.colorScheme.primary
                             )
-                            Spacer(Modifier.size(10.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text("文书模板", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                Text(
-                                    when {
-                                        !hasAccess -> "未授权 · 展开授权"
-                                        templates.isEmpty() -> "目录为空或不存在"
-                                        else -> "$templateDir · ${templates.size} 个"
-                                    },
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
+                            Spacer(Modifier.size(8.dp))
+                            Text("文书模板", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                            Spacer(Modifier.size(8.dp))
+                            Text(
+                                when {
+                                    !hasAccess -> "未授权"
+                                    templates.isEmpty() -> "无模板"
+                                    else -> "${templates.size} 个"
+                                },
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                             OutlinedButton(
                                 onClick = {
                                     SettingsStore.saveDocgenTemplateDir(context, templateDir)
                                     rescan()
                                 },
-                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 0.dp)
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp)
                             ) {
-                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(15.dp))
-                                Spacer(Modifier.size(3.dp))
-                                Text("扫描", fontSize = 12.sp)
+                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(Modifier.size(2.dp))
+                                Text("扫描", fontSize = 11.sp)
                             }
-                            IconButton(onClick = { showTemplateCard = !showTemplateCard }) {
+                            IconButton(onClick = { showTemplateCard = !showTemplateCard }, modifier = Modifier.size(32.dp)) {
                                 Icon(
                                     if (showTemplateCard) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                                    contentDescription = if (showTemplateCard) "折叠模板设置" else "展开模板设置"
+                                    contentDescription = if (showTemplateCard) "折叠模板设置" else "展开模板设置",
+                                    modifier = Modifier.size(18.dp)
                                 )
                             }
                         }
@@ -839,25 +840,30 @@ fun DocGenScreen(onBack: () -> Unit) {
             // ---------- 类型（原「案件类型 + 文书类型」合并，只能择一） ----------
             item {
                 Card(shape = UI_RADIUS_LG, modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+                    Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("类型", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                            Text("类型", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.weight(1f))
                             TextButton(
                                 onClick = { showTypeManage = true },
-                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp)
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp)
                             ) {
-                                Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(15.dp))
-                                Spacer(Modifier.size(4.dp))
-                                Text("管理", fontSize = 12.sp)
+                                Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(Modifier.size(2.dp))
+                                Text("管理", fontSize = 11.sp)
                             }
                         }
                         Text(
-                            "只能选一个：生成时只取该数字前缀开头的模板，主要字段自动跟随其预留字段；切换时已填内容按字段保留",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            "单选：决定模板前缀与字段，切换时保留已填内容",
+                            fontSize = 10.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
-                        Spacer(Modifier.height(6.dp))
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Spacer(Modifier.height(4.dp))
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
                             typeList.forEach { dt ->
                                 TypeChip(
                                     selected = dt.code == selectedType,
@@ -873,26 +879,29 @@ fun DocGenScreen(onBack: () -> Unit) {
             // ---------- 主要字段（工具条 + 分组字段合并为一个卡片） ----------
             item {
                 Card(shape = UI_RADIUS_LG, modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(14.dp)) {
+                    Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
                         // 标题行
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("主要字段", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.weight(1f))
-                            IconButton(onClick = {
-                                showSearch = !showSearch
-                                if (!showSearch) keyword = ""
-                            }) {
+                            IconButton(
+                                onClick = {
+                                    showSearch = !showSearch
+                                    if (!showSearch) keyword = ""
+                                },
+                                modifier = Modifier.size(32.dp)
+                            ) {
                                 Icon(
                                     if (showSearch) Icons.Default.Close else Icons.Default.Search,
                                     contentDescription = if (showSearch) "关闭搜索" else "搜索字段",
-                                    modifier = Modifier.size(19.dp),
+                                    modifier = Modifier.size(17.dp),
                                     tint = if (showSearch) MaterialTheme.colorScheme.primary
                                         else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                             Box {
                                 var menuOpen by remember { mutableStateOf(false) }
-                                IconButton(onClick = { menuOpen = true }) {
-                                    Icon(Icons.Default.MoreVert, contentDescription = "更多")
+                                IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(32.dp)) {
+                                    Icon(Icons.Default.MoreVert, contentDescription = "更多", modifier = Modifier.size(18.dp))
                                 }
                                 DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                                     DropdownMenuItem(
@@ -934,54 +943,48 @@ fun DocGenScreen(onBack: () -> Unit) {
                                 }
                             }
                         }
-                        // 字段来源提示 + 手动重建：直观看到主要字段来自哪批模板，改模板后可即时联动
+                        // 工具条：来源 + 重建 + 导入导出压在一行，正文说明收进「更多」菜单，把空间留给输入框
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 when (fieldSource) {
-                                    "snapshot" -> "字段沿用本类型已调整的结构（模板新增字段已补入）"
-                                    "template" -> "字段来自 ${selectedType} 号前缀模板的预留字段"
-                                    else -> "模板无可用字段，已回退内置结构"
+                                    "snapshot" -> "已调整结构"
+                                    "template" -> "来自 ${selectedType} 号模板"
+                                    else -> "内置结构"
                                 },
-                                fontSize = 11.sp,
+                                fontSize = 10.sp,
                                 color = if (fieldSource == "builtin") MaterialTheme.colorScheme.outline
                                         else MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                             TextButton(
                                 onClick = {
                                     rebuildFieldsForType(selectedType, announce = true, forceFromTemplate = true)
                                 },
-                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 0.dp)
                             ) {
-                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(15.dp))
-                                Spacer(Modifier.size(4.dp))
-                                Text("从模板重建", fontSize = 12.sp)
+                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(13.dp))
+                                Spacer(Modifier.size(2.dp))
+                                Text("重建", fontSize = 11.sp)
                             }
-                        }
-                        // 显式文字按钮：导入后字段与值回填到对应输入框，导出到案件文件夹
-                        Row(verticalAlignment = Alignment.CenterVertically) {
                             TextButton(
                                 onClick = { sharedTextImporter.launch(TEXT_FILE_MIMES) },
-                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 0.dp)
                             ) {
-                                Icon(Icons.Default.FileUpload, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.size(4.dp))
-                                Text("导入 shared_text.txt", fontSize = 12.sp)
+                                Icon(Icons.Default.FileUpload, contentDescription = null, modifier = Modifier.size(13.dp))
+                                Spacer(Modifier.size(2.dp))
+                                Text("导入", fontSize = 11.sp)
                             }
                             TextButton(
                                 onClick = { exportRules() },
-                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 0.dp)
                             ) {
-                                Icon(Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.size(4.dp))
-                                Text("导出", fontSize = 12.sp)
+                                Icon(Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(13.dp))
+                                Spacer(Modifier.size(2.dp))
+                                Text("导出", fontSize = 11.sp)
                             }
                         }
-                        Text(
-                            "导入把已保存的字段与值回填到对应字段，分组与显示名不变；导出在「下载/陈律文档/<案件>/shared_text.txt」",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                         AnimatedVisibility(visible = showSearch) {
                             Column {
                                 Spacer(Modifier.height(8.dp))
@@ -1030,7 +1033,7 @@ fun DocGenScreen(onBack: () -> Unit) {
                                     l.isField && FieldLabels.baseKey(l.key) in FieldLabels.REPEATABLE_BASE
                                 }
                                 Row(
-                                    modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                                    modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     IconButton(onClick = {
@@ -1486,14 +1489,14 @@ private fun TypeChip(
         border = if (selected) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (selected) {
-                Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp))
-                Spacer(Modifier.size(4.dp))
+                Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(12.dp))
+                Spacer(Modifier.size(2.dp))
             }
-            Text(label, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+            Text(label, fontSize = 12.sp, fontWeight = FontWeight.Medium)
         }
     }
 }
