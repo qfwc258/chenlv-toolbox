@@ -189,11 +189,13 @@ object DocGenEngine {
     }
 
     /**
-     * 文件名类型筛选：空集合（全部）恒真；否则文件名包含任一选中 code 即入选
-     * （沿用 PC 的 `if lx in fileName` 粗匹配）。
+     * 文件名类型筛选：空集合（全部）恒真；否则按「严格数字前缀」匹配任一选中 code。
+     * 与字段扫描 [TemplateFields.matchesStrictPrefix] 同一口径：文件名以类型码开头、
+     * 且码后不是数字，避免码 `1` 误匹配 `10-xx.docx`。生成与字段联动必须一致，
+     * 否则会出现「字段按 1 号模板生成、文书却混入 10 号模板」的错位。
      */
     private fun matchesType(fileName: String, selected: Set<String>): Boolean {
         if (selected.isEmpty()) return true
-        return selected.any { fileName.contains(it) }
+        return selected.any { TemplateFields.matchesStrictPrefix(fileName, it) }
     }
 }

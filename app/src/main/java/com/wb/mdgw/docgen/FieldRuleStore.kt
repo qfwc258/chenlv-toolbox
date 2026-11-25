@@ -26,14 +26,17 @@ object FieldRuleStore : JsonFileStore<FieldDoc>() {
     fun load(context: Context): FieldDoc = read(context) ?: FieldDoc()
 
     /**
-     * 读取当前规则；若用户从未导入 / 填写（为空），则加载当前案件类型的内置默认结构
-     * （assets/docgen/defaults/<id>.txt），并套用该类型下用户自定义的字段默认值，
+     * 读取当前规则；若用户从未导入 / 填写（为空），则加载当前类型的内置默认结构
+     * （assets/docgen/defaults/<id>.txt），并套用该文书类型码下用户自定义的字段默认值，
      * 落盘一次，使手机端开箱即有标准字段表单。
+     *
+     * @param scopeCode 默认值覆盖表的作用域（文书类型码）；与结构资源 id [caseTypeId] 分开，
+     *                  因为默认值按类型码各自独立存。
      */
-    fun loadOrDefault(context: Context, caseTypeId: String): FieldDoc {
+    fun loadOrDefault(context: Context, caseTypeId: String, scopeCode: String = caseTypeId): FieldDoc {
         val existing = read(context)
         if (existing != null && existing.lines.isNotEmpty()) return existing
-        val doc = buildDefaultDoc(context, caseTypeId)
+        val doc = buildDefaultDoc(context, caseTypeId, scopeCode)
         if (doc.lines.isNotEmpty()) write(context, doc)
         return doc
     }
@@ -42,22 +45,22 @@ object FieldRuleStore : JsonFileStore<FieldDoc>() {
     fun save(context: Context, doc: FieldDoc) = write(context, doc)
 
     /**
-     * 构建某类型的默认结构：解析该类型的资源文件后，套用该类型的用户自定义默认值覆盖表。
+     * 构建某类型的默认结构：解析该类型的资源文件后，套用该类型码的用户自定义默认值覆盖表。
      */
-    fun buildDefaultDoc(context: Context, caseTypeId: String): FieldDoc {
+    fun buildDefaultDoc(context: Context, caseTypeId: String, scopeCode: String = caseTypeId): FieldDoc {
         val raw = DefaultFields.lines(context, caseTypeId)
-        val overrides = DefaultValueStore.load(context, caseTypeId)
+        val overrides = DefaultValueStore.load(context, scopeCode)
         val lines = if (overrides.isEmpty()) raw
         else DefaultFields.applyUserDefaults(context, raw, overrides, caseTypeId)
         return FieldDoc(lines)
     }
 
     /**
-     * 重置为当前类型的内置默认结构（套用该类型的用户自定义默认值，
-     * 丢弃用户增删的自定义字段与已填值），落盘并返回，供「重置为默认结构」按钮使用。
+     * 重置为当前类型的内置默认结构（套用该类型码的用户自定义默认值，
+     * 丢弃用户增删的自定义字段与已填值），落盘并返回。
      */
-    fun resetOrDefault(context: Context, caseTypeId: String): FieldDoc {
-        val doc = buildDefaultDoc(context, caseTypeId)
+    fun resetOrDefault(context: Context, caseTypeId: String, scopeCode: String = caseTypeId): FieldDoc {
+        val doc = buildDefaultDoc(context, caseTypeId, scopeCode)
         if (doc.lines.isNotEmpty()) write(context, doc)
         return doc
     }

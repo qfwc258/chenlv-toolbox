@@ -195,7 +195,7 @@ fun DocGenScreen(onBack: () -> Unit) {
                 ?: CaseTypeStore.DEFAULT_ID
         )
     }
-    var lines by remember { mutableStateOf(FieldRuleStore.loadOrDefault(context, caseTypeId).lines) }
+    var lines by remember { mutableStateOf(FieldRuleStore.loadOrDefault(context, caseTypeId, selectedType).lines) }
     var keyword by remember { mutableStateOf("") }
     var showSearch by remember { mutableStateOf(false) }
     var collapsed by remember { mutableStateOf(emptySet<String>()) }
@@ -213,8 +213,11 @@ fun DocGenScreen(onBack: () -> Unit) {
     val defaults = remember(caseTypeId) { DefaultFields.lines(context, caseTypeId) }
     // 归类 / 模板扫描用「全部类型的 key 并集」：刑事模板的占位符在民事表单里也该识别为标准字段
     val standardKeys = remember(caseTypes) { DefaultFields.allKeys(context, caseTypes.map { it.id }) }
-    var userDefaults by remember { mutableStateOf(DefaultValueStore.load(context, caseTypeId)) }
+    // 默认值按「文书类型码」分开存，调查 / 诉讼 / 执行等无专属结构的类型也各自独立
+    var userDefaults by remember { mutableStateOf(DefaultValueStore.load(context, selectedType)) }
     var showDefaultManage by remember { mutableStateOf(false) }
+    /** 当前主要字段来源：template=按该类型模板预留字段生成；builtin=模板不可用时回退内置结构 */
+    var fieldSource by remember { mutableStateOf("builtin") }
 
     // 分组管理弹窗状态
     var groupMenuFor by remember { mutableStateOf<String?>(null) }
@@ -223,8 +226,12 @@ fun DocGenScreen(onBack: () -> Unit) {
     var newGroupAfter by remember { mutableStateOf<String?>(null) }
     var showNewGroup by remember { mutableStateOf(false) }
 
-    /** 保存类型列表；当前选中项被删掉时落到第一项 */
+    /** 保存类型列表；当前选中项被删掉时落到第一项，并清理被删类型码的默认值 */
     fun persistTypeList(newList: List<DocTypeItem>) {
+        val keptCodes = newList.map { it.code }.toSet()
+        typeList.filter { it.code !in keptCodes }.forEach { removed ->
+            DefaultValueStore.remove(context, removed.code)
+        }
         typeList = newList
         DocTypeStore.save(context, newList)
         if (newList.none { it.code == selectedType }) {
@@ -236,14 +243,16 @@ fun DocGenScreen(onBack: () -> Unit) {
     fun rescan() {
         hasAccess = DocTemplateDir.hasAccess(context)
         templates = if (hasAccess) DocTemplateDir.scan(templateDir) else emptyList()
+        TemplateFields.clearCache() // 目录/文件可能已变，清空扫描缓存
         // 未授权 / 空目录时自动展开，引导用户处理；正常情况下保持折叠
         if (!hasAccess || templates.isEmpty()) showTemplateCard = true
     }
 
-    LaunchedEffect(Unit) {
-        // 首次进入时把「旧多选 / 旧案件类型」迁移出来的单选结果正式落盘
-        SettingsStore.saveDocgenSelectedType(context, selectedType)
-        rescan()
+    /** 当前选中类型绑定的内置结构 id；无专属结构的类型沿用当前表单结构 */
+    fun structIdOf(code: String): String {
+        val item = typeList.firstOrNull { it.code == code } ?: return caseTypeId
+        val bound = item.caseTypeId
+        return bound.takeIf { it.isNotBlank() && caseTypes.any { c -> c.id == it } } ?: caseTypeId
     }
 
     fun persistLines(newLines: List<RuleLine>) {
@@ -317,10 +326,10 @@ fun DocGenScreen(onBack: () -> Unit) {
         persistLines(lines.filterNot { it.isField && it.key in keys })
     }
 
-    /** 把某字段当前值存为该字段（默认值有效 key）在当前类型下的默认值 */
+    /** 把某字段当前值存为该字段（默认值有效 key）在当前文书类型码下的默认值 */
     fun setFieldDefault(key: String, value: String) {
-        DefaultValueStore.set(context, caseTypeId, FieldLabels.defaultKey(key), value)
-        userDefaults = DefaultValueStore.load(context, caseTypeId)
+        DefaultValueStore.set(context, selectedType, FieldLabels.defaultKey(key), value)
+        userDefaults = DefaultValueStore.load(context, selectedType)
     }
 
     /** 清空所有值：会覆盖当前规则，先留一份备份 */
@@ -330,18 +339,40 @@ fun DocGenScreen(onBack: () -> Unit) {
         scope.launch { snackbar.showSnackbar("已清空所有字段值（可用「恢复上一次备份」找回）") }
     }
 
-    /** 重置为当前类型默认结构：结构与你增删的字段都会回到内置状态，先留一份备份 */
+    /** 重置为当前类型默认结构：按模板预留字段（无模板则内置）重建，字段值回到默认值，先留备份 */
     fun doResetStructure() {
-        val typeId = caseTypeId
-        val typeLabel = CaseTypeStore.labelOf(caseTypes, typeId)
+        val code = selectedType
+        val typeLabel = typeList.firstOrNull { it.code == code }?.label ?: code
+        val structId = structIdOf(code)
+        val snapshotTemplates = templates
+        val snapshotAccess = hasAccess
+        val snapshotDir = templateDir
+        val snapshotStandardKeys = standardKeys
         scope.launch {
-            val doc = withContext(Dispatchers.IO) {
+            val result = withContext(Dispatchers.IO) {
                 FieldRuleStore.backupCurrent(context)
-                FieldRuleStore.resetOrDefault(context, typeId)
+                val overrides = DefaultValueStore.load(context, code)
+                val cacheKey = TemplateFields.signature(snapshotDir, code, snapshotTemplates)
+                val scanned = if (snapshotAccess) {
+                    TemplateFields.scanKeysCached(cacheKey, snapshotTemplates, code, snapshotStandardKeys)
+                } else emptyList()
+                val builtin = DefaultFields.lines(context, structId)
+                val fresh = if (scanned.isNotEmpty()) {
+                    TemplateFields.buildStructure(scanned, builtin) { key ->
+                        DefaultFields.effectiveDefault(context, key, overrides, structId)
+                    }
+                } else {
+                    DefaultFields.applyUserDefaults(context, builtin, overrides, structId)
+                }
+                FieldDoc(fresh) to scanned.isNotEmpty()
             }
-            lines = doc.lines
+            val (doc, fromTemplate) = result
+            persistLines(doc.lines)
+            fieldSource = if (fromTemplate) "template" else "builtin"
             collapsed = emptySet()
-            snackbar.showSnackbar("已重置为「$typeLabel」默认结构，已填内容一并清除（可用「恢复上一次备份」找回）")
+            snackbar.showSnackbar(
+                "已重置「$typeLabel」的${if (fromTemplate) "模板预留字段" else "内置"}结构，已填内容一并清除（可用「恢复上一次备份」找回）"
+            )
         }
     }
 
@@ -360,55 +391,68 @@ fun DocGenScreen(onBack: () -> Unit) {
     }
 
     /**
-     * 切换案件类型：目标类型结构为底、你填过的内容按同名 key 保留
-     * （未改过的内置默认值由新类型接管，见 [DefaultFields.mergeStructure]），结果落盘。
-     * 不弹确认——并入规则下不会丢已填内容。
+     * 按某类型码重建「主要字段」：扫描该类型数字前缀模板的预留字段为准、内置结构兜底，
+     * 再把当前已填内容按同名 key 并回（未改过的默认值由新类型接管，见 [DefaultFields.mergeStructure]）。
+     * 全流程不弹确认——并入规则下不会丢已填内容。
      */
-    fun switchCaseType(newId: String) {
-        if (newId == caseTypeId || caseTypes.none { it.id == newId }) return
+    fun rebuildFieldsForType(code: String, announce: Boolean) {
+        val label = typeList.firstOrNull { it.code == code }?.label ?: code
+        // 在切协程前快照当前状态，避免扫描期间用户编辑造成读到的 lines / 默认值错位
+        val baseLines = lines
         val sourceDefaults = DefaultFields.effectiveDefaultsByKey(context, caseTypeId, userDefaults)
-        val target = DefaultFields.applyUserDefaults(
-            context,
-            DefaultFields.lines(context, newId),
-            DefaultValueStore.load(context, newId),
-            newId
-        )
-        persistLines(DefaultFields.mergeStructure(lines, target, sourceDefaults))
-        caseTypeId = newId
-        SettingsStore.saveDocgenCaseType(context, newId)
-        userDefaults = DefaultValueStore.load(context, newId)
-        collapsed = emptySet()
-        scope.launch {
-            snackbar.showSnackbar(
-                "已切换到「${CaseTypeStore.labelOf(caseTypes, newId)}」字段结构：已填内容保留，没改过的默认值跟随新类型"
-            )
-        }
-    }
+        val snapshotTemplates = templates
+        val snapshotAccess = hasAccess
+        val snapshotDir = templateDir
+        val snapshotStandardKeys = standardKeys
+        val structId = structIdOf(code)
 
-    /**
-     * 选择统一「类型」：只能择一。
-     *  - 记住 code，生成时只按该 code 筛选模板；
-     *  - 绑定了字段结构的类型（1 民事委托 / 5 刑事委托 / 8 刑事法援 / 9 民事法援）顺带切换表单，
-     *    已填内容按同名 key 保留；
-     *  - 调查 / 诉讼 / 执行没有专属结构，沿用当前字段表单。
-     */
-    fun switchGenType(code: String) {
-        val item = typeList.firstOrNull { it.code == code } ?: return
-        val changed = code != selectedType
-        if (changed) {
-            selectedType = code
-            SettingsStore.saveDocgenSelectedType(context, code)
-        }
-        val struct = item.caseTypeId
-        if (struct.isNotBlank() && struct != caseTypeId && caseTypes.any { it.id == struct }) {
-            switchCaseType(struct)
-        } else if (changed) {
-            scope.launch {
+        scope.launch {
+            val built = withContext(Dispatchers.IO) {
+                val overrides = DefaultValueStore.load(context, code)
+                val cacheKey = TemplateFields.signature(snapshotDir, code, snapshotTemplates)
+                val scanned = if (snapshotAccess) {
+                    TemplateFields.scanKeysCached(cacheKey, snapshotTemplates, code, snapshotStandardKeys)
+                } else emptyList()
+                val builtin = DefaultFields.lines(context, structId)
+                val target = if (scanned.isNotEmpty()) {
+                    TemplateFields.buildStructure(scanned, builtin) { key ->
+                        DefaultFields.effectiveDefault(context, key, overrides, structId)
+                    }
+                } else {
+                    DefaultFields.applyUserDefaults(context, builtin, overrides, structId)
+                }
+                Triple(target, scanned.isNotEmpty(), overrides)
+            }
+            val (target, fromTemplate, overrides) = built
+            persistLines(DefaultFields.mergeStructure(baseLines, target, sourceDefaults))
+            caseTypeId = structId
+            SettingsStore.saveDocgenCaseType(context, structId)
+            userDefaults = overrides
+            fieldSource = if (fromTemplate) "template" else "builtin"
+            collapsed = emptySet()
+            if (announce) {
                 snackbar.showSnackbar(
-                    "已选「${item.label}」：字段沿用当前表单，生成模板按 ${item.code} 筛选，已填内容不变"
+                    if (fromTemplate) "已按「$label」模板预留字段重建表单，已填内容按字段保留"
+                    else "「$label」暂无可用模板字段，已回退内置结构；已填内容按字段保留"
                 )
             }
         }
+    }
+
+    /** 选择统一「类型」：记住 code 用于生成筛选，并立即按该类型模板联动重建主要字段 */
+    fun switchGenType(code: String) {
+        if (typeList.none { it.code == code }) return
+        selectedType = code
+        SettingsStore.saveDocgenSelectedType(context, code)
+        rebuildFieldsForType(code, announce = true)
+    }
+
+    LaunchedEffect(Unit) {
+        // 首次进入时把「旧多选 / 旧案件类型」迁移出来的单选结果正式落盘
+        SettingsStore.saveDocgenSelectedType(context, selectedType)
+        rescan()
+        // 首屏按当前类型的模板预留字段联动一次（静默：无模板时回退内置结构）
+        rebuildFieldsForType(selectedType, announce = false)
     }
 
     // ---------- 分组管理 ----------
@@ -775,7 +819,7 @@ fun DocGenScreen(onBack: () -> Unit) {
                             }
                         }
                         Text(
-                            "只能选一个：决定生成哪批模板，同时切换对应的字段表单；切换时已填内容按字段保留",
+                            "只能选一个：生成时只取该数字前缀开头的模板，主要字段自动跟随其预留字段；切换时已填内容按字段保留",
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -826,7 +870,7 @@ fun DocGenScreen(onBack: () -> Unit) {
                                         }
                                     )
                                     DropdownMenuItem(
-                                        text = { Text("重置为「${CaseTypeStore.labelOf(caseTypes, caseTypeId)}」默认结构") },
+                                        text = { Text("重置为「${typeList.firstOrNull { it.code == selectedType }?.label ?: selectedType}」默认结构") },
                                         onClick = {
                                             menuOpen = false
                                             pendingDestructive = "reset"
@@ -855,6 +899,26 @@ fun DocGenScreen(onBack: () -> Unit) {
                                         }
                                     )
                                 }
+                            }
+                        }
+                        // 字段来源提示 + 手动重建：直观看到主要字段来自哪批模板，改模板后可即时联动
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                if (fieldSource == "template")
+                                    "字段来自 ${selectedType} 号前缀模板的预留字段"
+                                else "模板无可用字段，已回退内置结构",
+                                fontSize = 11.sp,
+                                color = if (fieldSource == "template") MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.outline,
+                                modifier = Modifier.weight(1f)
+                            )
+                            TextButton(
+                                onClick = { rebuildFieldsForType(selectedType, announce = true) },
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                            ) {
+                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(15.dp))
+                                Spacer(Modifier.size(4.dp))
+                                Text("从模板重建", fontSize = 12.sp)
                             }
                         }
                         // 显式文字按钮：导入后字段与值回填到对应输入框，导出到案件文件夹
@@ -1133,20 +1197,21 @@ fun DocGenScreen(onBack: () -> Unit) {
         }
     }
 
-    // ---------- 默认值管理弹窗（按案件类型分开存） ----------
+    // ---------- 默认值管理弹窗（按文书类型码分开存） ----------
     if (showDefaultManage) {
-        val typeId = caseTypeId
+        val code = selectedType
+        val typeLabel = typeList.firstOrNull { it.code == code }?.label ?: code
         DefaultValuesDialog(
-            typeLabel = CaseTypeStore.labelOf(caseTypes, typeId),
-            entries = DefaultFields.defaultEntries(context, lines, typeId),
-            builtin = DefaultFields.builtinDefaults(context, typeId),
+            typeLabel = typeLabel,
+            entries = DefaultFields.defaultEntries(context, lines, caseTypeId),
+            builtin = DefaultFields.builtinDefaults(context, caseTypeId),
             initial = userDefaults,
             onDismiss = { showDefaultManage = false },
             onSave = { overrides ->
-                DefaultValueStore.save(context, typeId, overrides)
+                DefaultValueStore.save(context, code, overrides)
                 userDefaults = overrides
                 showDefaultManage = false
-                scope.launch { snackbar.showSnackbar("已保存字段默认值；重置或新增字段时生效") }
+                scope.launch { snackbar.showSnackbar("已保存「$typeLabel」的字段默认值；重置或新增字段时生效") }
             }
         )
     }
@@ -1233,12 +1298,12 @@ fun DocGenScreen(onBack: () -> Unit) {
         AlertDialog(
             onDismissRequest = { pendingDestructive = null },
             title = {
-                Text(if (isReset) "重置为「${CaseTypeStore.labelOf(caseTypes, caseTypeId)}」默认结构" else "清空所有字段值")
+                Text(if (isReset) "重置为「${typeList.firstOrNull { it.code == selectedType }?.label ?: selectedType}」默认结构" else "清空所有字段值")
             },
             text = {
                 Text(
                     if (isReset)
-                        "字段结构会回到该类型的内置默认：你增删的字段、改过的显示名和所有已填内容都会清除。" +
+                        "字段结构会回到该类型模板的预留字段（无模板则用内置默认）：你增删的字段、改过的显示名和所有已填内容都会清除。" +
                             "执行前会自动留一份备份，之后可用菜单里的「恢复上一次备份」找回。"
                     else
                         "所有字段的已填内容会被清成空值（字段结构与显示名保留）。" +
@@ -2241,7 +2306,7 @@ private fun DefaultValuesDialog(
         text = {
             Column {
                 Text(
-                    "只作用于「$typeLabel」，其他案件类型各存一份。重置或新增字段时自动带出；过程时间 / 方式 / 内容对所有序号生效。",
+                    "只作用于「$typeLabel」，其他文书类型码各存一份。重置或新增字段时自动带出；过程时间 / 方式 / 内容对所有序号生效。",
                     fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.height(6.dp))
