@@ -216,6 +216,8 @@ fun DocGenScreen(onBack: () -> Unit) {
     // 默认值按「文书类型码」分开存，调查 / 诉讼 / 执行等无专属结构的类型也各自独立
     var userDefaults by remember { mutableStateOf(DefaultValueStore.load(context, selectedType)) }
     var showDefaultManage by remember { mutableStateOf(false) }
+    /** 「复制当前内容到其他类型」弹窗 */
+    var showCopyTo by remember { mutableStateOf(false) }
     /** 当前主要字段来源：template=按该类型模板预留字段生成；builtin=模板不可用时回退内置结构 */
     var fieldSource by remember { mutableStateOf("builtin") }
 
@@ -256,9 +258,17 @@ fun DocGenScreen(onBack: () -> Unit) {
         return bound.takeIf { it.isNotBlank() && caseTypes.any { c -> c.id == it } } ?: caseTypeId
     }
 
+    /**
+     * 落盘当前表单：全局镜像（导出 / 兼容用）+ 当前类型快照。
+     *
+     * 快照是该类型「结构 + 已填内容」的权威来源，随每次编辑实时写入——
+     * 否则填完不切类型就退出时快照落后，下次进入会被旧快照覆盖导致内容丢失。
+     */
     fun persistLines(newLines: List<RuleLine>) {
         lines = newLines
-        FieldRuleStore.save(context, FieldDoc(newLines, System.currentTimeMillis()))
+        val doc = FieldDoc(newLines, System.currentTimeMillis())
+        FieldRuleStore.save(context, doc)
+        TypeStructureStore.save(context, selectedType, doc)
     }
 
     fun updateValue(index: Int, value: String) {
@@ -388,7 +398,8 @@ fun DocGenScreen(onBack: () -> Unit) {
             if (doc == null) {
                 snackbar.showSnackbar("没有可恢复的备份")
             } else {
-                lines = doc.lines
+                // 走 persistLines 同步写入当前类型快照，恢复后切类型不丢
+                persistLines(doc.lines)
                 collapsed = emptySet()
                 snackbar.showSnackbar("已恢复到上一次清空 / 重置之前")
             }
@@ -396,10 +407,12 @@ fun DocGenScreen(onBack: () -> Unit) {
     }
 
     /**
-     * 加载某类型的「主要字段」：
-     *  - 切走前把当前结构存进旧类型快照（分组 / 顺序 / 显示名 / 值全存）；
-     *  - 切回时优先恢复该类型快照，只把模板新扫出的 key 追加到末尾，不重排、不覆盖已填值；
-     *  - 无快照（首次进入 / 强制从模板重建）才按模板扫描 + 内置兜底生成。
+     * 加载某类型的「主要字段」——各类型各自独立，互不串内容：
+     *  - 切走前把旧类型当前内容存进旧类型快照（编辑时已实时写，这里兜底补一次）；
+     *  - 切回时优先恢复该类型快照（结构 + 已填值都在里面），模板新增字段补到末尾；
+     *  - 目标类型无快照且是首次进入（不是从别的类型切过来）→ 生成该类型的干净表单，
+     *    绝不把上一个类型填的内容并进来（[DefaultFields.mergeStructure] 不再用于切换）；
+     *  - 老升级用户：当前类型无快照但全局镜像有内容时，先迁移为它的初始快照，避免丢数据。
      */
     fun rebuildFieldsForType(
         code: String,
@@ -410,7 +423,6 @@ fun DocGenScreen(onBack: () -> Unit) {
         val label = typeList.firstOrNull { it.code == code }?.label ?: code
         // 在切协程前快照当前状态，避免扫描期间用户编辑造成读到的 lines / 默认值错位
         val baseLines = lines
-        val sourceDefaults = DefaultFields.effectiveDefaultsByKey(context, caseTypeId, userDefaults)
         val snapshotTemplates = templates
         val snapshotAccess = hasAccess
         val snapshotDir = templateDir
@@ -419,39 +431,36 @@ fun DocGenScreen(onBack: () -> Unit) {
 
         scope.launch {
             val built = withContext(Dispatchers.IO) {
-                // 切走前留存当前类型的结构调整；强制重建时不把旧结构写进目标快照
+                // 切走前留存旧类型当前内容（兜底；编辑时 persistLines 已实时写过）
                 if (!forceFromTemplate && previousCode != code && baseLines.isNotEmpty()) {
                     TypeStructureStore.save(context, previousCode, FieldDoc(baseLines))
                 }
                 if (forceFromTemplate) TypeStructureStore.clear(context, code)
+
                 val overrides = DefaultValueStore.load(context, code)
-                val restored = if (!forceFromTemplate) TypeStructureStore.load(context, code)?.lines else null
+                var restored = if (!forceFromTemplate) TypeStructureStore.load(context, code)?.lines else null
+
+                // 老数据迁移：首次进入某类型（非跨类型切换）且无快照，把全局镜像内容归到该类型。
+                // 关键条件 previousCode == code——切换场景下 baseLines 是上一个类型的内容，绝不能迁移。
+                if (restored.isNullOrEmpty() && previousCode == code && baseLines.isNotEmpty()) {
+                    TypeStructureStore.save(context, code, FieldDoc(baseLines))
+                    restored = baseLines
+                }
+
                 val cacheKey = TemplateFields.signature(snapshotDir, code, snapshotTemplates)
                 val scanned = if (snapshotAccess) {
                     TemplateFields.scanKeysCached(cacheKey, snapshotTemplates, code, snapshotStandardKeys)
                 } else emptyList()
                 val builtin = DefaultFields.lines(context, structId)
-                val target = if (scanned.isNotEmpty()) {
-                    TemplateFields.buildStructure(scanned, builtin) { key ->
-                        DefaultFields.effectiveDefault(context, key, overrides, structId)
-                    }
-                } else {
-                    DefaultFields.applyUserDefaults(context, builtin, overrides, structId)
-                }
                 val valueOf: (String) -> String = { key ->
                     DefaultFields.effectiveDefault(context, key, overrides, structId)
                 }
-                val (finalLines, source) = if (!restored.isNullOrEmpty()) {
-                    TemplateFields.restoreSnapshot(restored, scanned, valueOf) to "snapshot"
-                } else {
-                    DefaultFields.mergeStructure(baseLines, target, sourceDefaults) to
-                        (if (scanned.isNotEmpty()) "template" else "builtin")
-                }
-                // 恢复/重建后的结构写回快照；后续切走时保存的就是这份最新结果
-                if (finalLines.isNotEmpty()) TypeStructureStore.save(context, code, FieldDoc(finalLines))
+                // 决策交给纯函数：有快照恢复该类型内容，无快照生成干净表单，绝不并入其他类型
+                val (finalLines, source) = TemplateFields.resolveForType(restored, scanned, builtin, valueOf)
                 Triple(finalLines, source, overrides)
             }
             val (finalLines, source, overrides) = built
+            // persistLines 实时写「当前类型」快照（此时 selectedType 已 == code），无需在此重复落盘
             persistLines(finalLines)
             caseTypeId = structId
             SettingsStore.saveDocgenCaseType(context, structId)
@@ -461,9 +470,9 @@ fun DocGenScreen(onBack: () -> Unit) {
             if (announce) {
                 snackbar.showSnackbar(
                     when (source) {
-                        "snapshot" -> "已回到「$label」：自定义字段、排序与显示名已保留，模板新增字段已补入"
-                        "template" -> "已按「$label」模板预留字段重建表单，已填内容按字段保留"
-                        else -> "「$label」暂无可用模板字段，已回退内置结构；已填内容按字段保留"
+                        "snapshot" -> "已回到「$label」：该类型结构与已填内容独立保留，模板新增字段已补入"
+                        "template" -> "已按「$label」模板预留字段生成表单（该类型首次使用，未带入其他类型内容）"
+                        else -> "「$label」暂无可用模板字段，已回退内置结构（该类型首次使用）"
                     }
                 )
             }
@@ -934,6 +943,13 @@ fun DocGenScreen(onBack: () -> Unit) {
                                         }
                                     )
                                     DropdownMenuItem(
+                                        text = { Text("复制当前内容到其他类型") },
+                                        onClick = {
+                                            menuOpen = false
+                                            showCopyTo = true
+                                        }
+                                    )
+                                    DropdownMenuItem(
                                         text = { Text("默认值管理") },
                                         onClick = {
                                             menuOpen = false
@@ -1253,6 +1269,50 @@ fun DocGenScreen(onBack: () -> Unit) {
                 showDefaultManage = false
                 scope.launch { snackbar.showSnackbar("已保存「$typeLabel」的字段默认值；重置或新增字段时生效") }
             }
+        )
+    }
+
+    // ---------- 复制当前内容到其他类型 ----------
+    if (showCopyTo) {
+        AlertDialog(
+            onDismissRequest = { showCopyTo = false },
+            title = { Text("复制当前内容到其他类型") },
+            text = {
+                Column {
+                    Text(
+                        "把「${typeList.firstOrNull { it.code == selectedType }?.label ?: selectedType}」当前的结构与已填内容，整份覆盖到所选类型；当前类型不受影响。",
+                        fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    val others = typeList.filter { it.code != selectedType }
+                    if (others.isEmpty()) {
+                        Text("没有其他类型可复制", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline,
+                            modifier = Modifier.padding(8.dp))
+                    } else {
+                        LazyColumn(Modifier.heightIn(max = 320.dp)) {
+                            items(others, key = { it.code }) { target ->
+                                TextButton(
+                                    onClick = {
+                                        TypeStructureStore.save(context, target.code, FieldDoc(lines, System.currentTimeMillis()))
+                                        showCopyTo = false
+                                        scope.launch {
+                                            snackbar.showSnackbar("已把当前内容复制到「${
+                                                target.label
+                                            }」；切到该类型即可看到")
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("${target.code} ${target.label}", modifier = Modifier.weight(1f),
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Start)
+                                    Icon(Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(16.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showCopyTo = false }) { Text("取消") } }
         )
     }
 

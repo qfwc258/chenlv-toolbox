@@ -212,4 +212,47 @@ class TemplateFieldsTest {
         val restored = TemplateFields.restoreSnapshot(snapshot, listOf("a", "b", "b")) { "x" }
         assertEquals(2, restored.count { it.isField })
     }
+
+    // ---------- 类型隔离决策：各类型各自保持 ----------
+
+    @Test
+    fun `resolve for type restores own snapshot with its filled values`() {
+        // 该类型的快照：改过字段名、调过顺序、填了值
+        val snapshot = listOf(
+            RuleLine.group("我的分组"),
+            RuleLine.field("weitr", "类型A张三", "委托人"),
+            RuleLine.field("leib", "类型A民事")
+        )
+        val (lines, source) = TemplateFields.resolveForType(snapshot, listOf("weitr", "leib"), builtin) {
+            "默认值-$it" // 这个 valueOf 代表「别的类型」的默认值，绝不能被套用
+        }
+        assertEquals("snapshot", source)
+        assertEquals("我的分组", lines.first { it.isGroup }.text)
+        assertEquals("类型A张三", lines.first { it.key == "weitr" }.value)
+        assertEquals("委托人", lines.first { it.key == "weitr" }.alias)
+        assertEquals("类型A民事", lines.first { it.key == "leib" }.value)
+    }
+
+    @Test
+    fun `resolve for type first use is clean and never inherits other type values`() {
+        // 无快照：按模板 key + 内置结构生成干净表单，值只用本类型 valueOf
+        val (lines, source) = TemplateFields.resolveForType(null, listOf("weitr", "leib"), builtin) {
+            mapOf("weitr" to "本类型默认", "leib" to "民事")[it] ?: ""
+        }
+        assertEquals("template", source)
+        assertEquals("本类型默认", lines.first { it.key == "weitr" }.value)
+        assertEquals("民事", lines.first { it.key == "leib" }.value)
+        // 内置里有但模板没预留的字段（jied）不出现，且没有任何「上一个类型」的值残留
+        assertFalse(lines.any { it.key == "jied" })
+        assertEquals(2, lines.count { it.isField })
+    }
+
+    @Test
+    fun `resolve for type with no template falls back to builtin defaults`() {
+        val (lines, source) = TemplateFields.resolveForType(null, emptyList(), builtin) { "兜底-$it" }
+        assertEquals("builtin", source)
+        assertEquals("兜底-weitr", lines.first { it.key == "weitr" }.value)
+        // 分组 / 注释结构原样保留
+        assertTrue(lines.any { it.isComment && it.text == "#案件情况" })
+    }
 }

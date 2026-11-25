@@ -182,4 +182,29 @@ object TemplateFields {
         }
         return result
     }
+
+    /**
+     * 类型切换时的字段决策（纯函数，可单测）：
+     *  - [restored] 该类型已有快照 → 原样恢复其结构与已填值，只补模板新增字段（source="snapshot"）；
+     *  - 无快照 → 按 [scannedKeys] + [builtinLines] 生成该类型的干净表单，绝不并入别的类型内容
+     *    （source="template" / "builtin"）。
+     *
+     * 这是「各类型各自保持」的核心：切换路径不接收上一个类型的 lines，天然不会串内容。
+     */
+    fun resolveForType(
+        restored: List<RuleLine>?,
+        scannedKeys: List<String>,
+        builtinLines: List<RuleLine>,
+        valueOf: (String) -> String
+    ): Pair<List<RuleLine>, String> {
+        if (!restored.isNullOrEmpty()) {
+            return restoreSnapshot(restored, scannedKeys, valueOf) to "snapshot"
+        }
+        val clean = if (scannedKeys.isNotEmpty()) {
+            buildStructure(scannedKeys, builtinLines, valueOf)
+        } else {
+            builtinLines.map { l -> if (l.isField) l.copy(value = valueOf(l.key)) else l }
+        }
+        return clean to (if (scannedKeys.isNotEmpty()) "template" else "builtin")
+    }
 }
