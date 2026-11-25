@@ -486,7 +486,8 @@ fun DocGenScreen(onBack: () -> Unit) {
         if (previous == code) return
         selectedType = code
         SettingsStore.saveDocgenSelectedType(context, code)
-        rebuildFieldsForType(code, announce = true, previousCode = previous)
+        // 切换类型静默处理：字段与已填内容各自保留，无需 toast 打断操作
+        rebuildFieldsForType(code, announce = false, previousCode = previous)
     }
 
     LaunchedEffect(Unit) {
