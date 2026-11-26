@@ -81,11 +81,16 @@ object ElementEngine {
         return out.toString()
     }
 
-    /** 一键把"了解□ 不了解□"整组设为 了解☑ / 不了解☑ */
+    /**
+     * 一键把"了解□ … 不了解□"整组设为 了解☑ / 不了解☑。
+     * 兼容混合勾选（了解☑ 不了解□ 等）、半角/全角空格、换行分隔及无间隔写法；
+     * 仅匹配成对出现的"了解/不了解"，不会误伤"了解更多内容□"等单项。
+     */
     fun setAllMediationBenefitChoices(text: String, know: Boolean): String {
-        val regex = Regex("了解[□☑](\\s+)不了解[□☑]")
+        val regex = Regex("了解[□☑]([\\s\\u3000]*)不了解[□☑]")
         return regex.replace(text) {
-            if (know) "了解☑${it.groupValues[1]}不了解□" else "了解□${it.groupValues[1]}不了解☑"
+            val gap = it.groupValues[1]
+            if (know) "了解☑${gap}不了解□" else "了解□${gap}不了解☑"
         }
     }
 

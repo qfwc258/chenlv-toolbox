@@ -305,7 +305,8 @@ fun ElementFillScreen(
                                     CheckboxTextField(
                                         text = rowText(row.id),
                                         onTextChange = { setRow(row.id, it) },
-                                        modifier = Modifier.fillMaxWidth()
+                                        modifier = Modifier.fillMaxWidth(),
+                                        roleTag = row.roleTag
                                     )
                                     // 复制出的追加行：可改标题/内容、可删除
                                     val extras = extraRows.filter { it.sourceRowId == row.id }
@@ -331,7 +332,8 @@ fun ElementFillScreen(
                                                 CheckboxTextField(
                                                     text = ex.value,
                                                     onTextChange = { updateExtra(ex.uid, ex.label, it) },
-                                                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                                                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                                                    roleTag = ex.roleTag
                                                 )
                                             }
                                         }
@@ -427,12 +429,37 @@ fun ElementFillScreen(
 private fun CheckboxTextField(
     text: String,
     onTextChange: (String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    roleTag: String = "",
+    showMediationShortcut: Boolean = false
 ) {
     var editing by remember { mutableStateOf(false) }
     val tokens = remember(text) { ElementEngine.parseCheckboxTokens(text) }
+    // 仅"先行调解"要素行（官方 roleTag）或显式开启时渲染一键快捷键，且常驻不折叠
+    val showShortcut = showMediationShortcut || roleTag == "mediation_benefit"
 
     Column(modifier) {
+        // 一键快捷键：常驻于可视勾选区上方，不依赖进入"编辑原文"
+        if (showShortcut) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(
+                    onClick = { onTextChange(ElementEngine.setAllMediationBenefitChoices(text, true)) },
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text("一键勾选 5 项“了解☑”", fontSize = 11.sp)
+                }
+                Spacer(Modifier.size(4.dp))
+                TextButton(
+                    onClick = { onTextChange(ElementEngine.setAllMediationBenefitChoices(text, false)) },
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text("反向：均选“不了解☑”", fontSize = 11.sp)
+                }
+            }
+        }
         // 可视勾选区：按 □/☑ 切段渲染
         WrapCheckboxText(text = text, onToggle = { idx -> onTextChange(ElementEngine.toggleCheckboxAtIndex(text, idx)) })
         TextButton(onClick = { editing = !editing }, contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)) {
@@ -446,9 +473,6 @@ private fun CheckboxTextField(
                 minLines = 4,
                 placeholder = { Text("可直接输入/修改，□ 表示未勾选，☑ 表示已勾选；勾选数 ${tokens.size} 项") }
             )
-            TextButton(onClick = { onTextChange(ElementEngine.setAllMediationBenefitChoices(text, true)) }) {
-                Text("一键：调解均选“了解”", fontSize = 11.sp)
-            }
         }
     }
 }

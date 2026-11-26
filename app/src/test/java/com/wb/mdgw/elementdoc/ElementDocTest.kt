@@ -86,6 +86,36 @@ class ElementDocTest {
         assertEquals(2, no.count { it == '☑' })
     }
 
+    @Test
+    fun `mediation bulk select handles mixed checked state`() {
+        // 混合态：已有了解☑、不了解☑、以及未勾选，一键"了解"后必须全部归一
+        val text = "了解☑ 不了解□\n了解□ 不了解☑\n了解□    不了解□"
+        val yes = ElementEngine.setAllMediationBenefitChoices(text, true)
+        assertEquals("了解☑ 不了解□\n了解☑ 不了解□\n了解☑    不了解□", yes)
+        assertEquals(3, yes.count { it == '☑' })
+    }
+
+    @Test
+    fun `mediation bulk select handles full-width spaces and newlines`() {
+        // 全角空格 + 换行分隔 + 无间隔，均需命中
+        val text = "了解□\u3000\u3000不了解□\n了解□\n不了解□\n了解□不了解□"
+        val yes = ElementEngine.setAllMediationBenefitChoices(text, true)
+        // 3 组全部命中：了解☑（3 个），不了解□ 保持未勾选（3 个）
+        assertEquals(3, yes.count { it == '☑' })
+        assertEquals(3, yes.count { it == '□' })
+        assertTrue(yes.contains("了解☑\u3000\u3000不了解□"))
+        assertTrue(yes.contains("了解☑\n不了解□"))
+        assertTrue(yes.contains("了解☑不了解□"))
+    }
+
+    @Test
+    fun `mediation bulk select reverse leaves single '了解更多内容' untouched`() {
+        val text = "了解□ 不了解□\n了解更多内容□"
+        val no = ElementEngine.setAllMediationBenefitChoices(text, false)
+        assertEquals("了解□ 不了解☑\n了解更多内容□", no)
+        assertEquals(1, no.count { it == '☑' })
+    }
+
     // ---------- 草稿→成文解析 ----------
 
     @Test

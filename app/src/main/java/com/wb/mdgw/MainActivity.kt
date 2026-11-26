@@ -61,7 +61,11 @@ import com.wb.mdgw.catalog.CatalogKind
 import com.wb.mdgw.catalog.CatalogScreen
 import com.wb.mdgw.tableform.TableFormScreen
 import com.wb.mdgw.ftp.FtpScreen
-import com.wb.mdgw.injury.InjuryScreen
+import com.wb.mdgw.injury.InjuryHubScreen
+import com.wb.mdgw.calc.LitigationFeeScreen
+import com.wb.mdgw.calc.LawyerFeeScreen
+import com.wb.mdgw.calc.LprScreen
+import com.wb.mdgw.calc.LaborScreen
 import com.wb.mdgw.update.UpdateManager
 
 class MainActivity : ComponentActivity() {
@@ -116,7 +120,8 @@ fun MdGwTheme(darkTheme: Boolean = false, content: @Composable () -> Unit) {
 /** 顶层路由：主页宫格 + 各功能页（平铺，不再有底部 Tab） */
 private enum class Route {
     HOME, WORD, PDF, WECHAT, PPTX, SETTINGS, SCREENSHOT, LAW_SEARCH, DOC_GEN,
-    EVIDENCE_CATALOG, ARCHIVE_CATALOG, TABLE_FORM, DOCUMENTS, FTP, INJURY, ELEMENT_DOC
+    EVIDENCE_CATALOG, ARCHIVE_CATALOG, TABLE_FORM, DOCUMENTS, FTP, INJURY, ELEMENT_DOC,
+    LITIGATION_FEE, LAWYER_FEE, LPR_INTEREST, LABOR_COMP
 }
 
 /** 宫格功能项 */
@@ -138,7 +143,11 @@ private val HOME_FEATURES = listOf(
     Feature(Route.TABLE_FORM, "表格填报", Icons.Default.GridView),
     Feature(Route.SCREENSHOT, "截图排版", Icons.Default.Camera),
     Feature(Route.LAW_SEARCH, "法律查询", Icons.Default.Gavel),
-    Feature(Route.INJURY, "工伤赔偿", Icons.Default.Calculate),
+    Feature(Route.INJURY, "工伤与人损", Icons.Default.Calculate),
+    Feature(Route.LITIGATION_FEE, "诉讼费计算", Icons.Default.Calculate),
+    Feature(Route.LAWYER_FEE, "律师费与报价", Icons.Default.Calculate),
+    Feature(Route.LPR_INTEREST, "LPR利息", Icons.Default.Calculate),
+    Feature(Route.LABOR_COMP, "劳动补偿金", Icons.Default.Calculate),
     Feature(Route.DOCUMENTS, "我的文档", Icons.Default.Folder),
     Feature(Route.FTP, "FTP 服务", Icons.Default.Dns)
 )
@@ -257,9 +266,21 @@ fun AppScreen(initialUri: Uri? = null) {
                     }
                 }
                 AnimatedVisibility(route == Route.INJURY, enter = fadeIn(), exit = fadeOut()) {
-                    SimpleScreenFrame("工伤赔偿", onBack = { route = Route.HOME }) {
-                        InjuryScreen()
+                    SimpleScreenFrame("工伤与人损", onBack = { route = Route.HOME }) {
+                        InjuryHubScreen()
                     }
+                }
+                AnimatedVisibility(route == Route.LITIGATION_FEE, enter = fadeIn(), exit = fadeOut()) {
+                    SimpleScreenFrame("诉讼费计算", onBack = { route = Route.HOME }) { LitigationFeeScreen() }
+                }
+                AnimatedVisibility(route == Route.LAWYER_FEE, enter = fadeIn(), exit = fadeOut()) {
+                    SimpleScreenFrame("律师费与报价", onBack = { route = Route.HOME }) { LawyerFeeScreen() }
+                }
+                AnimatedVisibility(route == Route.LPR_INTEREST, enter = fadeIn(), exit = fadeOut()) {
+                    SimpleScreenFrame("LPR 利息与迟延金", onBack = { route = Route.HOME }) { LprScreen() }
+                }
+                AnimatedVisibility(route == Route.LABOR_COMP, enter = fadeIn(), exit = fadeOut()) {
+                    SimpleScreenFrame("劳动补偿金", onBack = { route = Route.HOME }) { LaborScreen() }
                 }
                 AnimatedVisibility(route == Route.DOCUMENTS, enter = fadeIn(), exit = fadeOut()) {
                     DocumentsScreen(

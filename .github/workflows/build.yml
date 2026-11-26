@@ -114,7 +114,8 @@ jobs:
 
             - Word / PPTX / PDF / 公众号排版，法援目录与证据目录填报
             - 法律查询（国家法规库 OFD 阅读器自适应手机）
-            - 工伤赔偿计算（湖南标准，残疾/死亡双模式）
+            - 工伤与人损（工伤湖南标准 + 人身损害/交通事故城乡统一标准）
+            - 离线法律工具：诉讼费/律师费报价/LPR利息/劳动补偿金/要素式文书
             - 生成文书（按模板批量替换）、FTP 传文件、应用内检查更新
 
             本 Release 为源码仓备份，正式更新分发见 qfwc258/xccapk。
@@ -145,7 +146,7 @@ jobs:
             echo "::warning::令牌无 qfwc258/xccapk 访问权限。请确认 secrets.XCCAPK 值为一枚对 xccapk 具 contents:write 且未过期的令牌。源码仓 Release 已保留 APK。"
             exit 0
           fi
-          printf '## 陈律工具箱 自动构建\n\n- Word / PPTX / PDF / 公众号排版，法援目录与证据目录填报\n- 法律查询（国家法规库 OFD 阅读器自适应手机）\n- 工伤赔偿计算（湖南标准，残疾/死亡双模式）\n- 生成文书（按模板批量替换）、FTP 传文件、应用内检查更新\n' > /tmp/notes.md
+          printf '## 陈律工具箱 自动构建\n\n- Word / PPTX / PDF / 公众号排版，法援目录与证据目录填报\n- 法律查询（国家法规库 OFD 阅读器自适应手机）\n- 工伤与人损（工伤湖南标准 + 人身损害/交通事故城乡统一标准）\n- 离线法律工具：诉讼费/律师费报价/LPR利息/劳动补偿金/要素式文书\n- 生成文书（按模板批量替换）、FTP 传文件、应用内检查更新\n' > /tmp/notes.md
           echo "→ 发布到 qfwc258/xccapk (tag ${TAG})"
           if gh release view "$TAG" --repo qfwc258/xccapk >/dev/null 2>&1; then
             gh release upload "$TAG" --repo qfwc258/xccapk "$APK" --clobber
