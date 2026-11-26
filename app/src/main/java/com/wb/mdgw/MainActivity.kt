@@ -56,6 +56,7 @@ import com.wb.mdgw.law.Law
 import com.wb.mdgw.law.LawDetailScreen
 import com.wb.mdgw.law.LawSearchScreen
 import com.wb.mdgw.docgen.DocGenScreen
+import com.wb.mdgw.elementdoc.ElementDocScreen
 import com.wb.mdgw.catalog.CatalogKind
 import com.wb.mdgw.catalog.CatalogScreen
 import com.wb.mdgw.tableform.TableFormScreen
@@ -115,7 +116,7 @@ fun MdGwTheme(darkTheme: Boolean = false, content: @Composable () -> Unit) {
 /** 顶层路由：主页宫格 + 各功能页（平铺，不再有底部 Tab） */
 private enum class Route {
     HOME, WORD, PDF, WECHAT, PPTX, SETTINGS, SCREENSHOT, LAW_SEARCH, DOC_GEN,
-    EVIDENCE_CATALOG, ARCHIVE_CATALOG, TABLE_FORM, DOCUMENTS, FTP, INJURY
+    EVIDENCE_CATALOG, ARCHIVE_CATALOG, TABLE_FORM, DOCUMENTS, FTP, INJURY, ELEMENT_DOC
 }
 
 /** 宫格功能项 */
@@ -131,6 +132,7 @@ private val HOME_FEATURES = listOf(
     Feature(Route.PDF, "PDF 处理", Icons.Default.PictureAsPdf),
     Feature(Route.WECHAT, "公众号排版", Icons.Default.ChatBubble),
     Feature(Route.DOC_GEN, "生成文书", Icons.Default.EditNote),
+    Feature(Route.ELEMENT_DOC, "要素式文书", Icons.Default.Gavel),
     Feature(Route.EVIDENCE_CATALOG, "证据目录", Icons.Default.Article),
     Feature(Route.ARCHIVE_CATALOG, "法援目录", Icons.Default.Inventory),
     Feature(Route.TABLE_FORM, "表格填报", Icons.Default.GridView),
@@ -209,6 +211,11 @@ fun AppScreen(initialUri: Uri? = null) {
                 // 自带顶部栏的子页
                 AnimatedVisibility(route == Route.DOC_GEN, enter = fadeIn(), exit = fadeOut()) {
                     DocGenScreen(onBack = { route = Route.HOME })
+                }
+
+                // 要素式文书：最高法 113 份官方要素式示范文本
+                AnimatedVisibility(route == Route.ELEMENT_DOC, enter = fadeIn(), exit = fadeOut()) {
+                    ElementDocScreen(onBack = { route = Route.HOME })
                 }
 
                 // 目录文书：证据目录 / 案卷归档目录（自带顶部栏）
