@@ -136,6 +136,40 @@ class ElementDocTest {
         assertTrue("自定义行应插入", doc.rows.any { it.id == "x1" && it.value == "值" })
     }
 
+    @Test
+    fun `duplicate party row label numbering follows official rule`() {
+        assertEquals("原告2（自然人）", ElementEngine.nextDuplicateLabel("原告\n（自然人）", 0))
+        assertEquals("原告3（自然人）", ElementEngine.nextDuplicateLabel("原告（自然人）", 1))
+        assertEquals("被告2", ElementEngine.nextDuplicateLabel("被告", 0))
+        assertEquals("委托诉讼代理人2", ElementEngine.nextDuplicateLabel("委托诉讼代理人", 0))
+        assertEquals("自定义要素（2）", ElementEngine.nextDuplicateLabel("自定义要素", 0))
+    }
+
+    @Test
+    fun `duplicated extra row is inserted after its source row in docx`() {
+        val tpl = corpus().templates.first { it.id == "spc2025_001" }
+        val plaintiff = tpl.rows.first { it.kind == "field" && it.label.startsWith("原告") }
+        val draft = ElementDraft(
+            templateId = tpl.id,
+            rowValues = mapOf(plaintiff.id to "张三"),
+            extraRows = listOf(
+                ElementDraft.ExtraRow("dup1", plaintiff.id, "原告2（自然人）", "李四", plaintiff.roleTag),
+                ElementDraft.ExtraRow("dup2", plaintiff.id, "原告3（自然人）", "王五", plaintiff.roleTag)
+            )
+        )
+        val doc = ElementEngine.buildResolved(tpl, draft)
+        val ids = doc.rows.map { it.id }
+        val srcAt = ids.indexOf(plaintiff.id)
+        assertTrue("源行应存在", srcAt >= 0)
+        assertEquals("应紧随源行插入第一份复制行", "dup1", ids.getOrNull(srcAt + 1))
+        assertEquals("应紧随其后插入第二份复制行", "dup2", ids.getOrNull(srcAt + 2))
+        assertEquals("复制行内容应为李四", "李四", doc.rows.first { it.id == "dup1" }.value)
+        // 生成 docx 时复制行文本必须出现
+        val xml = String(unzip(SpcDocxBuilder.build(doc))["word/document.xml"]!!, Charsets.UTF_8)
+        assertTrue("Word 中缺复制行内容", xml.contains("李四") && xml.contains("王五"))
+        assertTrue("Word 中缺复制行标题", xml.contains("原告2（自然人）"))
+    }
+
     // ---------- docx 版式结构 ----------
 
     private fun unzip(bytes: ByteArray): Map<String, ByteArray> {

@@ -49,6 +49,7 @@ fun ElementFillScreen(
     var rowValues by remember { mutableStateOf(initialDraft?.rowValues ?: emptyMap()) }
     var gridValues by remember { mutableStateOf(initialDraft?.gridValues ?: emptyMap()) }
     var attachmentRows by remember { mutableStateOf(initialDraft?.attachmentRows ?: emptyMap()) }
+    var extraRows by remember { mutableStateOf(initialDraft?.extraRows ?: emptyList()) }
     var excludedIds by remember { mutableStateOf(initialDraft?.excludedRowIds ?: emptySet()) }
     var signerName by remember { mutableStateOf(initialDraft?.signerName ?: "") }
     var signDate by remember { mutableStateOf(initialDraft?.signDate ?: "") }
@@ -67,6 +68,7 @@ fun ElementFillScreen(
         rowValues = rowValues,
         gridValues = gridValues,
         attachmentRows = attachmentRows,
+        extraRows = extraRows,
         excludedRowIds = excludedIds,
         hideUntouchedPartyRows = hideUntouched,
         includeAttachments = includeAttachments,
@@ -117,6 +119,28 @@ fun ElementFillScreen(
     fun rowText(id: String): String = rowValues[id] ?: template.rows.firstOrNull { it.id == id }?.templateText ?: ""
 
     fun setRow(id: String, value: String) { rowValues = rowValues + (id to value) }
+
+    /** 按最高法《说明》第4条，复制可重复的主体行（多原告/多被告/多代理人等） */
+    fun duplicateRow(row: com.wb.mdgw.elementdoc.SpcRow) {
+        val count = extraRows.count { it.sourceRowId == row.id }
+        val baseLabel = row.label.replace("\n", "")
+        val newLabel = ElementEngine.nextDuplicateLabel(row.label, count)
+        val ex = ElementDraft.ExtraRow(
+            uid = "extra_${row.id}_${System.currentTimeMillis()}_${count}",
+            sourceRowId = row.id,
+            label = newLabel,
+            value = row.templateText,
+            roleTag = row.roleTag
+        )
+        extraRows = extraRows + ex
+        scope.launch { snackbar.showSnackbar("已复制新增一栏「${baseLabel}」，可直接改标题与内容") }
+    }
+
+    fun updateExtra(uid: String, label: String, value: String) {
+        extraRows = extraRows.map { if (it.uid == uid) it.copy(label = label, value = value) else it }
+    }
+
+    fun removeExtra(uid: String) { extraRows = extraRows.filterNot { it.uid == uid } }
 
     fun toggleExcluded(id: String) {
         excludedIds = if (id in excludedIds) excludedIds - id else excludedIds + id
@@ -263,6 +287,17 @@ fun ElementFillScreen(
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text(row.label, fontSize = 13.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
                                             modifier = Modifier.weight(1f))
+                                        // 按最高法《说明》第4条，主体行可复制新增一栏（多原告/多被告等）
+                                        if (row.repeatable) {
+                                            TextButton(
+                                                onClick = { duplicateRow(row) },
+                                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 0.dp)
+                                            ) {
+                                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(15.dp))
+                                                Spacer(Modifier.size(3.dp))
+                                                Text("复制新增一行", fontSize = 11.sp)
+                                            }
+                                        }
                                         IconButton(onClick = { toggleExcluded(row.id) }) {
                                             Icon(Icons.Default.VisibilityOff, contentDescription = "隐藏此行", modifier = Modifier.size(18.dp))
                                         }
@@ -272,6 +307,35 @@ fun ElementFillScreen(
                                         onTextChange = { setRow(row.id, it) },
                                         modifier = Modifier.fillMaxWidth()
                                     )
+                                    // 复制出的追加行：可改标题/内容、可删除
+                                    val extras = extraRows.filter { it.sourceRowId == row.id }
+                                    extras.forEach { ex ->
+                                        Card(
+                                            shape = RoundedCornerShape(8.dp),
+                                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f), RoundedCornerShape(8.dp))
+                                        ) {
+                                            Column(Modifier.padding(8.dp)) {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    OutlinedTextField(
+                                                        value = ex.label,
+                                                        onValueChange = { updateExtra(ex.uid, it, ex.value) },
+                                                        label = { Text("标题") },
+                                                        modifier = Modifier.weight(1f).padding(end = 4.dp),
+                                                        singleLine = true
+                                                    )
+                                                    IconButton(onClick = { removeExtra(ex.uid) }) {
+                                                        Icon(Icons.Default.Delete, contentDescription = "删除此行", modifier = Modifier.size(18.dp))
+                                                    }
+                                                }
+                                                CheckboxTextField(
+                                                    text = ex.value,
+                                                    onTextChange = { updateExtra(ex.uid, ex.label, it) },
+                                                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }

@@ -220,6 +220,22 @@ object ElementEngine {
         }
     }
 
+    /**
+     * 按最高法《说明》第4条复制主体行时的新标题：
+     * 原告→原告2、原告（自然人）→原告2（自然人）；非主体行发「标题（2）」。
+     * @param count 已复制出的同源代码行数，第一次复制为 0
+     */
+    fun nextDuplicateLabel(baseLabel: String, count: Int): String {
+        val base = baseLabel.replace("\n", "").trim()
+        val partyPrefixes = listOf(
+            "委托诉讼代理人", "申请执行人", "被申请人", "被执行人", "答辩人", "自诉人",
+            "第三人", "原告", "被告", "申请人"
+        )
+        val prefix = partyPrefixes.firstOrNull { base.startsWith(it) }
+        val n = count + 2
+        return if (prefix != null) base.replaceFirst(prefix, "$prefix$n") else "$base（$n）"
+    }
+
     private val PREFIX_LABEL_REGEX = Regex(
         "^(?:\\s*\\d+\\.\\s*[\\u4e00-\\u9fff]|是|否|有|无|警告|罚款|没收|暂扣|限制|行政拘留|其他|大气|水|土壤|电子|固体|噪声|光|放射性)"
     )
