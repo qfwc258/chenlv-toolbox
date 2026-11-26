@@ -83,10 +83,16 @@ object SpcDocxBuilder {
                     val widths = listOf(1500, 3206, 1500, 3206)
                     val cellsXml = StringBuilder()
                     r.cells.forEachIndexed { ci, txt ->
+                        val isLabelCol = ci == 0 || ci == 2
+                        val align = when {
+                            ci == 0 -> labelAlign(txt)
+                            ci == 2 -> "center"
+                            else -> "left"
+                        }
                         cellsXml.append(spcCell(widths[ci], fourSpans[ci], contentXml = paragraph(
-                            txt, align = if (ci == 0 || ci == 2) "center" else "left",
-                            bold = ci == 0 || ci == 2, size = 21,
-                            font = if (ci == 0 || ci == 2) "宋体" else "仿宋",
+                            txt, align = align,
+                            bold = isLabelCol, size = 21,
+                            font = if (isLabelCol) "宋体" else "仿宋",
                             spaceBefore = 20, spaceAfter = 20, line = 280)))
                     }
                     trs.append("<w:tr><w:trPr><w:cantSplit/></w:trPr>").append(cellsXml).append("</w:tr>")
@@ -104,7 +110,7 @@ object SpcDocxBuilder {
                     r.cells.forEachIndexed { ci, txt ->
                         val cellText = if (ci == 0 && vm == "continue") "" else txt
                         cellsXml.append(spcCell(widths[ci], threeSpans[ci], vMerge = if (ci == 0) vm else null,
-                            contentXml = paragraph(cellText, align = if (ci == 0) "center" else "left",
+                            contentXml = paragraph(cellText, align = if (ci == 0) labelAlign(txt) else "left",
                                 bold = ci == 0, size = 21,
                                 font = if (ci == 0) "宋体" else "仿宋",
                                 spaceBefore = 20, spaceAfter = 20, line = 280)))
@@ -115,7 +121,7 @@ object SpcDocxBuilder {
                 else -> {
                     // 标准官方 2 列要素行
                     val leftXml = spcCell(2560, twoSpans[0], contentXml = paragraph(
-                        r.label, align = "center", size = 21, font = "宋体",
+                        r.label, align = labelAlign(r.label), size = 21, font = "宋体",
                         spaceBefore = 20, spaceAfter = 20, line = 280))
                     val rightXml = spcCell(6852, twoSpans[1], contentXml = paragraph(
                         r.value, align = "left", size = 21, font = "仿宋",
@@ -253,7 +259,7 @@ object SpcDocxBuilder {
             if (line.isEmpty()) continue
             when {
                 line.startsWith('★') && line.endsWith('★') ->
-                    append(paragraph(line, align = "center", bold = true, size = 21, font = "宋体",
+                    append(paragraph(line, align = "left", bold = true, size = 21, font = "宋体",
                         spaceBefore = 60, spaceAfter = 30, line = 280))
                 line == "说明：" || line == "说明:" ->
                     append(paragraph(line, align = "left", bold = true, size = 21, font = "宋体",
@@ -263,6 +269,20 @@ object SpcDocxBuilder {
                         spaceBefore = 10, spaceAfter = 15, line = 270))
             }
         }
+    }
+
+    /**
+     * 2 列要素行左列 label 的水平对齐：
+     *  - 带数字序号的小标题（如「1. 给付价款」「20. 是否签订保证合同」）→ 左对齐
+     *  - 调解意愿部分（含「调解」/「纠纷解决方式」）→ 左对齐
+     *  - 其余（当事人信息「原告（自然人）」等）→ 居中，保持官方原版式
+     * 依据：人民法院在线服务官方示范文本版式；全 113 份语料 label 形态已核对。
+     */
+    private fun labelAlign(label: String): String {
+        val t = label.trimStart()
+        if (Regex("^\\d+\\s*[.．、]").containsMatchIn(t)) return "left"
+        if (t.contains("调解") || t.contains("纠纷解决方式")) return "left"
+        return "center"
     }
 
     private fun sectionParagraphs(raw: String): String {

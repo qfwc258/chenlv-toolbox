@@ -194,6 +194,36 @@ class ElementDocTest {
     }
 
     @Test
+    fun `field label alignment follows official layout`() {
+        val tpl = corpus().templates.first { it.id == "spc2025_001" }
+        val doc = ElementEngine.buildResolved(tpl, ElementDraft(templateId = tpl.id))
+        val xml = String(unzip(SpcDocxBuilder.build(doc))["word/document.xml"]!!, Charsets.UTF_8)
+
+        // 取某 label 所在段落的对齐值：段落形如 <w:p><w:pPr><w:jc w:val="left"/>...label...</w:p>
+        fun alignOf(label: String): String {
+            val needle = "<w:t xml:space=\"preserve\">$label</w:t>"
+            val at = xml.indexOf(needle)
+            assertTrue("未找到 label: $label", at >= 0)
+            val pStart = xml.lastIndexOf("<w:p>", at)
+            val pEnd = xml.indexOf("</w:p>", at)
+            val para = xml.substring(pStart, pEnd)
+            val jc = Regex("<w:jc w:val=\"([^\"]+)\"").find(para)
+            return jc?.groupValues?.get(1) ?: error("段落无对齐: $label")
+        }
+
+        // 带数字序号的小标题 → 左对齐
+        assertEquals("数字序号小标题应左对齐", "left", alignOf("1. 给付价款（元）"))
+        assertEquals("序号小标题应左对齐", "left", alignOf("20. 是否签订保证合同"))
+        // 调解部分第一列 → 左对齐
+        assertEquals("调解行应左对齐", "left", alignOf("是否考虑先行调解"))
+        assertEquals("调解行应左对齐", "left", alignOf("是否了解先行调解解决纠纷的好处"))
+        // 当事人信息 label → 保持居中
+        assertEquals("当事人信息应居中", "center", alignOf("委托诉讼代理人"))
+        // ★特别提示★ → 左对齐
+        assertEquals("特别提示应左对齐", "left", alignOf("★特别提示★"))
+    }
+
+    @Test
     fun `docx escapes xml special chars`() {
         val tpl = corpus().templates.first()
         val field = tpl.rows.first { it.kind == "field" }
