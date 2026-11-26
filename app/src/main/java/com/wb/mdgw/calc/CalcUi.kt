@@ -152,17 +152,25 @@ fun CalcScrollBody(content: @Composable ColumnScope.() -> Unit) {
 /**
  * 二选一分段控件：胶囊底 + 选中格主色实心填充，与全局 SegmentedTabs 视觉语言一致。
  * 两个格子始终可点击，选中态清晰高亮，避免出现「选中的反而灰掉、焦点不明」的问题。
+ *
+ * 尺寸约定：本控件按内容自适应宽度（不撑满父容器），这样与输入框同行时（如
+ * 「本金输入框 + 万元/元」）不会抢占输入控件空间，避免输入框被挤成 0 宽而消失。
  */
 @Composable
-fun SegmentedButton2(left: String, right: String, leftSelected: Boolean, onSelect: (Boolean) -> Unit) {
+fun SegmentedButton2(
+    left: String, right: String, leftSelected: Boolean,
+    modifier: Modifier = Modifier,
+    onSelect: (Boolean) -> Unit
+) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-        shape = RoundedCornerShape(20.dp)
+        shape = RoundedCornerShape(20.dp),
+        modifier = modifier
     ) {
         Row(Modifier.padding(3.dp)) {
-            SegmentedCell2(left, leftSelected, Modifier.weight(1f)) { onSelect(true) }
+            SegmentedCell2(left, leftSelected, Modifier.widthIn(min = 60.dp)) { onSelect(true) }
             Spacer(Modifier.size(3.dp))
-            SegmentedCell2(right, !leftSelected, Modifier.weight(1f)) { onSelect(false) }
+            SegmentedCell2(right, !leftSelected, Modifier.widthIn(min = 56.dp)) { onSelect(false) }
         }
     }
 }
