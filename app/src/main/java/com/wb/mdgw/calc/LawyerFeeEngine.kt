@@ -15,7 +15,9 @@ data class FeeSegJson(
     /** 费率区间 [下限%, 上限%] */
     val r: List<Double>? = null,
     /** 固定金额区间 [下限, 上限] */
-    val fix: List<Double>? = null
+    val fix: List<Double>? = null,
+    /** 标准未列明的协商段 */
+    val neg: Boolean = false
 )
 
 @Serializable
@@ -29,6 +31,14 @@ data class FeePropJson(
     val adj: FeeAdjJson? = null
 )
 
+/** 重大疑难复杂案件上浮倍数（参照源码 std.cx） */
+@Serializable
+data class FeeCxJson(
+    val crim: Double? = null,
+    val prop: Double? = null,
+    val np: Double? = null
+)
+
 @Serializable
 data class FeeStandardJson(
     val id: String = "",
@@ -37,7 +47,14 @@ data class FeeStandardJson(
     val d: String = "",
     val st: String = "",
     val g: String = "",
+    /** 适用范围原文（如湖南仅限民生类案件）——避免把窄口径标准误用为通用标准 */
+    val scope: String = "",
+    /** 是否窄口径标准（政府指导价仅覆盖部分案件类型） */
+    val narrow: Boolean = false,
+    val stNote: String = "",
+    val notes: String = "",
     val prop: FeePropJson? = null,
+    val cx: FeeCxJson? = null,
     val hr: List<Double>? = null
 )
 
@@ -95,7 +112,8 @@ object LawyerFeeEngine {
             val to = if (seg.to < 0) Double.MAX_VALUE else seg.to
             if (amount <= prev) break
             val portion = minOf(amount, to) - prev
-            if (seg.r == null && seg.fix == null) {
+            // 参照源码：s.neg 为标准未列明的协商段；fix/r 均空的旧数据也作协商处理
+            if (seg.neg || (seg.r == null && seg.fix == null)) {
                 rows += FeeRow("协商确定", null, null, "${fmt0(prev)} – ${fmt0(to)} 元部分协商")
                 negotiated = true
                 break
@@ -182,7 +200,9 @@ object LawyerFeeEngine {
         val hourlyRate: Double = 500.0,
         val hours: Double = 10.0,
         val hourlyCap: Double = 0.0,
-        val forbidRisk: Boolean = false
+        val forbidRisk: Boolean = false,
+        /** 重大疑难复杂案件：按参照源码 std.cx 放大上限 */
+        val complex: Boolean = false
     )
 
     data class QuoteResult(
@@ -190,7 +210,11 @@ object LawyerFeeEngine {
         val sub: String,
         val rows: List<FeeRow>,
         val steps: List<String>,
-        val riskCap: FeeRange? = null
+        val riskCap: FeeRange? = null,
+        /** 复杂案件上浮倍数（1 表示未上浮） */
+        val cxMul: Double = 1.0,
+        /** 窄口径标准的适用范围提示（非空时界面需显著提示） */
+        val scopeWarning: String = ""
     )
 
     fun quote(input: QuoteInput): QuoteResult = when (input.scheme) {
@@ -201,14 +225,29 @@ object LawyerFeeEngine {
                     listOf("该省份收费标准已全面放开或未公布政府指导价，需与律所协商确定。"))
             } else {
                 val r = calcSegs(std.prop, input.amount)
-                val head = if (r.lo == null) "¥ ${fmt2(r.hi)}（下限协商）" else
-                    if (r.lo == r.hi) "¥ ${fmt2(r.hi)}" else "¥ ${fmt2(r.lo!!)} – ¥ ${fmt2(r.hi)}"
+                // 参照源码：重大疑难复杂案件按 std.cx.prop 放大上限
+                var cxMul = 1.0
+                var finalHi = r.hi
+                if (input.complex && std.cx?.prop != null && std.cx.prop > 1.0) {
+                    cxMul = std.cx.prop!!
+                    finalHi *= cxMul
+                }
+                val finalLo = if (r.lo == null) null else round2(r.lo!! * cxMul)
+                val head = if (finalLo == null) "¥ ${fmt2(round2(finalHi))}（下限协商）" else
+                    if (finalLo == round2(finalHi)) "¥ ${fmt2(round2(finalHi))}" else "¥ ${fmt2(finalLo)} – ¥ ${fmt2(round2(finalHi))}"
                 val steps = mutableListOf<String>()
                 steps += "依据：${std.n.ifBlank { std.p + "标准" }}（${std.d}）${statusLabel(std.st)}"
                 if (r.minApplied) steps += "已适用最低收费 ${fmt2(std.prop.min)} 元"
                 if (r.loFree) steps += "下限已放开（可下浮不限），实际收费由双方协商"
                 if (r.negotiated) steps += "部分分段为标准未列明的协商区间"
-                QuoteResult(head, "${std.p} · ${std.d}", r.rows, steps)
+                if (cxMul > 1.0) steps += "重大疑难复杂案件：上限按标准允许上浮 ${cxMul.format1()} 倍 → ${fmt2(round2(finalHi))} 元"
+                if (std.notes.isNotBlank()) steps += std.notes
+                // 窄口径标准（如湖南仅限民生类案件）必须显著提示，防止误用为普通财产案件标准
+                val scopeWarn = if (std.narrow && std.scope.isNotBlank())
+                    "⚠ 该标准为窄口径政府指导价：${std.scope}普通民商事财产案件可能不适用，请核对当地律协/市场调节价。"
+                else ""
+                if (scopeWarn.isNotBlank()) steps += scopeWarn
+                QuoteResult(head, "${std.p} · ${std.d}", r.rows, steps, cxMul = cxMul, scopeWarning = scopeWarn)
             }
         }
         Scheme.SEMI_RISK, Scheme.FULL_RISK -> {

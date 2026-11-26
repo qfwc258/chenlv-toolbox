@@ -145,7 +145,7 @@ private val HOME_FEATURES = listOf(
     Feature(Route.LAW_SEARCH, "法律查询", Icons.Default.Gavel),
     Feature(Route.INJURY, "工伤与人损", Icons.Default.Calculate),
     Feature(Route.LITIGATION_FEE, "诉讼费计算", Icons.Default.Calculate),
-    Feature(Route.LAWYER_FEE, "律师费与报价", Icons.Default.Calculate),
+    Feature(Route.LAWYER_FEE, "律师费", Icons.Default.Calculate),
     Feature(Route.LPR_INTEREST, "LPR利息", Icons.Default.Calculate),
     Feature(Route.LABOR_COMP, "劳动补偿金", Icons.Default.Calculate),
     Feature(Route.DOCUMENTS, "我的文档", Icons.Default.Folder),
@@ -274,7 +274,7 @@ fun AppScreen(initialUri: Uri? = null) {
                     SimpleScreenFrame("诉讼费计算", onBack = { route = Route.HOME }) { LitigationFeeScreen() }
                 }
                 AnimatedVisibility(route == Route.LAWYER_FEE, enter = fadeIn(), exit = fadeOut()) {
-                    SimpleScreenFrame("律师费与报价", onBack = { route = Route.HOME }) { LawyerFeeScreen() }
+                    SimpleScreenFrame("律师费", onBack = { route = Route.HOME }) { LawyerFeeScreen() }
                 }
                 AnimatedVisibility(route == Route.LPR_INTEREST, enter = fadeIn(), exit = fadeOut()) {
                     SimpleScreenFrame("LPR 利息与迟延金", onBack = { route = Route.HOME }) { LprScreen() }

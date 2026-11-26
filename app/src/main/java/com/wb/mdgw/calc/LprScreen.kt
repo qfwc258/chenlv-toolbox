@@ -11,7 +11,7 @@ import java.time.LocalDate
 /**
  * 04 LPR 逾期付款利息与迟延履行金计算器界面。
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun LprScreen() {
     var mode by remember { mutableStateOf(LprEngine.Mode.LPR_FLOATING) }
@@ -83,6 +83,22 @@ fun LprScreen() {
                         label = { Text("LPR 倍数", fontSize = 12.sp) }, modifier = Modifier.weight(1f), singleLine = true)
                     OutlinedTextField(value = bpsStr, onValueChange = { bpsStr = it },
                         label = { Text("加点 BP", fontSize = 12.sp) }, modifier = Modifier.weight(1f), singleLine = true)
+                }
+                // 参照源码倍数快捷：1 / 1.3 / 1.5 / 4 倍，点击同时清零加点 BP
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf("1" to "1 倍 LPR", "1.3" to "1.3 倍（上浮30%）", "1.5" to "1.5 倍（上浮50%）", "4" to "4 倍（民间借贷上限）")
+                        .forEach { (value, label) ->
+                            val active = multiplierStr == value && bpsStr == "0"
+                            if (active) {
+                                Button(onClick = { multiplierStr = value; bpsStr = "0" }) {
+                                    Text(label, fontSize = 11.sp)
+                                }
+                            } else {
+                                OutlinedButton(onClick = { multiplierStr = value; bpsStr = "0" }) {
+                                    Text(label, fontSize = 11.sp)
+                                }
+                            }
+                        }
                 }
                 Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                     Text("计息基数", fontSize = 13.sp, modifier = Modifier.weight(1f))

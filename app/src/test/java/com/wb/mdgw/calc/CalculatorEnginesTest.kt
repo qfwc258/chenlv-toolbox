@@ -182,4 +182,58 @@ class CalculatorEnginesTest {
         assertEquals(5000.0, LawyerFeeEngine.hourlyFee(500.0, 10.0, 0.0), 0.001)
         assertEquals(3000.0, LawyerFeeEngine.hourlyFee(500.0, 10.0, 3000.0), 0.001)
     }
+
+    @Test
+    fun `湖南10万标的为定额1500至3000且带窄口径警告`() {
+        val hn = standards().first { it.p == "湖南" }
+        val q = LawyerFeeEngine.quote(
+            LawyerFeeEngine.QuoteInput(scheme = LawyerFeeEngine.Scheme.STANDARD, standard = hn, amount = 100_000.0)
+        )
+        // 参照源码 hn2016：10万以下为 fix[1500,3000]，是定额区间而非比例累进
+        assertTrue(q.headline.contains("1,500"))
+        assertTrue(q.headline.contains("3,000"))
+        assertTrue(q.scopeWarning.contains("民生"))
+        assertTrue(q.steps.any { it.contains("仅限") })
+        assertTrue(hn.narrow)
+        assertTrue(hn.scope.contains("民生"))
+    }
+
+    @Test
+    fun `湖南复杂案件按cx上浮3倍`() {
+        val hn = standards().first { it.p == "湖南" }
+        val base = LawyerFeeEngine.quote(
+            LawyerFeeEngine.QuoteInput(standard = hn, amount = 100_000.0)
+        )
+        val complex = LawyerFeeEngine.quote(
+            LawyerFeeEngine.QuoteInput(standard = hn, amount = 100_000.0, complex = true)
+        )
+        assertEquals(3.0, complex.cxMul, 0.01)
+        // 上限 3000 × 3 = 9000
+        assertTrue(complex.headline.contains("9,000"))
+        assertTrue(complex.steps.any { it.contains("3.0 倍") })
+        assertTrue(base.cxMul == 1.0)
+    }
+
+    @Test
+    fun `数据包含参照字段scope cx neg`() {
+        val s = standards()
+        assertTrue(s.count { it.scope.isNotBlank() } >= 30)
+        assertTrue(s.any { it.cx?.prop != null })
+        assertTrue(s.first { it.p == "山东" }.prop?.segs?.any { it.neg } == true)
+    }
+
+    @Test
+    fun `LPR倍数快捷值含1点3与1点5与4倍`() {
+        // 快捷按钮为 UI 提供固定候选，校验引擎对这些倍数的计息单调性
+        val input = LprEngine.Input(
+            mode = LprEngine.Mode.LPR_FIXED, principal = 100_000.0,
+            startDate = "2024-06-01", endDate = "2025-06-01", multiplier = 1.0
+        )
+        val x1 = LprEngine.calc(input).normalInterest
+        val x13 = LprEngine.calc(input.copy(multiplier = 1.3)).normalInterest
+        val x15 = LprEngine.calc(input.copy(multiplier = 1.5)).normalInterest
+        val x4 = LprEngine.calc(input.copy(multiplier = 4.0)).normalInterest
+        assertTrue(x1 < x13 && x13 < x15 && x15 < x4)
+        assertEquals(x1 * 1.3, x13, 0.01)
+    }
 }

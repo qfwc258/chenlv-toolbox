@@ -41,6 +41,7 @@ fun LawyerFeeScreen() {
     var hours by remember { mutableStateOf("10") }
     var hourlyCap by remember { mutableStateOf("0") }
     var forbidRisk by remember { mutableStateOf(false) }
+    var complexCase by remember { mutableStateOf(false) }
     var showProvincePicker by remember { mutableStateOf(false) }
     var showSchemePicker by remember { mutableStateOf(false) }
 
@@ -51,7 +52,7 @@ fun LawyerFeeScreen() {
         baseFee = num(baseFee), riskRatePct = num(riskRate, 10.0),
         realized = num(realizedStr) * if (unitWan) 10_000 else 1,
         capOn = capOn, hourlyRate = num(hourlyRate, 500.0), hours = num(hours, 10.0),
-        hourlyCap = num(hourlyCap), forbidRisk = forbidRisk
+        hourlyCap = num(hourlyCap), forbidRisk = forbidRisk, complex = complexCase
     )
     val result = remember(input) { LawyerFeeEngine.quote(input) }
     val summary = remember(input, result) { LawyerFeeEngine.summaryText(input, result) }
@@ -82,6 +83,22 @@ fun LawyerFeeScreen() {
                 }
                 Text("折合：¥ ${LawyerFeeEngine.fmt2(amount)}", fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
+                standard?.cx?.prop?.let { mul ->
+                    if (mul > 1.0) {
+                        CalcSwitchRow("重大疑难复杂案件", complexCase, { complexCase = it },
+                            "该标准允许上限上浮 ${LawyerFeeEngine.fmt2(mul)} 倍")
+                    }
+                }
+            }
+            // 窄口径标准（湖南/浙江等仅限民生类案件）必须显著提示，避免误当作通用财产案件标准
+            if (result.scopeWarning.isNotBlank()) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(result.scopeWarning, fontSize = 12.sp, color = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.padding(12.dp))
+                }
             }
         }
 
@@ -127,7 +144,7 @@ fun LawyerFeeScreen() {
 
         Text("法律依据：司发通〔2021〕87号。风险代理禁止范围：${LawyerFeeEngine.RISK_PROHIBITED}",
             fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        CalcCopyShareBar(summary, "律师费报价测算.txt")
+        CalcCopyShareBar(summary, "律师费测算.txt")
     }
 
     if (showSchemePicker) {
