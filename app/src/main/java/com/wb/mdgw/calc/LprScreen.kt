@@ -140,7 +140,7 @@ fun LprScreen() {
             onDismissRequest = { showModePicker = false },
             title = { Text("计息方式") },
             text = {
-                Column {
+                DialogScrollList {
                     LprEngine.Mode.entries.forEach { m ->
                         TextButton(onClick = { mode = m; showModePicker = false }, modifier = Modifier.fillMaxWidth()) {
                             Text(m.label, fontSize = 13.sp)

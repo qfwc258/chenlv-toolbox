@@ -149,17 +149,52 @@ fun CalcScrollBody(content: @Composable ColumnScope.() -> Unit) {
     )
 }
 
+/**
+ * 二选一分段控件：胶囊底 + 选中格主色实心填充，与全局 SegmentedTabs 视觉语言一致。
+ * 两个格子始终可点击，选中态清晰高亮，避免出现「选中的反而灰掉、焦点不明」的问题。
+ */
 @Composable
 fun SegmentedButton2(left: String, right: String, leftSelected: Boolean, onSelect: (Boolean) -> Unit) {
-    Row {
-        Button(onClick = { onSelect(true) }, enabled = !leftSelected, modifier = Modifier.widthIn(min = 56.dp)) {
-            Text(left, fontSize = 12.sp)
-        }
-        Spacer(Modifier.size(4.dp))
-        OutlinedButton(onClick = { onSelect(false) }, enabled = leftSelected, modifier = Modifier.widthIn(min = 48.dp)) {
-            Text(right, fontSize = 12.sp)
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        shape = RoundedCornerShape(20.dp)
+    ) {
+        Row(Modifier.padding(3.dp)) {
+            SegmentedCell2(left, leftSelected, Modifier.weight(1f)) { onSelect(true) }
+            Spacer(Modifier.size(3.dp))
+            SegmentedCell2(right, !leftSelected, Modifier.weight(1f)) { onSelect(false) }
         }
     }
+}
+
+@Composable
+private fun SegmentedCell2(label: String, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    if (selected) {
+        Button(
+            onClick = onClick,
+            shape = RoundedCornerShape(18.dp),
+            modifier = modifier.heightIn(min = 34.dp)
+        ) {
+            Text(label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        }
+    } else {
+        OutlinedButton(
+            onClick = onClick,
+            shape = RoundedCornerShape(18.dp),
+            modifier = modifier.heightIn(min = 34.dp)
+        ) {
+            Text(label, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface)
+        }
+    }
+}
+
+/** 弹窗内可滚动列表容器：限制最大高度并支持滚动，避免选项过多时无法拉取 */
+@Composable
+fun DialogScrollList(maxHeight: androidx.compose.ui.unit.Dp = 420.dp, content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().heightIn(max = maxHeight).verticalScroll(rememberScrollState()),
+        content = content
+    )
 }
 
 fun num(text: String, default: Double = 0.0): Double = text.toDoubleOrNull() ?: default

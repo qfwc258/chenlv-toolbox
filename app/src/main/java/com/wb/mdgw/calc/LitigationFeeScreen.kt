@@ -87,7 +87,7 @@ fun LitigationFeeScreen() {
             onDismissRequest = { showTypePicker = false },
             title = { Text("选择案件类型") },
             text = {
-                Column {
+                DialogScrollList {
                     LitigationFeeEngine.CaseType.entries.forEach { t ->
                         TextButton(onClick = { caseType = t; showTypePicker = false }, modifier = Modifier.fillMaxWidth()) {
                             Column(Modifier.fillMaxWidth()) {

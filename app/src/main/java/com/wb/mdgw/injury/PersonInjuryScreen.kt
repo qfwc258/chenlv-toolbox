@@ -174,7 +174,10 @@ fun PersonInjuryScreen() {
             onDismissRequest = { showParams = false },
             title = { Text("地区口径参数") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(
+                    Modifier.fillMaxWidth().heightIn(max = 460.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     PiNumberField("地区名称", params.regionName, { params = params.copy(regionName = it) }, "")
                     PiNumberField("城镇人均可支配收入（年）", params.urbanDisposable.toString(), { params = params.copy(urbanDisposable = it.toDoubleOrNull() ?: 0.0) }, "元")
                     PiNumberField("城镇人均消费支出（年）", params.urbanConsumption.toString(), { params = params.copy(urbanConsumption = it.toDoubleOrNull() ?: 0.0) }, "元")

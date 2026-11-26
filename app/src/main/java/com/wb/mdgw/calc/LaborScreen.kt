@@ -94,7 +94,7 @@ fun LaborScreen() {
             onDismissRequest = { showScenarioPicker = false },
             title = { Text("主张情形") },
             text = {
-                Column {
+                DialogScrollList {
                     LaborEngine.Scenario.entries.forEach { s ->
                         TextButton(onClick = { scenario = s; showScenarioPicker = false }, modifier = Modifier.fillMaxWidth()) {
                             Column(Modifier.fillMaxWidth()) {

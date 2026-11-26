@@ -135,7 +135,7 @@ fun LawyerFeeScreen() {
             onDismissRequest = { showSchemePicker = false },
             title = { Text("报价方案") },
             text = {
-                Column {
+                DialogScrollList {
                     LawyerFeeEngine.Scheme.entries.forEach { s ->
                         TextButton(onClick = { scheme = s; showSchemePicker = false }, modifier = Modifier.fillMaxWidth()) {
                             Text(s.label, fontSize = 13.sp)
@@ -152,7 +152,7 @@ fun LawyerFeeScreen() {
             onDismissRequest = { showProvincePicker = false },
             title = { Text("选择地区（31 省）") },
             text = {
-                Column(Modifier.heightIn(max = 480.dp)) {
+                DialogScrollList(maxHeight = 480.dp) {
                     provinces.forEach { p ->
                         TextButton(onClick = { province = p; showProvincePicker = false }, modifier = Modifier.fillMaxWidth()) {
                             Text(p, fontSize = 13.sp)
