@@ -32,7 +32,6 @@ fun LprScreen() {
     var dayBasis365 by remember { mutableStateOf(true) }
     var includeDelay by remember { mutableStateOf(false) }
     var delayStartDate by remember { mutableStateOf("2025-08-01") }
-    var showModePicker by remember { mutableStateOf(false) }
 
     val principal = num(principalStr) * if (unitWan) 10_000 else 1
     val input = LprEngine.Input(
@@ -53,8 +52,20 @@ fun LprScreen() {
         Text("内置央行 2019-08 至 2026-11 完整 LPR 报价表，按调息日分段计息；可叠加日万分之 1.75 加倍迟延履行金。",
             fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
-        CalcCard("计息方式") {
-            Button(onClick = { showModePicker = true }, modifier = Modifier.fillMaxWidth()) { Text(mode.label) }
+        CalcCard("计息方式（点击切换）") {
+            // 4 种模式常驻可见，参照源码 2×2 卡片式选择
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                LprEngine.Mode.entries.forEach { m ->
+                    val selected = mode == m
+                    if (selected) {
+                        Button(onClick = { mode = m }) { Text(m.label, fontSize = 11.sp) }
+                    } else {
+                        OutlinedButton(onClick = { mode = m }) {
+                            Text(m.label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
+                        }
+                    }
+                }
+            }
             if (mode != LprEngine.Mode.DELAY_ONLY) {
                 Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                     Text("贷款期限", fontSize = 13.sp, modifier = Modifier.weight(1f))
@@ -129,10 +140,30 @@ fun LprScreen() {
         }
 
         if (mode == LprEngine.Mode.CUSTOM_RATE) {
-            CalcCard("约定利率") {
-                CalcNumberField("固定年利率", customRateStr, { customRateStr = it }, unit = "%")
-                Text("4 倍 1 年期 LPR 司法保护上限：${result.fourTimesLatestLpr}%", fontSize = 11.sp,
+            CalcCard("自己约定的利息（合同约定年利率）") {
+                CalcNumberField("约定年利率", customRateStr, { customRateStr = it }, unit = "%")
+                // 常用约定利率快捷值：1/1.3/1.5/4 倍 1 年期 LPR
+                val curLpr = LprEngine.lookupLprOn(startDate, LprEngine.Term.ONE_YEAR, lprHistory).r1y
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(
+                        "1 倍 LPR" to curLpr,
+                        "1.3 倍" to curLpr * 1.3,
+                        "1.5 倍" to curLpr * 1.5,
+                        "4 倍上限" to curLpr * 4
+                    ).forEach { (label, rate) ->
+                        val rateStr = String.format("%.2f", rate).trimEnd('0').trimEnd('.')
+                        OutlinedButton(onClick = { customRateStr = rateStr }) { Text(label, fontSize = 11.sp) }
+                    }
+                }
+                Text("计息：本金 × 约定年利率 × 天数 ÷ 计息基数，单利计算。",
+                    fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("司法保护上限：4 倍 1 年期 LPR = ${result.fourTimesLatestLpr}%；超出部分法院不予支持。",
+                    fontSize = 11.sp,
                     color = if (result.exceedsPrivateLendingCap) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    Text("计息基数", fontSize = 13.sp, modifier = Modifier.weight(1f))
+                    SegmentedButton2("365 天", "360 天", dayBasis365) { dayBasis365 = it }
+                }
             }
         }
 
@@ -170,23 +201,6 @@ fun LprScreen() {
                 fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
         }
         CalcCopyShareBar(summary, "LPR利息测算.txt")
-    }
-
-    if (showModePicker) {
-        AlertDialog(
-            onDismissRequest = { showModePicker = false },
-            title = { Text("计息方式") },
-            text = {
-                DialogScrollList {
-                    LprEngine.Mode.entries.forEach { m ->
-                        TextButton(onClick = { mode = m; showModePicker = false }, modifier = Modifier.fillMaxWidth()) {
-                            Text(m.label, fontSize = 13.sp)
-                        }
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { showModePicker = false }) { Text("关闭") } }
-        )
     }
 
     if (showTableEditor) {

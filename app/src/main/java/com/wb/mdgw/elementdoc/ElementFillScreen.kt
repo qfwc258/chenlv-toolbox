@@ -61,6 +61,9 @@ fun ElementFillScreen(
     var busy by remember { mutableStateOf(false) }
     var showExtrasMenu by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
+    // UI 优化：说明长文默认折叠，减少首屏占用
+    var noticeExpanded by remember { mutableStateOf(false) }
+    var sourceExpanded by remember { mutableStateOf(false) }
 
     fun currentDraft() = ElementDraft(
         templateId = template.id,
@@ -160,65 +163,84 @@ fun ElementFillScreen(
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回") }
                 },
                 actions = {
-                    IconButton(onClick = { previewText = ElementEngine.toPlainText(resolvedDoc()); showPreview = true }) {
-                        Icon(Icons.Default.Visibility, contentDescription = "预览")
-                    }
                     IconButton(onClick = { showAbout = true }) { Icon(Icons.Default.Info, contentDescription = "关于") }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = BrandTokens.BrandPaper)
             )
         },
-        floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = { doGenerate() },
-                icon = { Icon(Icons.Default.Description, contentDescription = null) },
-                text = { Text(if (busy) "生成中…" else "生成 Word") }
-            )
+        bottomBar = {
+            // 固定底部操作栏：不悬浮遮挡正文（原 FAB 会盖住说明文字）
+            Surface(tonalElevation = 2.dp, color = BrandTokens.BrandPaper) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = { previewText = ElementEngine.toPlainText(resolvedDoc()); showPreview = true },
+                        modifier = Modifier.weight(1f)
+                    ) { Text("预览", fontSize = 12.sp) }
+                    Button(
+                        onClick = { doGenerate() },
+                        modifier = Modifier.weight(2f),
+                        enabled = !busy
+                    ) {
+                        Icon(Icons.Default.Description, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.size(6.dp))
+                        Text(if (busy) "生成中…" else "生成 Word", fontSize = 12.sp)
+                    }
+                }
+            }
         }
     ) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // 案名 + 选项
+            // 案名 + 选项（紧凑布局：三个输入各占一行，开关合并一行，依据折叠）
             item {
                 Card(shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         OutlinedTextField(
                             value = caseName,
                             onValueChange = { caseName = it },
-                            label = { Text("案名 / 当事人（用于区分草稿）") },
+                            label = { Text("案名 / 当事人（用于区分草稿）", fontSize = 12.sp) },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true
                         )
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("签名人", fontSize = 12.sp, modifier = Modifier.weight(1f))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedTextField(
                                 value = signerName, onValueChange = { signerName = it },
-                                modifier = Modifier.weight(2f), singleLine = true,
-                                placeholder = { Text("留空手签/盖章") }
+                                label = { Text("签名人", fontSize = 12.sp) },
+                                modifier = Modifier.weight(1f), singleLine = true,
+                                placeholder = { Text("留空手签/盖章", fontSize = 11.sp) }
                             )
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("日期", fontSize = 12.sp, modifier = Modifier.weight(1f))
                             OutlinedTextField(
                                 value = signDate, onValueChange = { signDate = it },
-                                modifier = Modifier.weight(2f), singleLine = true,
-                                placeholder = { Text("年　月　日") }
+                                label = { Text("日期", fontSize = 12.sp) },
+                                modifier = Modifier.weight(1f), singleLine = true,
+                                placeholder = { Text("年 月 日", fontSize = 11.sp) }
                             )
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Switch(checked = includeAttachments, onCheckedChange = { includeAttachments = it })
-                            Text("含附件表（证据清单等）", fontSize = 12.sp)
+                            Switch(checked = includeAttachments, onCheckedChange = { includeAttachments = it },
+                                modifier = Modifier.height(28.dp))
+                            Text("附件表", fontSize = 11.sp)
+                            Spacer(Modifier.size(12.dp))
+                            Switch(checked = hideUntouched, onCheckedChange = { hideUntouched = it },
+                                modifier = Modifier.height(28.dp))
+                            Text("隐藏未填当事人行", fontSize = 11.sp)
                         }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Switch(checked = hideUntouched, onCheckedChange = { hideUntouched = it })
-                            Text("隐藏未填的当事人行", fontSize = 12.sp)
+                        TextButton(
+                            onClick = { sourceExpanded = !sourceExpanded },
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                        ) {
+                            Text(if (sourceExpanded) "收起依据" else "依据：最高法《法〔2025〕82号》官方示范文本",
+                                fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        Text(
-                            "依据最高人民法院《法〔2025〕82号》官方示范文本（${template.sourceFile}）",
-                            fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        if (sourceExpanded) {
+                            Text("源文件：${template.sourceFile}。2025-07-14 起全国法院推广，文书须经执业律师复核后使用。",
+                                fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
                 }
             }
@@ -239,17 +261,36 @@ fun ElementFillScreen(
                 } else {
                     when (row.kind) {
                         "notice" -> {
+                            // 官方填表说明通常较长，默认折叠避免占满首屏，点击展开
                             Card(shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
-                                Column(Modifier.padding(12.dp)) {
-                                    Text(row.templateText, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Column(Modifier.padding(10.dp)) {
+                                    TextButton(
+                                        onClick = { noticeExpanded = !noticeExpanded },
+                                        contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp)
+                                    ) {
+                                        Text(
+                                            if (noticeExpanded) "▼ 收起官方填表说明"
+                                            else "▶ 官方填表说明（${row.templateText.length}字，点击展开）",
+                                            fontSize = 12.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                    if (noticeExpanded) {
+                                        Spacer(Modifier.height(6.dp))
+                                        Text(row.templateText, fontSize = 12.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
                                 }
                             }
                         }
                         "section" -> {
+                            // 章节/特别提示统一左对齐，与 Word 输出一致；紧凑排布
                             Text(
-                                row.templateText.replace("\n", " "), fontSize = 15.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                row.templateText.replace("\n", " "), fontSize = 14.sp,
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), textAlign = TextAlign.Center
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                                textAlign = TextAlign.Start
                             )
                         }
                         "grid" -> {
@@ -386,7 +427,7 @@ fun ElementFillScreen(
                 }
             }
 
-            item { Spacer(Modifier.height(72.dp)) }
+            item { Spacer(Modifier.height(16.dp)) }
         }
     }
 

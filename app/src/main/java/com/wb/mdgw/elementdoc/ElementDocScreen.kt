@@ -45,7 +45,8 @@ fun ElementDocScreen(onBack: () -> Unit) {
         containerColor = BrandTokens.BrandPaper,
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
-            TopAppBar(
+            // 填表页自身有完整 Scaffold/TopAppBar，外层隐藏避免双层标题叠加
+            if (selectedTemplate != null) { Spacer(Modifier.height(0.dp)) } else TopAppBar(
                 title = {
                     Column {
                         Text(
