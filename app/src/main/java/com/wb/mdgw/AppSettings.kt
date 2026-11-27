@@ -35,6 +35,9 @@ object AppSettings {
     val pptxTone = MutableStateFlow("2E5FA3")
     val pptxAutoPaginate = MutableStateFlow(true)
 
+    // ---- 律师个人执业档案（要素式文书一键带入） ----
+    val lawyerProfile = MutableStateFlow(LawyerProfile())
+
     /** 冷启动时从各持久化存储恢复内存态（仅执行一次）。 */
     fun init(context: Context) {
         val ctx = context.applicationContext
@@ -61,6 +64,9 @@ object AppSettings {
         } else {
             legacyDraft?.autoPaginate ?: true
         }
+
+        // 律师执业档案
+        lawyerProfile.value = SettingsStore.lawyerProfile(ctx)
     }
 
     /** 旧草稿主题 → 主色调映射（兼容三套预设主题）。 */
@@ -128,5 +134,10 @@ object AppSettings {
     fun setPptxAutoPaginate(ctx: Context, v: Boolean) {
         pptxAutoPaginate.value = v
         SettingsStore.savePptxAutoPaginate(ctx, v)
+    }
+
+    fun setLawyerProfile(ctx: Context, p: LawyerProfile) {
+        lawyerProfile.value = p
+        SettingsStore.saveLawyerProfile(ctx, p)
     }
 }

@@ -2,6 +2,9 @@ package com.wb.mdgw.elementdoc
 
 import android.content.Context
 import android.content.Intent
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -16,6 +19,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -24,6 +29,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.wb.mdgw.AppSettings
 import com.wb.mdgw.BrandTokens
 import com.wb.mdgw.FileUtils
 import kotlinx.coroutines.Dispatchers
@@ -59,11 +65,80 @@ fun ElementFillScreen(
     var showPreview by remember { mutableStateOf(false) }
     var previewText by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
-    var showExtrasMenu by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
     // UI 优化：说明长文默认折叠，减少首屏占用
     var noticeExpanded by remember { mutableStateOf(false) }
     var sourceExpanded by remember { mutableStateOf(false) }
+    // 草稿管理 / A4 预览 / 示例
+    var showDraftsDialog by remember { mutableStateOf(false) }
+    var drafts by remember { mutableStateOf<List<ElementDraft>>(emptyList()) }
+    var showA4Preview by remember { mutableStateOf(false) }
+    var isDemoSample by remember { mutableStateOf(initialDraft?.caseName == DemoSampleEngine.DEMO_CASE_NAME) }
+
+    /** 把一份草稿整体灌入当前编辑状态（载入示例/恢复草稿/空白表共用） */
+    fun applyDraft(d: ElementDraft) {
+        caseName = d.caseName
+        rowValues = d.rowValues
+        gridValues = d.gridValues
+        attachmentRows = d.attachmentRows
+        extraRows = d.extraRows
+        excludedIds = d.excludedRowIds
+        signerName = d.signerName
+        signDate = d.signDate
+        includeAttachments = d.includeAttachments
+        hideUntouched = d.hideUntouchedPartyRows
+        isDemoSample = d.caseName == DemoSampleEngine.DEMO_CASE_NAME
+    }
+
+    /** 空白表：清空所有已填值，保留官方原表结构 */
+    fun applyBlank() {
+        applyDraft(ElementDraft(templateId = template.id, caseName = "空白表"))
+        scope.launch { snackbar.showSnackbar("已恢复官方空白原表，可直接预览或下载空白表") }
+    }
+
+    // 从本机 JSON 备份恢复草稿：读取用户选择的 .json 文件
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val text = FileUtils.readText(context, uri)
+                    ElementDraftBackup.parse(text)
+                }
+            }
+            result.onSuccess { draftsInFile ->
+                if (draftsInFile.isEmpty()) {
+                    snackbar.showSnackbar("备份文件中没有可恢复的草稿")
+                } else {
+                    draftsInFile.forEach { ElementDraftStore.save(context, it) }
+                    // 优先恢复当前模板的第一份
+                    val mine = draftsInFile.filter { it.templateId == template.id }
+                    if (mine.isNotEmpty()) applyDraft(mine.first())
+                    snackbar.showSnackbar("已从备份恢复 ${draftsInFile.size} 份草稿")
+                }
+            }.onFailure {
+                snackbar.showSnackbar("恢复失败：${it.message ?: "文件格式不正确"}")
+            }
+        }
+    }
+
+    /** 导出所有草稿为 JSON 备份到 Downloads */
+    fun exportBackup() {
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val all = ElementDraftStore.all(context)
+                    val json = ElementDraftBackup.serialize(all)
+                    val outName = "要素式文书草稿备份_${java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())}.json"
+                    FileUtils.saveToDownloads(context, outName, json.toByteArray(Charsets.UTF_8), "application/json")
+                }
+            }
+            result.onSuccess { snackbar.showSnackbar("草稿备份已导出：${it.displayPath}") }
+                .onFailure { snackbar.showSnackbar("导出失败：${it.message ?: "未知错误"}") }
+        }
+    }
 
     fun currentDraft() = ElementDraft(
         templateId = template.id,
@@ -103,7 +178,8 @@ fun ElementFillScreen(
                     val doc = resolvedDoc()
                     val bytes = SpcDocxBuilder.build(doc)
                     val safeName = caseName.trim().replace(Regex("[\\\\/:*?\"<>|]"), "_")
-                    val outName = "${template.displayName}-${safeName}.docx"
+                    val demoTag = if (isDemoSample) "_${DemoSampleEngine.DEMO_FILE_TAG}" else ""
+                    val outName = "${template.displayName}-${safeName}$demoTag.docx"
                     val saved = FileUtils.saveToDownloads(context, outName, bytes, FileUtils.DOCX_MIME)
                     ElementDraftStore.save(context, currentDraft())
                     Triple(saved.displayPath, saved.uri, outName)
@@ -149,6 +225,14 @@ fun ElementFillScreen(
         excludedIds = if (id in excludedIds) excludedIds - id else excludedIds + id
     }
 
+    Box(Modifier.fillMaxSize()) {
+    if (showA4Preview) {
+        ElementA4PreviewScreen(
+            html = ElementDocHtmlBuilder.build(resolvedDoc()),
+            title = template.displayName,
+            onBack = { showA4Preview = false }
+        )
+    } else {
     Scaffold(
         containerColor = BrandTokens.BrandPaper,
         topBar = {
@@ -163,7 +247,66 @@ fun ElementFillScreen(
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回") }
                 },
                 actions = {
-                    IconButton(onClick = { showAbout = true }) { Icon(Icons.Default.Info, contentDescription = "关于") }
+                    IconButton(onClick = { showA4Preview = true }) {
+                        Icon(Icons.Default.Print, contentDescription = "A4预览")
+                    }
+                    var menuOpen by remember { mutableStateOf(false) }
+                    IconButton(onClick = { menuOpen = true }) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "更多")
+                    }
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        DropdownMenuItem(
+                            text = { Text("载入虚构案例体验") },
+                            leadingIcon = { Icon(Icons.Default.Science, contentDescription = null) },
+                            onClick = {
+                                menuOpen = false
+                                applyDraft(DemoSampleEngine.build(template))
+                                scope.launch { snackbar.showSnackbar("已载入虚构案例，导出时自动标注「虚构样例_不可提交」") }
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("恢复官方空白表") },
+                            leadingIcon = { Icon(Icons.Default.CleaningServices, contentDescription = null) },
+                            onClick = { menuOpen = false; applyBlank() }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("存草稿") },
+                            leadingIcon = { Icon(Icons.Default.Save, contentDescription = null) },
+                            onClick = {
+                                menuOpen = false
+                                if (caseName.isBlank()) {
+                                    scope.launch { snackbar.showSnackbar("请先填写案名再存草稿") }
+                                } else {
+                                    persistDraft()
+                                    scope.launch { snackbar.showSnackbar("草稿已保存到本机") }
+                                }
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("草稿列表 / 恢复") },
+                            leadingIcon = { Icon(Icons.Default.FolderOpen, contentDescription = null) },
+                            onClick = {
+                                menuOpen = false
+                                drafts = ElementDraftStore.listForTemplate(context, template.id)
+                                showDraftsDialog = true
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("导出草稿备份 JSON") },
+                            leadingIcon = { Icon(Icons.Default.FileDownload, contentDescription = null) },
+                            onClick = { menuOpen = false; exportBackup() }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("从备份恢复 JSON") },
+                            leadingIcon = { Icon(Icons.Default.FileUpload, contentDescription = null) },
+                            onClick = { menuOpen = false; importLauncher.launch("*/*") }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("关于本模板") },
+                            leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) },
+                            onClick = { menuOpen = false; showAbout = true }
+                        )
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = BrandTokens.BrandPaper)
             )
@@ -460,6 +603,74 @@ fun ElementFillScreen(
             confirmButton = { TextButton(onClick = { showAbout = false }) { Text("知道了") } }
         )
     }
+
+    if (showDraftsDialog) {
+        DraftsDialog(
+            drafts = drafts,
+            onDismiss = { showDraftsDialog = false },
+            onRestore = { d ->
+                applyDraft(d)
+                showDraftsDialog = false
+                scope.launch { snackbar.showSnackbar("已恢复草稿「${d.caseName}」") }
+            },
+            onDelete = { d ->
+                ElementDraftStore.delete(context, d.templateId, d.caseName)
+                drafts = ElementDraftStore.listForTemplate(context, template.id)
+                scope.launch { snackbar.showSnackbar("已删除草稿「${d.caseName}」") }
+            }
+        )
+    }
+    } // end else
+    } // end Box
+}
+
+/**
+ * 草稿列表弹窗：列出本模板已存草稿，可恢复/删除。
+ */
+@Composable
+private fun DraftsDialog(
+    drafts: List<ElementDraft>,
+    onDismiss: () -> Unit,
+    onRestore: (ElementDraft) -> Unit,
+    onDelete: (ElementDraft) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("本机草稿（${drafts.size}）") },
+        text = {
+            if (drafts.isEmpty()) {
+                Text("本模板暂无已存草稿。填写案名后点「存草稿」即可。", fontSize = 12.sp)
+            } else {
+                LazyColumn(modifier = Modifier.heightIn(max = 420.dp)) {
+                    itemsIndexed(drafts) { _, d ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Row(
+                                Modifier.fillMaxWidth().padding(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(d.caseName.ifBlank { "（未命名）" }, fontSize = 13.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium)
+                                    Text(
+                                        java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
+                                            .format(java.util.Date(d.updatedAt)),
+                                        fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                TextButton(onClick = { onRestore(d) }) { Text("恢复", fontSize = 12.sp) }
+                                IconButton(onClick = { onDelete(d) }) {
+                                    Icon(Icons.Default.Delete, contentDescription = "删除草稿", modifier = Modifier.size(18.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } }
+    )
 }
 
 /**
@@ -474,10 +685,16 @@ private fun CheckboxTextField(
     roleTag: String = "",
     showMediationShortcut: Boolean = false
 ) {
+    val context = LocalContext.current
+    val lawyerProfile by AppSettings.lawyerProfile.collectAsState()
     var editing by remember { mutableStateOf(false) }
+    var showQuickFill by remember { mutableStateOf(false) }
+    var quickData by remember { mutableStateOf(PartyFillEngine.Data()) }
     val tokens = remember(text) { ElementEngine.parseCheckboxTokens(text) }
     // 仅"先行调解"要素行（官方 roleTag）或显式开启时渲染一键快捷键，且常驻不折叠
     val showShortcut = showMediationShortcut || roleTag == "mediation_benefit"
+    val isAgent = roleTag == "agent"
+    val fillable = PartyFillEngine.isPartyFillable(roleTag)
 
     Column(modifier) {
         // 一键快捷键：常驻于可视勾选区上方，不依赖进入"编辑原文"
@@ -501,6 +718,42 @@ private fun CheckboxTextField(
                 }
             }
         }
+        // 委托诉讼代理人行：一键带入设置里保存的律师执业档案
+        if (isAgent) {
+            TextButton(
+                onClick = {
+                    if (lawyerProfile.isEmpty) {
+                        Toast.makeText(context, "请先在「设置 → 我的执业档案」填写姓名与律所", Toast.LENGTH_LONG).show()
+                    } else {
+                        val filled = PartyFillEngine.fromLawyerProfile(
+                            templateText = text,
+                            name = lawyerProfile.name,
+                            firmName = lawyerProfile.firmName,
+                            licenseNo = lawyerProfile.licenseNo,
+                            phone = lawyerProfile.phone
+                        )
+                        onTextChange(filled)
+                        Toast.makeText(context, "已从执业档案带入「${lawyerProfile.displayName}」代理信息", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+            ) {
+                Icon(Icons.Default.Badge, contentDescription = null, modifier = Modifier.size(14.dp))
+                Spacer(Modifier.size(4.dp))
+                Text("一键带入我的执业档案", fontSize = 11.sp)
+            }
+        }
+        // 主体行：打开快速结构化填入面板
+        if (fillable) {
+            TextButton(
+                onClick = { quickData = PartyFillEngine.Data(); showQuickFill = true },
+                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+            ) {
+                Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(14.dp))
+                Spacer(Modifier.size(4.dp))
+                Text("快速结构化填入", fontSize = 11.sp)
+            }
+        }
         // 可视勾选区：按 □/☑ 切段渲染
         WrapCheckboxText(text = text, onToggle = { idx -> onTextChange(ElementEngine.toggleCheckboxAtIndex(text, idx)) })
         TextButton(onClick = { editing = !editing }, contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)) {
@@ -515,6 +768,130 @@ private fun CheckboxTextField(
                 placeholder = { Text("可直接输入/修改，□ 表示未勾选，☑ 表示已勾选；勾选数 ${tokens.size} 项") }
             )
         }
+    }
+
+    if (showQuickFill) {
+        QuickFillDialog(
+            roleTag = roleTag,
+            data = quickData,
+            onDataChange = { quickData = it },
+            onDismiss = { showQuickFill = false },
+            onApply = {
+                onTextChange(PartyFillEngine.applyToCellText(text, roleTag, quickData))
+                showQuickFill = false
+                Toast.makeText(context, "已按官方表格结构填入", Toast.LENGTH_SHORT).show()
+            }
+        )
+    }
+}
+
+/**
+ * 快速结构化填入面板：按官方 roleTag 展示对应字段，填入后由 PartyFillEngine
+ * 精准替换原表单元格，保留官方标签与勾选项顺序。
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun QuickFillDialog(
+    roleTag: String,
+    data: PartyFillEngine.Data,
+    onDataChange: (PartyFillEngine.Data) -> Unit,
+    onDismiss: () -> Unit,
+    onApply: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("快速结构化填入") },
+        text = {
+            Column(
+                Modifier.fillMaxWidth().heightIn(max = 480.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    "按官方表格结构填入，自动保留标签与勾选项顺序；留空的字段不改动。",
+                    fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                when {
+                    roleTag == "agent" -> {
+                        OptionsRow("是否有代理人") {
+                            FilterChip(selected = data.agentHas, onClick = { onDataChange(data.copy(agentHas = true)) }, label = { Text("有", fontSize = 11.sp) })
+                            FilterChip(selected = !data.agentHas, onClick = { onDataChange(data.copy(agentHas = false)) }, label = { Text("无", fontSize = 11.sp) })
+                        }
+                        OptionsRow("代理权限") {
+                            listOf("一般授权", "特别授权").forEach { a ->
+                                FilterChip(selected = data.agentAuthority == a, onClick = { onDataChange(data.copy(agentAuthority = a)) }, label = { Text(a, fontSize = 11.sp) })
+                            }
+                        }
+                        QFTextField("姓名", data.name) { onDataChange(data.copy(name = it)) }
+                        QFTextField("单位 / 律所", data.workUnit) { onDataChange(data.copy(workUnit = it)) }
+                        QFTextField("职务", data.jobTitle) { onDataChange(data.copy(jobTitle = it)) }
+                        QFTextField("联系电话", data.phone) { onDataChange(data.copy(phone = it)) }
+                    }
+                    roleTag.contains("person") -> {
+                        QFTextField("姓名", data.name) { onDataChange(data.copy(name = it)) }
+                        OptionsRow("性别") {
+                            listOf("男", "女").forEach { g ->
+                                FilterChip(selected = data.gender == g, onClick = { onDataChange(data.copy(gender = g)) }, label = { Text(g, fontSize = 11.sp) })
+                            }
+                        }
+                        QFTextField("出生日期", data.birthDate) { onDataChange(data.copy(birthDate = it)) }
+                        QFTextField("民族", data.ethnicity) { onDataChange(data.copy(ethnicity = it)) }
+                        QFTextField("工作单位", data.workUnit) { onDataChange(data.copy(workUnit = it)) }
+                        QFTextField("职务", data.jobTitle) { onDataChange(data.copy(jobTitle = it)) }
+                        QFTextField("联系电话", data.phone) { onDataChange(data.copy(phone = it)) }
+                        QFTextField("住所地（户籍所在地）", data.domicile) { onDataChange(data.copy(domicile = it)) }
+                        QFTextField("经常居住地", data.residence) { onDataChange(data.copy(residence = it)) }
+                        QFTextField("证件类型", data.idType) { onDataChange(data.copy(idType = it)) }
+                        QFTextField("证件号码", data.idNumber) { onDataChange(data.copy(idNumber = it)) }
+                    }
+                    else -> {
+                        QFTextField("名称", data.name) { onDataChange(data.copy(name = it)) }
+                        QFTextField("住所地（主要办事机构所在地）", data.domicile) { onDataChange(data.copy(domicile = it)) }
+                        QFTextField("注册地 / 登记地", data.regAddress) { onDataChange(data.copy(regAddress = it)) }
+                        QFTextField("法定代表人 / 负责人", data.legalRep) { onDataChange(data.copy(legalRep = it)) }
+                        QFTextField("职务", data.repTitle) { onDataChange(data.copy(repTitle = it)) }
+                        QFTextField("联系电话", data.phone) { onDataChange(data.copy(phone = it)) }
+                        QFTextField("统一社会信用代码", data.creditCode) { onDataChange(data.copy(creditCode = it)) }
+                        QFTextField("银行账号", data.bankAccount) { onDataChange(data.copy(bankAccount = it)) }
+                        QFTextField("开户名", data.bankHolder) { onDataChange(data.copy(bankHolder = it)) }
+                        QFTextField("开户行", data.bankName) { onDataChange(data.copy(bankName = it)) }
+                        Text("组织类型", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            PartyFillEngine.ORG_TYPES.forEach { ot ->
+                                FilterChip(
+                                    selected = data.orgType == ot,
+                                    onClick = { onDataChange(data.copy(orgType = ot)) },
+                                    label = { Text(ot, fontSize = 10.sp) }
+                                )
+                            }
+                        }
+                        OptionsRow("所有制性质") {
+                            listOf("民营", "国有", "其他").forEach { o ->
+                                FilterChip(selected = data.ownershipNature == o, onClick = { onDataChange(data.copy(ownershipNature = o)) }, label = { Text(o, fontSize = 11.sp) })
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onApply) { Text("填入") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }
+    )
+}
+
+@Composable
+private fun QFTextField(label: String, value: String, onChange: (String) -> Unit) {
+    OutlinedTextField(
+        value = value, onValueChange = onChange,
+        label = { Text(label, fontSize = 11.sp) },
+        singleLine = true, modifier = Modifier.fillMaxWidth()
+    )
+}
+
+@Composable
+private fun OptionsRow(label: String, content: @Composable RowScope.() -> Unit) {
+    Column {
+        Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), content = content)
     }
 }
 

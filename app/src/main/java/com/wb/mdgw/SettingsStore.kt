@@ -35,6 +35,13 @@ object SettingsStore {
     private const val K_WORD_BOTTOM_EXPANDED = "word_bottom_expanded"
     /** 合并后的「类型」单选 code（旧的两个 key 保留，供一次性迁移读取） */
     private const val K_DOCGEN_SELECTED_TYPE = "docgen_selected_type"
+    /** 律师个人执业档案：要素式文书一键带入代理信息 */
+    private const val K_LAWYER_NAME = "lawyer_name"
+    private const val K_LAWYER_FIRM = "lawyer_firm_name"
+    private const val K_LAWYER_LICENSE = "lawyer_license_no"
+    private const val K_LAWYER_PHONE = "lawyer_phone"
+    private const val K_LAWYER_ADDRESS = "lawyer_address"
+    private const val K_LAWYER_EMAIL = "lawyer_email"
 
     /** 生成文书：默认模板目录（与 PC 端 mb/ 对齐，可在 App 内修改） */
     const val DOCGEN_DEFAULT_TEMPLATE_DIR = "/sdcard/pylaw/mb"
@@ -199,5 +206,29 @@ object SettingsStore {
 
     fun saveWordBottomExpanded(ctx: Context, v: Boolean) {
         prefs(ctx).edit().putBoolean(K_WORD_BOTTOM_EXPANDED, v).apply()
+    }
+
+    // ---------- 律师个人执业档案 ----------
+
+    /** 读取已保存的律师执业档案；各字段独立读取，缺省为空 */
+    fun lawyerProfile(ctx: Context): LawyerProfile = LawyerProfile(
+        name = prefs(ctx).getString(K_LAWYER_NAME, "").orEmpty(),
+        firmName = prefs(ctx).getString(K_LAWYER_FIRM, "").orEmpty(),
+        licenseNo = prefs(ctx).getString(K_LAWYER_LICENSE, "").orEmpty(),
+        phone = prefs(ctx).getString(K_LAWYER_PHONE, "").orEmpty(),
+        address = prefs(ctx).getString(K_LAWYER_ADDRESS, "").orEmpty(),
+        email = prefs(ctx).getString(K_LAWYER_EMAIL, "").orEmpty()
+    )
+
+    /** 保存律师执业档案；各字段 trim 后写入 */
+    fun saveLawyerProfile(ctx: Context, p: LawyerProfile) {
+        prefs(ctx).edit()
+            .putString(K_LAWYER_NAME, p.name.trim())
+            .putString(K_LAWYER_FIRM, p.firmName.trim())
+            .putString(K_LAWYER_LICENSE, p.licenseNo.trim())
+            .putString(K_LAWYER_PHONE, p.phone.trim())
+            .putString(K_LAWYER_ADDRESS, p.address.trim())
+            .putString(K_LAWYER_EMAIL, p.email.trim())
+            .apply()
     }
 }

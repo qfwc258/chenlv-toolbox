@@ -59,6 +59,10 @@ fun SettingsScreen() {
     var showAbout by remember { mutableStateOf(false) }
     var showCss by remember { mutableStateOf(false) }
     var toneInput by remember { mutableStateOf(pptxTone) }
+    // 执业档案：编辑中的草稿，点「保存执业档案」才落盘，避免边输边存产生半截数据
+    val lawyerProfile by AppSettings.lawyerProfile.collectAsState()
+    var profileDraft by remember(lawyerProfile) { mutableStateOf(lawyerProfile) }
+    var profileSaved by remember { mutableStateOf(false) }
     val updateController = rememberUpdateController()
     val hasUpdate by UpdateManager.hasUpdate.collectAsState()
 
@@ -360,6 +364,60 @@ fun SettingsScreen() {
                     checked = pptxAutoPaginate,
                     onCheckedChange = { AppSettings.setPptxAutoPaginate(context, it) }
                 )
+            }
+        }
+
+        // ---------- 律师个人执业档案 ----------
+        SettingsGroup("我的执业档案") {
+            Text(
+                "填写一次，要素式文书代理人行可「一键带入」姓名、律所、执业证号与电话；仅存本机，不上传。",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 6.dp)
+            )
+            OutlinedTextField(
+                value = profileDraft.name,
+                onValueChange = { profileDraft = profileDraft.copy(name = it); profileSaved = false },
+                label = { Text("律师姓名", fontSize = 12.sp) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)
+            )
+            OutlinedTextField(
+                value = profileDraft.firmName,
+                onValueChange = { profileDraft = profileDraft.copy(firmName = it); profileSaved = false },
+                label = { Text("律师事务所", fontSize = 12.sp) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)
+            )
+            OutlinedTextField(
+                value = profileDraft.licenseNo,
+                onValueChange = { profileDraft = profileDraft.copy(licenseNo = it); profileSaved = false },
+                label = { Text("执业证号", fontSize = 12.sp) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)
+            )
+            OutlinedTextField(
+                value = profileDraft.phone,
+                onValueChange = { profileDraft = profileDraft.copy(phone = it); profileSaved = false },
+                label = { Text("联系电话", fontSize = 12.sp) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Button(onClick = {
+                    AppSettings.setLawyerProfile(context, profileDraft)
+                    profileSaved = true
+                    Toast.makeText(context, "执业档案已保存，要素式文书内可一键带入", Toast.LENGTH_SHORT).show()
+                }) {
+                    Text("保存执业档案", fontSize = 13.sp)
+                }
+                Spacer(Modifier.size(10.dp))
+                if (profileSaved) {
+                    Text("✓ 已保存", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                } else if (!lawyerProfile.isEmpty) {
+                    Text("当前：${lawyerProfile.displayName}", fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
         }
 
