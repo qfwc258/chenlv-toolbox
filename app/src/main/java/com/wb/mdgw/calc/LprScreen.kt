@@ -1,9 +1,12 @@
 package com.wb.mdgw.calc
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.time.LocalDate
@@ -14,6 +17,9 @@ import java.time.LocalDate
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun LprScreen() {
+    val context = LocalContext.current
+    var lprHistory by remember { mutableStateOf(LprTableStore.load(context)) }
+    var showTableEditor by remember { mutableStateOf(false) }
     var mode by remember { mutableStateOf(LprEngine.Mode.LPR_FLOATING) }
     var principalStr by remember { mutableStateOf("50") }
     var unitWan by remember { mutableStateOf(true) }
@@ -33,10 +39,15 @@ fun LprScreen() {
         mode = mode, principal = principal, startDate = startDate, endDate = endDate,
         term = term, multiplier = num(multiplierStr, 1.0), bps = num(bpsStr),
         customRate = num(customRateStr, 6.0), dayBasis = if (dayBasis365) 365 else 360,
-        includeDelay = includeDelay, delayStartDate = delayStartDate
+        includeDelay = includeDelay, delayStartDate = delayStartDate,
+        history = lprHistory
     )
     val result = remember(input) { LprEngine.calc(input) }
     val summary = remember(input, result) { LprEngine.summaryText(input, result) }
+    // 当前起算日查表得到的 LPR（1年期/5年期），随编辑实时更新
+    val snapLpr = remember(startDate, term, lprHistory) {
+        LprEngine.lookupLprOn(startDate, term, lprHistory)
+    }
 
     CalcScrollBody {
         Text("内置央行 2019-08 至 2026-11 完整 LPR 报价表，按调息日分段计息；可叠加日万分之 1.75 加倍迟延履行金。",
@@ -50,6 +61,16 @@ fun LprScreen() {
                     SegmentedButton2("1 年期", "5 年期+", term == LprEngine.Term.ONE_YEAR) {
                         term = if (it) LprEngine.Term.ONE_YEAR else LprEngine.Term.FIVE_YEAR
                     }
+                }
+                // 当前查表 LPR 值（可见）+ 报价表编辑入口
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("起算日 ${snapLpr.date} 报价", fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("1 年期 ${LprEngine.fmt2(snapLpr.r1y)}% ｜ 5 年期 ${LprEngine.fmt2(snapLpr.r5y)}%",
+                            fontSize = 13.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+                    }
+                    TextButton(onClick = { showTableEditor = true }) { Text("报价表", fontSize = 12.sp) }
                 }
             }
         }
@@ -167,4 +188,94 @@ fun LprScreen() {
             confirmButton = { TextButton(onClick = { showModePicker = false }) { Text("关闭") } }
         )
     }
+
+    if (showTableEditor) {
+        LprTableEditor(
+            history = lprHistory,
+            onHistoryChange = { lprHistory = it },
+            onDismiss = { showTableEditor = false },
+            onSave = {
+                LprTableStore.save(context, lprHistory)
+                showTableEditor = false
+            },
+            onReset = {
+                LprTableStore.reset(context)
+                lprHistory = LprEngine.LPR_HISTORY
+            }
+        )
+    }
+}
+
+/** LPR 报价表编辑弹窗：各档日期 + 1年期/5年期数值可改，可增行/删行/恢复默认/保存 */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LprTableEditor(
+    history: List<LprEngine.Milestone>,
+    onHistoryChange: (List<LprEngine.Milestone>) -> Unit,
+    onDismiss: () -> Unit,
+    onSave: () -> Unit,
+    onReset: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("LPR 报价表（可修改）") },
+        text = {
+            Column {
+                Text("按调息日分段计息。修改后保存即参与计算；恢复默认回到央行 2019-08 至今内置表。",
+                    fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(8.dp))
+                DialogScrollList(maxHeight = 420.dp) {
+                    history.forEachIndexed { idx, m ->
+                        Row(
+                            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = m.date, onValueChange = { v ->
+                                    onHistoryChange(history.toMutableList().also { it[idx] = m.copy(date = v) })
+                                },
+                                label = { Text("调息日", fontSize = 10.sp) },
+                                modifier = Modifier.weight(1.15f), singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii)
+                            )
+                            Spacer(Modifier.size(4.dp))
+                            OutlinedTextField(
+                                value = if (m.r1y == m.r1y.toInt().toDouble()) m.r1y.toInt().toString() else LprEngine.fmt2(m.r1y),
+                                onValueChange = { v ->
+                                    onHistoryChange(history.toMutableList().also { it[idx] = m.copy(r1y = num(v)) })
+                                },
+                                label = { Text("1年%", fontSize = 10.sp) },
+                                modifier = Modifier.weight(0.85f), singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                            )
+                            Spacer(Modifier.size(4.dp))
+                            OutlinedTextField(
+                                value = if (m.r5y == m.r5y.toInt().toDouble()) m.r5y.toInt().toString() else LprEngine.fmt2(m.r5y),
+                                onValueChange = { v ->
+                                    onHistoryChange(history.toMutableList().also { it[idx] = m.copy(r5y = num(v)) })
+                                },
+                                label = { Text("5年%", fontSize = 10.sp) },
+                                modifier = Modifier.weight(0.85f), singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                            )
+                            TextButton(onClick = { onHistoryChange(history.filterIndexed { i, _ -> i != idx }) }) {
+                                Text("删", fontSize = 11.sp)
+                            }
+                        }
+                    }
+                    TextButton(onClick = {
+                        val lastDate = history.lastOrNull()?.date ?: "2025-05-20"
+                        onHistoryChange(history + LprEngine.Milestone(lastDate, 0.0, 0.0))
+                    }) { Text("＋ 新增一档", fontSize = 12.sp) }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onSave) { Text("保存") } },
+        dismissButton = {
+            Row {
+                TextButton(onClick = onReset) { Text("恢复默认") }
+                TextButton(onClick = onDismiss) { Text("取消") }
+            }
+        }
+    )
 }

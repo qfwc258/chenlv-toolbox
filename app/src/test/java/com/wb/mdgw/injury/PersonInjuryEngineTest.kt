@@ -7,6 +7,17 @@ import org.junit.Test
 class PersonInjuryEngineTest {
 
     @Test
+    fun `default params are hunan 2026`() {
+        val p = PersonInjuryParams.DEFAULT
+        assertEquals("湖南 2026（城乡统一·湖南高院）", p.regionName)
+        assertEquals(53369.0, p.urbanDisposable, 0.001)
+        assertEquals(33678.0, p.urbanConsumption, 0.001)
+        assertEquals(105294.0, p.nonPrivateYearWage, 0.001)
+        // 湖南高院明确丧葬费 52647 = 在岗职工年均 ÷2
+        assertEquals(52647.0, p.nonPrivateYearWage / 2, 0.001)
+    }
+
+    @Test
     fun `compensation years fold by age`() {
         assertEquals(20, PersonInjuryEngine.compensationYears(38))
         assertEquals(20, PersonInjuryEngine.compensationYears(60))

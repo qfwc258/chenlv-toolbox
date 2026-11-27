@@ -10,10 +10,10 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class PersonInjuryParams(
-    val regionName: String = "自定义省市（默认参考浙江2026）",
-    val urbanDisposable: Double = 81_649.0,   // 当地城镇常住居民人均可支配收入（年）
-    val urbanConsumption: Double = 53_223.0,  // 当地城镇常住居民人均消费支出（年）
-    val nonPrivateYearWage: Double = 141_902.0, // 非私营单位年平均工资（丧葬费 ÷2）
+    val regionName: String = "湖南 2026（城乡统一·湖南高院）",
+    val urbanDisposable: Double = 53_369.0,   // 湖南2025年度城镇居民人均可支配收入（2026案件适用）
+    val urbanConsumption: Double = 33_678.0,  // 湖南2025年度城镇居民人均消费支出
+    val nonPrivateYearWage: Double = 105_294.0, // 湖南2025城镇非私营在岗职工年均工资（丧葬费=52647=÷2）
     val hospMealPerDay: Double = 100.0,        // 人损住院伙食补助（元/天）
     val nutritionPerDay: Double = 50.0         // 人损营养费（元/天）
 ) {

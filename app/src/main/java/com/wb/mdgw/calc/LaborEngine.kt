@@ -36,8 +36,8 @@ object LaborEngine {
         val avgSalary: Double = 12_000.0,
         val lastMonthSalary: Double = 12_000.0,
         val unsignedMonths: Double = 6.0,
-        val regionName: String = "自定义地区（默认参考浙江2026）",
-        val tripleCap: Double = 25_611.0
+        val regionName: String = "湖南·长沙 2026",
+        val tripleCap: Double = 32_744.0
     )
 
     data class Result(

@@ -117,7 +117,7 @@ fun InjuryScreen() {
         mutableStateOf(saved?.pensionOrphan?.let { if (it > 0) it.toString() else "" } ?: "")
     }
     var fees by remember { mutableStateOf(buildInitialFees(saved)) }
-    // 核心参数（湖南 2025 默认，可本地覆盖）
+    // 核心参数（湖南 2026 默认，可本地覆盖）
     var params by remember { mutableStateOf(InjuryParamsStore.load(context)) }
     var picker by remember { mutableStateOf<PickerRequest?>(null) }
     var showRankGrid by remember { mutableStateOf(false) }
@@ -546,7 +546,7 @@ fun InjuryScreen() {
                                 onReset = {
                                     params = InjuryParams.DEFAULT
                                     InjuryParamsStore.reset(context)
-                                    toast("已恢复湖南 2025 默认")
+                                    toast("已恢复湖南 2026 默认")
                                 }
                             )
                             Panel.METHOD -> {
@@ -646,8 +646,8 @@ private fun ParamsPanel(
 
         HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
-        // ---------- 补助月数标准（默认湖南 2025，可改以适配外地） ----------
-        SectionTitle("补助月数标准（默认湖南 2025）")
+        // ---------- 补助月数标准（默认湖南 2026，可改以适配外地） ----------
+        SectionTitle("补助月数标准（默认湖南 2026）")
         Text(
             "各地补助月数不同，可在此修改以计算外地案件；留空或 0 视为该项不发放。",
             fontSize = 11.sp, color = MaterialTheme.colorScheme.outline
@@ -663,7 +663,7 @@ private fun ParamsPanel(
         }
 
         TextButton(onClick = onReset, modifier = Modifier.align(Alignment.End)) {
-            Text("恢复湖南 2025 默认")
+            Text("恢复湖南 2026 默认")
         }
     }
 }

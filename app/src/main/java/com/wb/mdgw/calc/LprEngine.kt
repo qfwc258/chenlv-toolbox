@@ -1,5 +1,6 @@
 package com.wb.mdgw.calc
 
+import kotlinx.serialization.Serializable
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 
@@ -11,9 +12,10 @@ import java.time.temporal.ChronoUnit
  */
 object LprEngine {
 
+    @Serializable
     data class Milestone(val date: String, val r1y: Double, val r5y: Double)
 
-    /** 央行 LPR 报价变更历史（核验至 2026-11-20，2025-05-20 后无变动） */
+    /** 央行 LPR 报价变更历史默认表（核验至 2026-11-20，2025-05-20 后无变动）；用户可在界面覆盖 */
     val LPR_HISTORY = listOf(
         Milestone("2019-08-20", 4.25, 4.85),
         Milestone("2019-09-20", 4.20, 4.85),
@@ -35,6 +37,10 @@ object LprEngine {
     const val DELAY_DAILY_RATE = 0.000175
     val LATEST_LPR: Milestone get() = LPR_HISTORY.last()
     val FOUR_TIMES_LATEST: Double get() = String.format("%.1f", LATEST_LPR.r1y * 4).toDouble()
+
+    /** 把用户编辑后的表规整为按日期升序、非空；空表回退为默认表 */
+    fun normalizeHistory(list: List<Milestone>?): List<Milestone> =
+        if (list.isNullOrEmpty()) LPR_HISTORY else list.sortedBy { it.date }
 
     enum class Mode(val id: String, val label: String) {
         LPR_FLOATING("lpr_floating", "LPR 分段浮动计息"),
@@ -72,7 +78,9 @@ object LprEngine {
         val customRate: Double = 6.0,
         val dayBasis: Int = 365,
         val includeDelay: Boolean = false,
-        val delayStartDate: String = "2025-08-01"
+        val delayStartDate: String = "2025-08-01",
+        /** 用户可编辑的 LPR 报价表；为空时用内置默认表 */
+        val history: List<Milestone> = LPR_HISTORY
     )
 
     data class Result(
@@ -88,9 +96,10 @@ object LprEngine {
         val startBeforeLpr: Boolean
     )
 
-    fun lookupLprOn(dateIso: String, term: Term): Milestone {
-        var active = LPR_HISTORY.first()
-        for (item in LPR_HISTORY) {
+    fun lookupLprOn(dateIso: String, term: Term, history: List<Milestone> = LPR_HISTORY): Milestone {
+        val table = normalizeHistory(history)
+        var active = table.first()
+        for (item in table) {
             if (item.date <= dateIso) active = item else break
         }
         return active
@@ -101,6 +110,9 @@ object LprEngine {
     fun calc(input: Input): Result {
         val end = input.endDate.ifBlank { LocalDate.now().toString() }
         val start = input.startDate
+        val table = normalizeHistory(input.history)
+        val latest = table.last()
+        val fourTimesLatest = String.format("%.1f", latest.r1y * 4).toDouble()
         val totalDays = diffDays(start, end)
         val segments = mutableListOf<Segment>()
         var normalInterest = 0.0
@@ -114,7 +126,7 @@ object LprEngine {
                         "合同约定固定年利率 ${input.customRate.format2()}%")
                 }
                 Mode.LPR_FIXED -> {
-                    val snap = lookupLprOn(start, input.term)
+                    val snap = lookupLprOn(start, input.term, table)
                     val base = rateOf(snap, input.term)
                     val eff = maxOf(0.0, base * input.multiplier + input.bps / 100)
                     val interest = input.principal * (eff / 100) * totalDays / input.dayBasis
@@ -124,9 +136,9 @@ object LprEngine {
                 }
                 Mode.LPR_FLOATING -> {
                     val cuts = mutableListOf(start)
-                    for (item in LPR_HISTORY) {
+                    for (item in table) {
                         if (item.date > start && item.date < end) {
-                            val prevRate = rateOf(lookupLprOn(addDaysIso(item.date, -1), input.term), input.term)
+                            val prevRate = rateOf(lookupLprOn(addDaysIso(item.date, -1), input.term, table), input.term)
                             val nextRate = rateOf(item, input.term)
                             if (prevRate != nextRate) cuts += item.date
                         }
@@ -137,7 +149,7 @@ object LprEngine {
                         val to = cuts[i + 1]
                         val days = diffDays(from, to)
                         if (days <= 0) continue
-                        val snap = lookupLprOn(from, input.term)
+                        val snap = lookupLprOn(from, input.term, table)
                         val base = rateOf(snap, input.term)
                         val eff = maxOf(0.0, base * input.multiplier + input.bps / 100)
                         val interest = input.principal * (eff / 100) * days / input.dayBasis
@@ -164,7 +176,7 @@ object LprEngine {
         val effectiveRateCheck = when (input.mode) {
             Mode.CUSTOM_RATE -> input.customRate
             Mode.DELAY_ONLY -> 0.0
-            else -> LATEST_LPR.r1y * input.multiplier + input.bps / 100
+            else -> latest.r1y * input.multiplier + input.bps / 100
         }
         return Result(
             totalDays = totalDays,
@@ -174,8 +186,8 @@ object LprEngine {
             delayInterest = delayInterest,
             totalInterest = totalInterest,
             grandTotal = input.principal + totalInterest,
-            fourTimesLatestLpr = FOUR_TIMES_LATEST,
-            exceedsPrivateLendingCap = effectiveRateCheck > FOUR_TIMES_LATEST,
+            fourTimesLatestLpr = fourTimesLatest,
+            exceedsPrivateLendingCap = effectiveRateCheck > fourTimesLatest,
             startBeforeLpr = start < "2019-08-20"
         )
     }

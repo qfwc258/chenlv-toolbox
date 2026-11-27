@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -13,6 +14,8 @@ import androidx.compose.ui.unit.sp
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LaborScreen() {
+    val context = LocalContext.current
+    var laborParams by remember { mutableStateOf(LaborParamsStore.load(context)) }
     var scenario by remember { mutableStateOf(LaborEngine.Scenario.N) }
     var tenureModeManual by remember { mutableStateOf(true) }
     var manualYears by remember { mutableStateOf("3") }
@@ -22,8 +25,6 @@ fun LaborScreen() {
     var avgSalary by remember { mutableStateOf("12000") }
     var lastMonthSalary by remember { mutableStateOf("12000") }
     var unsignedMonths by remember { mutableStateOf("6") }
-    var regionName by remember { mutableStateOf("自定义地区（默认参考浙江2026）") }
-    var tripleCap by remember { mutableStateOf("25611") }
     var showScenarioPicker by remember { mutableStateOf(false) }
 
     val input = LaborEngine.Input(
@@ -32,8 +33,8 @@ fun LaborScreen() {
         startDate = startDate, endDate = endDate,
         manualYears = num(manualYears), manualMonths = num(manualMonths),
         avgSalary = num(avgSalary), lastMonthSalary = num(lastMonthSalary),
-        unsignedMonths = num(unsignedMonths), regionName = regionName,
-        tripleCap = num(tripleCap, 25611.0)
+        unsignedMonths = num(unsignedMonths), regionName = laborParams.regionName,
+        tripleCap = laborParams.tripleCap
     )
     val result = remember(input) { LaborEngine.calc(input) }
     val summary = remember(input, result) { LaborEngine.summaryText(input, result) }
@@ -74,12 +75,24 @@ fun LaborScreen() {
             }
         }
 
-        CalcCard("地区口径（三倍社平封顶）") {
-            OutlinedTextField(value = regionName, onValueChange = { regionName = it },
-                label = { Text("地区名称", fontSize = 12.sp) }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-            CalcNumberField("三倍社平封顶基数", tripleCap, { tripleCap = it }, unit = "元")
-            Text("默认值 25611 元仅供参考，请按本省市上年度职工月均工资 ×3 自行修改。",
+        CalcCard("地区口径（三倍社平封顶）· 可修改并保存") {
+            CalcNumberField("地区名称", laborParams.regionName,
+                { laborParams = laborParams.copy(regionName = it) }, placeholder = "如 湖南·长沙 2026")
+            CalcNumberField("三倍社平封顶基数",
+                if (laborParams.tripleCap == laborParams.tripleCap.toInt().toDouble()) laborParams.tripleCap.toInt().toString()
+                else laborParams.tripleCap.toString(),
+                { laborParams = laborParams.copy(tripleCap = num(it)) }, unit = "元")
+            Text("默认湖南·长沙 2026：2025 长沙城镇职工月均 10914.58 ×3 ≈ 32744 元；高薪封顶与 12 年年限上限以此为准。",
                 fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { LaborParamsStore.save(context, laborParams) }, modifier = Modifier.weight(1f)) {
+                    Text("保存地区口径", fontSize = 12.sp)
+                }
+                OutlinedButton(onClick = {
+                    LaborParamsStore.reset(context)
+                    laborParams = LaborParams.DEFAULT
+                }, modifier = Modifier.weight(1f)) { Text("恢复默认", fontSize = 12.sp) }
+            }
         }
 
         CalcResultHeadline("测算参考总额", "¥ ${LaborEngine.fmt2(result.total)}",

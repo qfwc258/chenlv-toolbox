@@ -10,7 +10,15 @@ import org.junit.Test
  */
 class InjuryCalculatorTest {
     private val calc = InjuryCalculator()
-    private val W = 7694f // 湖南 2025 统筹工资
+    private val W = 7694f // 湖南 2026 统筹工资（2025-2026 计发基数仍为 7694）
+
+    @Test
+    fun 默认参数为湖南2026标准() {
+        val p = InjuryParams.DEFAULT
+        assertEquals(7694f, p.baseMonthlyWage, 0.01f)
+        assertEquals(20f, p.hospitalFoodPerDay, 0.01f)
+        assertEquals(56502f, p.urbanIncome, 0.01f) // 2026 一次性工亡补助金 = 56502×20 = 1130040
+    }
 
     @Test
     fun 十级一次性伤残补助金月数为7() {

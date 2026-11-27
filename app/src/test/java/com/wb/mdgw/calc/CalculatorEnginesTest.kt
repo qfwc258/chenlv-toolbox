@@ -91,6 +91,34 @@ class CalculatorEnginesTest {
         assertEquals(0.0, r.normalInterest, 0.001)
     }
 
+    @Test
+    fun `lpr custom history is used in calculation`() {
+        // 用户自定义表：仅一档 2020-01-01 起 1年期 6%、5年期 7%
+        val custom = listOf(LprEngine.Milestone("2020-01-01", 6.0, 7.0))
+        val r = LprEngine.calc(LprEngine.Input(
+            mode = LprEngine.Mode.LPR_FIXED, principal = 100_000.0,
+            startDate = "2024-01-01", endDate = "2025-01-01", dayBasis = 365,
+            history = custom
+        ))
+        assertEquals(1, r.segments.size)
+        assertEquals(6.0, r.segments[0].baseRate, 0.001)
+        assertEquals(366, r.totalDays) // 2024 闰年
+        assertEquals(100_000.0 * 0.06 * 366 / 365, r.normalInterest, 1.0)
+        // 4倍上限应基于自定义表最新 1 年期 6% → 24%
+        assertEquals(24.0, r.fourTimesLatestLpr, 0.001)
+        // 反序列化 round-trip（store 用 ListSerializer）
+        val listSer = kotlinx.serialization.builtins.ListSerializer(LprEngine.Milestone.serializer())
+        val encoded = json.encodeToString(listSer, custom)
+        assertEquals(custom, json.decodeFromString(listSer, encoded))
+    }
+
+    @Test
+    fun `labor default region hunan changsha 2026`() {
+        assertEquals("湖南·长沙 2026", LaborParams.DEFAULT.regionName)
+        assertEquals(32744.0, LaborParams.DEFAULT.tripleCap, 0.001)
+        assertEquals(32744.0, LaborEngine.Input().tripleCap, 0.001)
+    }
+
     // ---------- 08 劳动补偿金 ----------
 
     @Test
