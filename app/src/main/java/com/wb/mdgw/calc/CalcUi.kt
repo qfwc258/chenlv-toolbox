@@ -175,6 +175,46 @@ fun SegmentedButton2(
     }
 }
 
+/** 三分段选择器：三个等宽选项，选中态胶囊高亮 */
+@Composable
+fun SegmentedButton3(
+    labels: List<String>,
+    selectedIndex: Int,
+    modifier: Modifier = Modifier,
+    onSelect: (Int) -> Unit
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        shape = RoundedCornerShape(20.dp),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Row(Modifier.padding(3.dp)) {
+            labels.forEachIndexed { idx, label ->
+                if (idx > 0) Spacer(Modifier.size(3.dp))
+                if (idx == selectedIndex) {
+                    Button(
+                        onClick = { onSelect(idx) },
+                        shape = RoundedCornerShape(18.dp),
+                        modifier = Modifier.weight(1f).heightIn(min = 34.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp)
+                    ) {
+                        Text(label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                    }
+                } else {
+                    OutlinedButton(
+                        onClick = { onSelect(idx) },
+                        shape = RoundedCornerShape(18.dp),
+                        modifier = Modifier.weight(1f).heightIn(min = 34.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp)
+                    ) {
+                        Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun SegmentedCell2(label: String, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
     if (selected) {

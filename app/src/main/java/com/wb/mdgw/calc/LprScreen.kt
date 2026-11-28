@@ -1,18 +1,23 @@
 package com.wb.mdgw.calc
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.time.LocalDate
 
 /**
- * 04 LPR 逾期付款利息与迟延履行金计算器界面。
+ * 04 LPR 逾期付款利息与迟延履行金计算器界面（重设版，更便利明确）。
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -26,6 +31,7 @@ fun LprScreen() {
     var startDate by remember { mutableStateOf("2024-06-01") }
     var endDate by remember { mutableStateOf(LocalDate.now().toString()) }
     var term by remember { mutableStateOf(LprEngine.Term.ONE_YEAR) }
+    var dayCountMode by remember { mutableStateOf(LprEngine.DayCountMode.START_INCLUSIVE) }
     var multiplierStr by remember { mutableStateOf("1") }
     var bpsStr by remember { mutableStateOf("0") }
     var customRateStr by remember { mutableStateOf("6") }
@@ -38,65 +44,79 @@ fun LprScreen() {
         mode = mode, principal = principal, startDate = startDate, endDate = endDate,
         term = term, multiplier = num(multiplierStr, 1.0), bps = num(bpsStr),
         customRate = num(customRateStr, 6.0), dayBasis = if (dayBasis365) 365 else 360,
+        dayCountMode = dayCountMode,
         includeDelay = includeDelay, delayStartDate = delayStartDate,
         history = lprHistory
     )
     val result = remember(input) { LprEngine.calc(input) }
     val summary = remember(input, result) { LprEngine.summaryText(input, result) }
-    // 当前起算日查表得到的 LPR（1年期/5年期），随编辑实时更新
     val snapLpr = remember(startDate, term, lprHistory) {
         LprEngine.lookupLprOn(startDate, term, lprHistory)
     }
+    val rawDays = LprEngine.diffDays(startDate, endDate, LprEngine.DayCountMode.START_INCLUSIVE)
 
     CalcScrollBody {
-        Text("内置央行 2019-08 至 2026-11 完整 LPR 报价表，按调息日分段计息；可叠加日万分之 1.75 加倍迟延履行金。",
+        Text("内置 2019-08 至今央行 LPR 报价，按调息日分段计息；可叠加日万分之 1.75 加倍迟延履行金。",
             fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
-        CalcCard("计息方式（点击切换）") {
-            // 4 种模式常驻可见，参照源码 2×2 卡片式选择
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                LprEngine.Mode.entries.forEach { m ->
-                    val selected = mode == m
-                    if (selected) {
-                        Button(onClick = { mode = m }) { Text(m.label, fontSize = 11.sp) }
-                    } else {
-                        OutlinedButton(onClick = { mode = m }) {
-                            Text(m.label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
+        // ① 计息方式：2×2 紧凑卡片
+        CalcCard("① 计息方式") {
+            val modes = LprEngine.Mode.entries
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                for (row in 0 until 2) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        for (col in 0 until 2) {
+                            val m = modes[row * 2 + col]
+                            val selected = mode == m
+                            Box(Modifier.weight(1f)) {
+                                if (selected) {
+                                    Button(onClick = { mode = m }, modifier = Modifier.fillMaxWidth(),
+                                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)) {
+                                        Text(m.label, fontSize = 11.sp, maxLines = 2)
+                                    }
+                                } else {
+                                    OutlinedButton(onClick = { mode = m }, modifier = Modifier.fillMaxWidth(),
+                                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp)) {
+                                        Text(m.label, fontSize = 11.sp, maxLines = 2,
+                                            color = MaterialTheme.colorScheme.onSurface)
+                                    }
+                                }
+                            }
                         }
                     }
                 }
             }
-            if (mode != LprEngine.Mode.DELAY_ONLY) {
-                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            if (mode == LprEngine.Mode.LPR_FLOATING || mode == LprEngine.Mode.LPR_FIXED) {
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("贷款期限", fontSize = 13.sp, modifier = Modifier.weight(1f))
                     SegmentedButton2("1 年期", "5 年期+", term == LprEngine.Term.ONE_YEAR) {
                         term = if (it) LprEngine.Term.ONE_YEAR else LprEngine.Term.FIVE_YEAR
                     }
                 }
-                // 当前查表 LPR 值（可见）+ 报价表编辑入口
-                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) {
                     Column(Modifier.weight(1f)) {
                         Text("起算日 ${snapLpr.date} 报价", fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text("1 年期 ${LprEngine.fmt2(snapLpr.r1y)}% ｜ 5 年期 ${LprEngine.fmt2(snapLpr.r5y)}%",
-                            fontSize = 13.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+                            fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     }
                     TextButton(onClick = { showTableEditor = true }) { Text("报价表", fontSize = 12.sp) }
                 }
             }
         }
 
-        CalcCard("本金与期间") {
-            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        // ② 本金与期间
+        CalcCard("② 本金与期间") {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(value = principalStr, onValueChange = { principalStr = it },
                     label = { Text("本金", fontSize = 12.sp) },
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.weight(1f), singleLine = true)
                 Spacer(Modifier.size(8.dp))
                 SegmentedButton2("万元", "元", unitWan) { unitWan = it }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
                 OutlinedTextField(value = startDate, onValueChange = { startDate = it },
                     label = { Text("起算日", fontSize = 12.sp) }, placeholder = { Text("YYYY-MM-DD") },
                     modifier = Modifier.weight(1f), singleLine = true)
@@ -104,21 +124,40 @@ fun LprScreen() {
                     label = { Text("截止日", fontSize = 12.sp) }, placeholder = { Text("YYYY-MM-DD") },
                     modifier = Modifier.weight(1f), singleLine = true)
             }
-            Text("折合本金：¥ ${LprEngine.fmt2(principal)} ｜ 共 ${result.totalDays} 天", fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(10.dp))
+            Text("天数口径（计息天数 = 日期差 ${rawDays} 天 × 口径）", fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold)
+            SegmentedButton3(
+                labels = LprEngine.DayCountMode.entries.map { it.label },
+                selectedIndex = LprEngine.DayCountMode.entries.indexOf(dayCountMode)
+            ) { idx -> dayCountMode = LprEngine.DayCountMode.entries[idx] }
+            Text(
+                when (dayCountMode) {
+                    LprEngine.DayCountMode.BOTH_INCLUSIVE -> "含首尾：起算日与截止日都计入，计 $rawDays+1 = ${rawDays + 1} 天"
+                    LprEngine.DayCountMode.START_INCLUSIVE -> "算头不算尾：含起算日、不含截止日，计 $rawDays 天（实务常用）"
+                    LprEngine.DayCountMode.BOTH_EXCLUSIVE -> "首尾都不算：起算日与截止日均不计，计 ${maxOf(0, rawDays - 1)} 天"
+                },
+                fontSize = 11.sp, color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(top = 6.dp)
+            )
+            Text("折合本金 ¥ ${LprEngine.fmt2(principal)} ｜ 实际计息 ${result.totalDays} 天",
+                fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp))
         }
 
+        // ③ 利率参数
         if (mode == LprEngine.Mode.LPR_FLOATING || mode == LprEngine.Mode.LPR_FIXED) {
-            CalcCard("利率参数") {
+            CalcCard("③ 利率参数") {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(value = multiplierStr, onValueChange = { multiplierStr = it },
                         label = { Text("LPR 倍数", fontSize = 12.sp) }, modifier = Modifier.weight(1f), singleLine = true)
                     OutlinedTextField(value = bpsStr, onValueChange = { bpsStr = it },
                         label = { Text("加点 BP", fontSize = 12.sp) }, modifier = Modifier.weight(1f), singleLine = true)
                 }
-                // 参照源码倍数快捷：1 / 1.3 / 1.5 / 4 倍，点击同时清零加点 BP
+                Text("快捷倍率（点击同时清零加点）", fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf("1" to "1 倍 LPR", "1.3" to "1.3 倍（上浮30%）", "1.5" to "1.5 倍（上浮50%）", "4" to "4 倍（民间借贷上限）")
+                    listOf("1" to "1 倍", "1.3" to "1.3 倍", "1.5" to "1.5 倍", "4" to "4 倍上限")
                         .forEach { (value, label) ->
                             val active = multiplierStr == value && bpsStr == "0"
                             if (active) {
@@ -132,44 +171,44 @@ fun LprScreen() {
                             }
                         }
                 }
-                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    Text("计息基数", fontSize = 13.sp, modifier = Modifier.weight(1f))
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+                    Text("年计息基数", fontSize = 13.sp, modifier = Modifier.weight(1f))
                     SegmentedButton2("365 天", "360 天", dayBasis365) { dayBasis365 = it }
                 }
+                Text("利息 = 本金 × 实际年利率 × 计息天数 ÷ 年计息基数（单利）",
+                    fontSize = 10.sp, color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(top = 4.dp))
             }
         }
 
         if (mode == LprEngine.Mode.CUSTOM_RATE) {
-            CalcCard("自己约定的利息（合同约定年利率）") {
+            CalcCard("③ 自己约定的利息（合同约定年利率）") {
                 CalcNumberField("约定年利率", customRateStr, { customRateStr = it }, unit = "%")
-                // 常用约定利率快捷值：1/1.3/1.5/4 倍 1 年期 LPR
                 val curLpr = LprEngine.lookupLprOn(startDate, LprEngine.Term.ONE_YEAR, lprHistory).r1y
+                Text("快捷按起算日 1 年期 LPR（${LprEngine.fmt2(curLpr)}%）折算", fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf(
-                        "1 倍 LPR" to curLpr,
-                        "1.3 倍" to curLpr * 1.3,
-                        "1.5 倍" to curLpr * 1.5,
-                        "4 倍上限" to curLpr * 4
-                    ).forEach { (label, rate) ->
+                    listOf("1 倍 LPR" to curLpr, "1.3 倍" to curLpr * 1.3,
+                        "1.5 倍" to curLpr * 1.5, "4 倍上限" to curLpr * 4).forEach { (label, rate) ->
                         val rateStr = String.format("%.2f", rate).trimEnd('0').trimEnd('.')
                         OutlinedButton(onClick = { customRateStr = rateStr }) { Text(label, fontSize = 11.sp) }
                     }
                 }
-                Text("计息：本金 × 约定年利率 × 天数 ÷ 计息基数，单利计算。",
-                    fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("司法保护上限：4 倍 1 年期 LPR = ${result.fourTimesLatestLpr}%；超出部分法院不予支持。",
                     fontSize = 11.sp,
-                    color = if (result.exceedsPrivateLendingCap) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
-                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    Text("计息基数", fontSize = 13.sp, modifier = Modifier.weight(1f))
+                    color = if (result.exceedsPrivateLendingCap) MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 6.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+                    Text("年计息基数", fontSize = 13.sp, modifier = Modifier.weight(1f))
                     SegmentedButton2("365 天", "360 天", dayBasis365) { dayBasis365 = it }
                 }
             }
         }
 
+        // ④ 迟延履行金
         if (mode != LprEngine.Mode.DELAY_ONLY) {
-            CalcCard("迟延履行金（可选）") {
-                CalcSwitchRow("叠加加倍迟延履行金", includeDelay, { includeDelay = it }, "日万分之 1.75")
+            CalcCard("④ 加倍迟延履行金（可选）") {
+                CalcSwitchRow("叠加日万分之 1.75", includeDelay, { includeDelay = it }, "依最高法执行解释")
                 if (includeDelay) {
                     OutlinedTextField(value = delayStartDate, onValueChange = { delayStartDate = it },
                         label = { Text("迟延起算日", fontSize = 12.sp) }, placeholder = { Text("YYYY-MM-DD") },
@@ -178,17 +217,35 @@ fun LprScreen() {
             }
         }
 
+        // 结果
         CalcResultHeadline("本息合计", "¥ ${LprEngine.fmt2(result.grandTotal)}",
             "正常利息 ${LprEngine.fmt2(result.normalInterest)} + 迟延金 ${LprEngine.fmt2(result.delayInterest)} 元")
 
         if (result.segments.isNotEmpty()) {
-            CalcCard("分段计息明细") {
-                result.segments.forEach { s ->
-                    Column(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
-                        Text("${s.from} → ${s.to}（${s.days} 天）", fontSize = 12.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium)
-                        Text("${s.note} ｜ 实际年利率 ${String.format("%.2f", s.effectiveRate)}% ｜ 利息 ¥ ${LprEngine.fmt2(s.interest)}",
-                            fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            CalcCard("分段计息明细（共 ${result.segments.size} 段 / ${result.segments.sumOf { it.days }} 天）") {
+                result.segments.forEachIndexed { i, s ->
+                    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("第 ${i + 1} 段", fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary)
+                            Text("${s.from} → ${s.to}", fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.weight(1f).padding(start = 6.dp))
+                            Text("${s.days} 天", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
+                            Text(s.note, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.weight(1f))
+                            Text("年利率 ${String.format("%.2f", s.effectiveRate)}% → ¥ ${LprEngine.fmt2(s.interest)}",
+                                fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                        }
                     }
+                    if (i < result.segments.size - 1) HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
+                }
+                Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
+                    Text("正常利息小计 ¥ ${LprEngine.fmt2(result.normalInterest)}",
+                        fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
         }

@@ -264,4 +264,49 @@ class CalculatorEnginesTest {
         assertTrue(x1 < x13 && x13 < x15 && x15 < x4)
         assertEquals(x1 * 1.3, x13, 0.01)
     }
+    // ---------- 三种天数口径 ----------
+    @Test
+    fun `day count modes produce 10 9 8 for june 1 to june 10`() {
+        assertEquals(10, LprEngine.diffDays("2024-06-01", "2024-06-10", LprEngine.DayCountMode.BOTH_INCLUSIVE))
+        assertEquals(9, LprEngine.diffDays("2024-06-01", "2024-06-10", LprEngine.DayCountMode.START_INCLUSIVE))
+        assertEquals(8, LprEngine.diffDays("2024-06-01", "2024-06-10", LprEngine.DayCountMode.BOTH_EXCLUSIVE))
+        // 默认保持算头不算尾
+        assertEquals(9, LprEngine.diffDays("2024-06-01", "2024-06-10"))
+    }
+
+    @Test
+    fun `day count mode affects total days and interest`() {
+        val base = LprEngine.Input(
+            mode = LprEngine.Mode.CUSTOM_RATE, principal = 100_000.0, customRate = 6.0,
+            startDate = "2024-06-01", endDate = "2024-06-10", dayBasis = 365
+        )
+        val inc = LprEngine.calc(base.copy(dayCountMode = LprEngine.DayCountMode.BOTH_INCLUSIVE))
+        val head = LprEngine.calc(base.copy(dayCountMode = LprEngine.DayCountMode.START_INCLUSIVE))
+        val exc = LprEngine.calc(base.copy(dayCountMode = LprEngine.DayCountMode.BOTH_EXCLUSIVE))
+        assertEquals(10, inc.totalDays)
+        assertEquals(9, head.totalDays)
+        assertEquals(8, exc.totalDays)
+        assertTrue(inc.normalInterest > head.normalInterest && head.normalInterest > exc.normalInterest)
+        assertEquals(100_000.0 * 0.06 * 10 / 365, inc.normalInterest, 0.01)
+        assertEquals(100_000.0 * 0.06 * 8 / 365, exc.normalInterest, 0.01)
+    }
+
+    @Test
+    fun `day count mode affects segmented lpr interest`() {
+        val base = LprEngine.Input(
+            mode = LprEngine.Mode.LPR_FLOATING, principal = 1_000_000.0,
+            startDate = "2024-06-01", endDate = "2024-12-01"
+        )
+        val inc = LprEngine.calc(base.copy(dayCountMode = LprEngine.DayCountMode.BOTH_INCLUSIVE))
+        val exc = LprEngine.calc(base.copy(dayCountMode = LprEngine.DayCountMode.BOTH_EXCLUSIVE))
+        // 分 3 段，含首尾比算头不算尾多 3 天，首尾都不算少 3 天
+        assertEquals(3, inc.segments.size)
+        assertEquals(3, exc.segments.size)
+        assertEquals(inc.segments.sumOf { it.days } - 3, headDays(base))
+        assertEquals(exc.segments.sumOf { it.days } + 3, headDays(base))
+        assertTrue(inc.normalInterest > exc.normalInterest)
+    }
+
+    private fun headDays(input: LprEngine.Input): Long =
+        LprEngine.calc(input.copy(dayCountMode = LprEngine.DayCountMode.START_INCLUSIVE)).segments.sumOf { it.days }
 }

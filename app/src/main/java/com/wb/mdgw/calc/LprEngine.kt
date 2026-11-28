@@ -57,6 +57,15 @@ object LprEngine {
         companion object { fun from(id: String): Term = entries.firstOrNull { it.id == id } ?: ONE_YEAR }
     }
 
+    /** 计息天数口径。以 06-01→06-10（日期差 9 天）为例：含首尾=10、算头不算尾=9、首尾都不算=8 */
+    enum class DayCountMode(val id: String, val label: String, val delta: Int) {
+        BOTH_INCLUSIVE("both_inclusive", "含首尾（日期+1）", 1),
+        START_INCLUSIVE("start_inclusive", "算头不算尾", 0),
+        BOTH_EXCLUSIVE("both_exclusive", "首尾都不算（日期-1）", -1);
+
+        companion object { fun from(id: String): DayCountMode = entries.firstOrNull { it.id == id } ?: START_INCLUSIVE }
+    }
+
     data class Segment(
         val from: String,
         val to: String,
@@ -77,6 +86,7 @@ object LprEngine {
         val bps: Double = 0.0,
         val customRate: Double = 6.0,
         val dayBasis: Int = 365,
+        val dayCountMode: DayCountMode = DayCountMode.START_INCLUSIVE,
         val includeDelay: Boolean = false,
         val delayStartDate: String = "2025-08-01",
         /** 用户可编辑的 LPR 报价表；为空时用内置默认表 */
@@ -113,7 +123,7 @@ object LprEngine {
         val table = normalizeHistory(input.history)
         val latest = table.last()
         val fourTimesLatest = String.format("%.1f", latest.r1y * 4).toDouble()
-        val totalDays = diffDays(start, end)
+        val totalDays = diffDays(start, end, input.dayCountMode)
         val segments = mutableListOf<Segment>()
         var normalInterest = 0.0
 
@@ -147,7 +157,7 @@ object LprEngine {
                     for (i in 0 until cuts.size - 1) {
                         val from = cuts[i]
                         val to = cuts[i + 1]
-                        val days = diffDays(from, to)
+                        val days = diffDays(from, to, input.dayCountMode)
                         if (days <= 0) continue
                         val snap = lookupLprOn(from, input.term, table)
                         val base = rateOf(snap, input.term)
@@ -168,7 +178,7 @@ object LprEngine {
             delayDays = totalDays
             delayInterest = input.principal * DELAY_DAILY_RATE * delayDays
         } else if (input.includeDelay && input.principal > 0) {
-            delayDays = diffDays(input.delayStartDate, end)
+            delayDays = diffDays(input.delayStartDate, end, input.dayCountMode)
             delayInterest = input.principal * DELAY_DAILY_RATE * delayDays
         }
 
@@ -197,6 +207,7 @@ object LprEngine {
         appendLine("计息方式：${input.mode.label} ｜ 本金：${fmt2(input.principal)} 元")
         appendLine("起算日：${input.startDate} ｜ 截止日：${input.endDate.ifBlank { LocalDate.now().toString() }} ｜ 总天数：${r.totalDays} 天")
         appendLine("基准：${input.term.label} ｜ 倍数：${input.multiplier.format2()} ｜ 加点：${input.bps.format2()} BP ｜ 计息基数：${input.dayBasis} 天")
+        appendLine("天数口径：${input.dayCountMode.label}（起止日日期差 ${diffDays(input.startDate, input.endDate.ifBlank { LocalDate.now().toString() })} 天 → 计息 ${r.totalDays} 天）")
         appendLine()
         r.segments.forEach { s ->
             appendLine("【${s.from} → ${s.to}｜${s.days} 天】${s.note}，实际年利率 ${s.effectiveRate.format2()}% → 利息 ${fmt2(s.interest)} 元")
@@ -209,10 +220,11 @@ object LprEngine {
         if (r.startBeforeLpr) appendLine("⚠ 起算日早于 2019-08-20（LPR 报价机制启动日），此前实务适用央行同期贷款基准利率，请分段核验")
     }
 
-    fun diffDays(startIso: String, endIso: String): Long {
+    fun diffDays(startIso: String, endIso: String, mode: DayCountMode = DayCountMode.START_INCLUSIVE): Long {
         val a = runCatching { LocalDate.parse(startIso) }.getOrNull() ?: return 0
         val b = runCatching { LocalDate.parse(endIso) }.getOrNull() ?: return 0
-        return maxOf(0, ChronoUnit.DAYS.between(a, b))
+        val raw = ChronoUnit.DAYS.between(a, b)
+        return maxOf(0, raw + mode.delta)
     }
 
     private fun addDaysIso(iso: String, delta: Long): String {
