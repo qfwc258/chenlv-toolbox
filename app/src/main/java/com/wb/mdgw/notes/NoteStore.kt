@@ -10,11 +10,12 @@ object NoteStore : JsonFileStore<NoteStoreData>() {
     override fun serializer() = NoteStoreData.serializer()
 
     fun load(context: Context): List<StickyNote> =
-        read(context)?.notes?.sortedWith(compareByDescending<StickyNote> { it.pinned }.thenByDescending { it.updatedAt })
+        read(context)?.notes?.dedupeById()
+            ?.sortedWith(compareByDescending<StickyNote> { it.pinned }.thenByDescending { it.updatedAt })
             ?: DEFAULT_NOTES
 
     fun save(context: Context, notes: List<StickyNote>) {
-        write(context, NoteStoreData(notes))
+        write(context, NoteStoreData(notes.dedupeById()))
     }
 
     fun newNote(title: String = "", content: String = ""): StickyNote = StickyNote(

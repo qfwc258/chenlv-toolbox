@@ -5,7 +5,8 @@ package com.wb.mdgw.elementdoc
  *
  * 生成一页一张 A4 纸的 HTML：@page A4 20mm 20mm 20mm 24mm、仿宋 14px/1.65、
  * 宋体标题、表格 1px 边框、附件 page-break-before:always。
- * 与 SpcDocxBuilder 使用同一份 ResolvedSpcDocument，保证预览与导出 Word 版式一致。
+ * 与 SpcDocxBuilder 使用同一份 ResolvedSpcDocument，**并共用 SpcGridLayout 的表格网格**，
+ * 保证预览中的 2/3/4 列列宽、附件列宽与导出的 Word 完全一致（所见即所得）。
  * 纯 JVM，便于单元测试。
  */
 object ElementDocHtmlBuilder {
@@ -20,23 +21,30 @@ object ElementDocHtmlBuilder {
         append("background:#E8E8E8;-webkit-text-size-adjust:100%;}")
         append(".paper{background:#fff;width:210mm;min-height:297mm;margin:0 auto 16px auto;")
         append("padding:20mm 20mm 20mm 24mm;box-shadow:0 4px 20px rgba(0,0,0,.18);}")
-        append("h1{font-family:'SimSun','宋体',serif;font-size:22px;text-align:center;font-weight:700;margin-bottom:8px;}")
-        append("h2{font-family:'SimSun','宋体',serif;font-size:16px;text-align:center;font-weight:700;margin-bottom:18px;}")
+        // 打印时由 @page 承担页边距，纸面本身不再重复 padding，避免打印版式偏移
+        append("@media print{body{background:#fff;}.paper{width:auto;min-height:0;margin:0;padding:0;box-shadow:none;}")
+        append(".toolbar{display:none;}}")
+        // Word 字号：标题 22pt≈29px、副标题 16pt≈21px、正文 10.5pt=14px、章节 11pt≈15px
+        append("h1{font-family:'SimSun','宋体',serif;font-size:29px;text-align:center;font-weight:700;margin-bottom:9px;}")
+        append("h2{font-family:'SimSun','宋体',serif;font-size:21px;text-align:center;font-weight:700;margin-bottom:10px;}")
         append("table{border-collapse:collapse;width:100%;table-layout:fixed;}")
-        append("td,th{border:1px solid #000;padding:6px 8px;vertical-align:middle;font-size:14px;line-height:1.65;word-break:break-word;}")
+        // Word 单元格内边距：上下 75twips≈5px，左右 115twips≈8px
+        append("td,th{border:1px solid #000;padding:5px 8px;vertical-align:middle;font-size:14px;line-height:1.65;word-break:break-word;}")
         append("td.label{font-family:'SimSun','宋体',serif;font-weight:700;text-align:center;}")
         append("td.label.left{text-align:left;}")
         append("td.grid-h{font-family:'SimSun','宋体',serif;font-weight:700;text-align:center;}")
         // ★特别提示★ 星号与文字均不加粗，仅保留宋体字族
         append(".notice p{margin:2px 0;}.notice .star{font-family:'SimSun','宋体',serif;font-weight:400;}")
-        append(".section{font-family:'SimSun','宋体',serif;font-weight:700;text-align:center;margin:8px 0;}")
+        append(".section{font-family:'SimSun','宋体',serif;font-size:15px;font-weight:700;text-align:center;margin:8px 0;}")
         append(".guide{white-space:pre-line;}")
         // 具状人/日期：右对齐并距右边距缩进 4 字符（4em≈4 个 16px 汉字）
         append(".signer{text-align:right;padding-right:4em;margin-top:28px;font-family:'SimSun','宋体',serif;font-size:16px;}")
         append(".date{text-align:right;padding-right:4em;margin-top:6px;font-family:'SimSun','宋体',serif;font-size:16px;}")
         append(".footnote{font-size:12px;margin-top:10px;}")
         append(".attachment{page-break-before:always;}")
-        append(".attachment h3{text-align:center;font-family:'SimSun','宋体',serif;font-size:18px;margin:8px 0 14px;}")
+        append(".attachment h3{text-align:center;font-family:'SimSun','宋体',serif;font-size:19px;margin:8px 0 14px;}")
+        append(".att-label{font-family:'SimHei','黑体',serif;font-size:15px;font-weight:700;}")
+        append(".att-footer{text-align:right;font-family:'SimSun','宋体',serif;font-size:14px;margin-top:6px;}")
         append(".toolbar{position:sticky;top:0;background:#faf6ec;padding:8px;text-align:center;font-size:13px;}")
         append("</style></head><body>")
 
@@ -44,11 +52,15 @@ object ElementDocHtmlBuilder {
         append("<h1>${esc(doc.docTitle)}</h1>")
         if (doc.docSubtitle.isNotBlank()) append("<h2>${esc(doc.docSubtitle)}</h2>")
 
-        append("<table>")
+        // 与 SpcDocxBuilder 共用网格：colgroup 决定每一列的真实宽度
+        val grid = SpcGridLayout.forDocument(doc)
+        append("<table><colgroup>")
+        grid.cols.forEach { append("<col style='width:${SpcGridLayout.percent(it)}'/>") }
+        append("</colgroup>")
         for (r in doc.rows) {
             when (r.kind) {
                 "notice" -> {
-                    append("<tr><td colspan='2' class='notice'>")
+                    append("<tr><td colspan='${grid.fullSpan}' class='notice'>")
                     for (line in r.value.split('\n')) {
                         if (line.isBlank()) continue
                         val cls = if (line.trim().startsWith("★") && line.trim().endsWith("★")) " class='star'" else ""
@@ -57,27 +69,37 @@ object ElementDocHtmlBuilder {
                     append("</td></tr>")
                 }
                 "section" -> {
-                    append("<tr><td colspan='2'>")
+                    append("<tr><td colspan='${grid.fullSpan}'>")
                     for (line in r.value.split('\n').map { it.trim() }.filter { it.isNotEmpty() }) {
                         append("<div class='section'>${esc(line)}</div>")
                     }
                     append("</td></tr>")
                 }
                 "guide", "full_input" -> {
-                    append("<tr><td colspan='2' class='guide'>${esc(r.value)}</td></tr>")
+                    append("<tr><td colspan='${grid.fullSpan}' class='guide'>${esc(r.value)}</td></tr>")
                 }
                 "grid" -> {
                     append("<tr>")
+                    val spans = when (r.cells.size) {
+                        2 -> grid.two
+                        3 -> grid.three
+                        4 -> grid.four
+                        else -> grid.two
+                    }
                     val n = r.cells.size.coerceAtLeast(1)
                     r.cells.forEachIndexed { i, cell ->
-                        append("<td${if (i == 0) " class='grid-h'" else ""}>${esc(cell)}</td>")
+                        val cs = spans.getOrElse(i) { 1 }
+                        // 与 Word 的 vMerge continue 一致：续行首格留空
+                        val text = if (i == 0 && r.vMergeContinue) "" else cell
+                        append("<td colspan='$cs'${if (i == 0) " class='grid-h'" else ""}>${esc(text)}</td>")
                     }
                     if (n == 1) repeat(1) { append("<td></td>") }
                     append("</tr>")
                 }
                 else -> {
                     val leftCls = if (labelAlign(r.label)) "label left" else "label"
-                    append("<tr><td class='$leftCls'>${esc(r.label)}</td><td>${esc(r.value)}</td></tr>")
+                    append("<tr><td colspan='${grid.two[0]}' class='$leftCls'>${esc(r.label)}</td>")
+                    append("<td colspan='${grid.two[1]}'>${esc(r.value)}</td></tr>")
                 }
             }
         }
@@ -93,27 +115,31 @@ object ElementDocHtmlBuilder {
     }
 
     private fun attachmentHtml(att: ResolvedAttachment): String = buildString {
+        val colCount = SpcGridLayout.attachmentColCount(att)
+        val colWidths = SpcGridLayout.attachmentWidths(att)
         append("<div class='paper attachment'>")
-        append("<div>${esc(att.label.ifBlank { "附件" })}</div>")
+        append("<div class='att-label'>${esc(att.label.ifBlank { "附件" })}</div>")
         append("<h3>${esc(att.title)}</h3>")
         if (att.subtitle.isNotBlank()) append("<div style='text-align:center;margin-bottom:14px;'>${esc(att.subtitle)}</div>")
-        append("<table>")
+        append("<table><colgroup>")
+        colWidths.forEach { append("<col style='width:${SpcGridLayout.percent(it)}'/>") }
+        append("</colgroup>")
         if (att.columns.isNotEmpty()) {
             append("<tr>")
-            att.columns.forEach { append("<th>${esc(it)}</th>") }
+            (0 until colCount).forEach { append("<th>${esc(att.columns.getOrNull(it) ?: "")}</th>") }
             append("</tr>")
         }
         for (row in att.rows) {
             append("<tr>")
-            if (row.size == 1 && att.columns.size > 1) {
-                append("<td colspan='${att.columns.size}'>${esc(row[0])}</td>")
+            if (row.size == 1 && colCount > 1) {
+                append("<td colspan='$colCount'>${esc(row[0])}</td>")
             } else {
-                row.forEach { append("<td>${esc(it)}</td>") }
+                (0 until colCount).forEach { append("<td>${esc(row.getOrNull(it) ?: "")}</td>") }
             }
             append("</tr>")
         }
         append("</table>")
-        for (fl in att.footerLines) append("<div class='signer'>${esc(fl)}</div>")
+        for (fl in att.footerLines) append("<div class='att-footer'>${esc(fl)}</div>")
         append("</div>")
     }
 

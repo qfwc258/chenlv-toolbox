@@ -172,6 +172,44 @@ class ElementFeatureTest {
     }
 
     @Test
+    fun `a4 html colgroup matches docx tblGrid exactly`() {
+        val tpl = corpus().templates.first()
+        val doc = ElementEngine.buildResolved(tpl, ElementDraft(templateId = tpl.id))
+        val html = ElementDocHtmlBuilder.build(doc)
+        val grid = SpcGridLayout.forDocument(doc)
+        val xml = docxDocumentXml(SpcDocxBuilder.build(doc))
+        val mainTblGrid = Regex("<w:tblGrid>(.*?)</w:tblGrid>").find(xml)!!.groupValues[1]
+        val docxCols = Regex("<w:gridCol w:w=\"(\\d+)\"\\/>").findAll(mainTblGrid)
+            .map { it.groupValues[1].toInt() }.toList()
+        assertEquals(grid.cols, docxCols)
+        assertTrue(html.contains("<table><colgroup>"))
+        grid.cols.forEach {
+            assertTrue("预览缺少列宽 ${SpcGridLayout.percent(it)}", html.contains("width:${SpcGridLayout.percent(it)}"))
+        }
+    }
+
+    @Test
+    fun `a4 html uses official spans for four column rows`() {
+        val tpl = corpus().templates.first { it.rows.any { r -> r.kind == "grid" && r.cells.size == 4 } }
+        val doc = ElementEngine.buildResolved(tpl, ElementDraft(templateId = tpl.id))
+        val html = ElementDocHtmlBuilder.build(doc)
+        val grid = SpcGridLayout.forDocument(doc)
+        assertTrue(html.contains("<td colspan='${grid.four[0]}' class='grid-h'>"))
+        assertTrue(html.contains("<td colspan='${grid.four[1]}'>"))
+    }
+
+    @Test
+    fun `a4 html attachment widths match docx grid`() {
+        val tpl = corpus().templates.first { it.attachments.isNotEmpty() }
+        val doc = ElementEngine.buildResolved(tpl, ElementDraft(templateId = tpl.id))
+        val html = ElementDocHtmlBuilder.build(doc)
+        val att = doc.attachments.first()
+        SpcGridLayout.attachmentWidths(att).forEach {
+            assertTrue("附件缺少列宽 ${SpcGridLayout.percent(it)}", html.contains("width:${SpcGridLayout.percent(it)}"))
+        }
+    }
+
+    @Test
     fun `a4 html escapes xml special chars in user text`() {
         val tpl = corpus().templates.first()
         // 把特殊字符注入第一个字段行的已填值（会进入 ResolvedSpcDocument.value）

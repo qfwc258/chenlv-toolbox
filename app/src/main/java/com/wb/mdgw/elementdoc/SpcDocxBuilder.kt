@@ -16,7 +16,8 @@ import java.util.zip.ZipOutputStream
  */
 object SpcDocxBuilder {
 
-    private const val TOTAL_W = 9412
+    // 表格总宽统一由 SpcGridLayout 定义，保证与 A4 预览列宽 1:1 一致
+    private const val TOTAL_W = SpcGridLayout.TOTAL_W
 
     /** 生成 docx 字节 */
     fun build(doc: ResolvedSpcDocument): ByteArray {
@@ -40,19 +41,12 @@ object SpcDocxBuilder {
     }
 
     private fun buildDocumentXml(doc: ResolvedSpcDocument): String {
-        val has4Col = doc.rows.any { it.kind == "grid" && it.cells.size == 4 }
-        val has3Col = doc.rows.any { it.kind == "grid" && it.cells.size == 3 }
-
-        val (gridCols, fullSpan, twoSpans, threeSpans, fourSpans) = when {
-            has4Col && has3Col -> GridSet(listOf(1500, 1060, 2146, 954, 546, 3206), 6,
-                intArrayOf(2, 4), intArrayOf(2, 2, 2), intArrayOf(1, 2, 2, 1))
-            has4Col -> GridSet(listOf(1500, 1060, 2146, 1500, 3206), 5,
-                intArrayOf(2, 3), intArrayOf(2, 2, 1), intArrayOf(1, 2, 1, 1))
-            has3Col -> GridSet(listOf(2560, 3100, 3752), 3,
-                intArrayOf(1, 2), intArrayOf(1, 1, 1), intArrayOf(1, 1, 1, 1))
-            else -> GridSet(listOf(2560, 6852), 2,
-                intArrayOf(1, 1), intArrayOf(1, 1, 1), intArrayOf(1, 1, 1, 1))
-        }
+        val grid = SpcGridLayout.forDocument(doc)
+        val gridCols = grid.cols
+        val fullSpan = grid.fullSpan
+        val twoSpans = grid.two
+        val threeSpans = grid.three
+        val fourSpans = grid.four
 
         val trs = StringBuilder()
         for (i in doc.rows.indices) {
@@ -171,14 +165,6 @@ object SpcDocxBuilder {
             "<w:pgMar w:top=\"1134\" w:right=\"1134\" w:bottom=\"1134\" w:left=\"1360\" w:header=\"720\" w:footer=\"720\" w:gutter=\"0\"/>" +
             "</w:sectPr></w:body></w:document>"
     }
-
-    private data class GridSet(
-        val cols: List<Int>,
-        val fullSpan: Int,
-        val two: IntArray,
-        val three: IntArray,
-        val four: IntArray
-    )
 
     // ---------------- OOXML 基础构造 ----------------
 
@@ -337,17 +323,8 @@ object SpcDocxBuilder {
                 spaceBefore = 0, spaceAfter = 80, line = 260))
         }
 
-        val colCount = maxOf(1, att.columns.size, att.rows.maxOfOrNull { it.size } ?: 1)
-        val colWidths: List<Int> = when {
-            colCount == 5 && att.columns.firstOrNull()?.contains("编号") == true &&
-                att.columns.getOrNull(1)?.contains("页码") == true -> listOf(820, 820, 2600, 1772, 3400)
-            colCount == 6 && att.columns.firstOrNull()?.contains("编号") == true &&
-                att.columns.getOrNull(2)?.contains("真实性") == true -> listOf(760, 2252, 1300, 1300, 1300, 2500)
-            else -> {
-                val base = TOTAL_W / colCount
-                (0 until colCount).map { if (it == colCount - 1) TOTAL_W - base * (colCount - 1) else base }
-            }
-        }
+        val colCount = SpcGridLayout.attachmentColCount(att)
+        val colWidths = SpcGridLayout.attachmentWidths(att)
         val fontSz = if (colCount >= 10) 15 else if (colCount >= 7) 17 else 19
 
         val trs = StringBuilder()

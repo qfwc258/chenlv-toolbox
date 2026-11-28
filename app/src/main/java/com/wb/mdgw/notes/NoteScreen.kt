@@ -19,7 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
-import androidx.compose.foundation.lazy.staggeredgrid.items
+import androidx.compose.foundation.lazy.staggeredgrid.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -79,8 +79,9 @@ fun NoteScreen(onBack: () -> Unit) {
     var confirmDelete by remember { mutableStateOf<StickyNote?>(null) }
 
     fun persist(list: List<StickyNote>) {
-        notes = list
-        NoteStore.save(context, list)
+        val deduped = list.dedupeById()
+        notes = deduped
+        NoteStore.save(context, deduped)
     }
 
     val filtered = remember(notes, keyword) {
@@ -108,7 +109,8 @@ fun NoteScreen(onBack: () -> Unit) {
                             content = html,
                             updatedAt = System.currentTimeMillis()
                         )
-                        persist(if (isNew) listOf(updated) + notes else notes.map { if (it.id == note.id) updated else it })
+                        // 统一 upsert：新建时 created 已在列表中，不能再无条件下插入同 id 副本
+                        persist(notes.upsert(updated))
                         editingId = null
                         viewingId = updated.id
                         Toast.makeText(context, if (isNew) "便签已新建" else "便签已保存", Toast.LENGTH_SHORT).show()
@@ -158,7 +160,7 @@ fun NoteScreen(onBack: () -> Unit) {
                 floatingActionButton = {
                     FloatingActionButton(onClick = {
                         val created = NoteStore.newNote()
-                        persist(listOf(created) + notes)
+                        persist(notes.upsert(created))
                         editingId = created.id
                         isNew = true
                     }) { Icon(Icons.Default.Add, contentDescription = "新建便签") }
@@ -188,7 +190,8 @@ fun NoteScreen(onBack: () -> Unit) {
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalItemSpacing = 8.dp
                         ) {
-                            items(filtered, key = { it.id }) { note ->
+                            // key 带上位置后缀：即使历史数据里仍残留重复 id 也不会触发 LazyGrid 崩溃
+                            itemsIndexed(filtered, key = { index, note -> "${note.id}#$index" }) { _, note ->
                                 NoteCard(
                                     note = note,
                                     onClick = { viewingId = note.id },

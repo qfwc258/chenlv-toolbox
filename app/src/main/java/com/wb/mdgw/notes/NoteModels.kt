@@ -19,3 +19,15 @@ data class StickyNote(
 data class NoteStoreData(
     val notes: List<StickyNote> = emptyList()
 )
+
+/**
+ * 按 id 去重，保留首次出现的条目（列表按「新→旧」排序，首条即最新）。
+ *
+ * 历史版本中「新建便签」会先把空白便签写入列表，保存时又插入一条同 id 的副本，
+ * 导致 LazyVerticalStaggeredGrid 的 key 重复并崩溃。加载/保存时统一去重作为兜底。
+ */
+fun List<StickyNote>.dedupeById(): List<StickyNote> = distinctBy { it.id }
+
+/** 按 id 更新；不存在则插到最前。用于替代「无条件 listOf(updated) + notes」 */
+fun List<StickyNote>.upsert(note: StickyNote): List<StickyNote> =
+    (listOf(note) + this.filter { it.id != note.id }).dedupeById()
