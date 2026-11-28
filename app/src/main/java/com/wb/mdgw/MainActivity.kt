@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Camera
 import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.EditNote
+import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Gavel
 import androidx.compose.material.icons.filled.GridView
@@ -68,6 +69,7 @@ import com.wb.mdgw.calc.LprScreen
 import com.wb.mdgw.calc.LaborScreen
 import com.wb.mdgw.update.UpdateManager
 import com.wb.mdgw.notes.NoteScreen
+import com.wb.mdgw.period.PeriodScreen
 
 class MainActivity : ComponentActivity() {
 
@@ -122,7 +124,7 @@ fun MdGwTheme(darkTheme: Boolean = false, content: @Composable () -> Unit) {
 private enum class Route {
     HOME, WORD, PDF, WECHAT, PPTX, SETTINGS, SCREENSHOT, LAW_SEARCH, DOC_GEN,
     EVIDENCE_CATALOG, DOCUMENTS, FTP, INJURY, ELEMENT_DOC,
-    LITIGATION_FEE, LPR_INTEREST, LABOR_COMP, NOTE
+    LITIGATION_FEE, LPR_INTEREST, LABOR_COMP, NOTE, PERIOD
 }
 
 /** 宫格功能项 */
@@ -146,6 +148,7 @@ private val HOME_FEATURES = listOf(
     Feature(Route.LITIGATION_FEE, "诉讼费与律师费", Icons.Default.Calculate),
     Feature(Route.LPR_INTEREST, "LPR利息", Icons.Default.Calculate),
     Feature(Route.LABOR_COMP, "劳动补偿金", Icons.Default.Calculate),
+    Feature(Route.PERIOD, "期间时效", Icons.Default.Event),
     Feature(Route.NOTE, "便签", Icons.Default.EditNote),
     Feature(Route.DOCUMENTS, "我的文档", Icons.Default.Folder),
     Feature(Route.FTP, "FTP 服务", Icons.Default.Dns)
@@ -267,6 +270,9 @@ fun AppScreen(initialUri: Uri? = null) {
                 }
                 AnimatedVisibility(route == Route.LABOR_COMP, enter = fadeIn(), exit = fadeOut()) {
                     SimpleScreenFrame("劳动补偿金", onBack = { route = Route.HOME }) { LaborScreen() }
+                }
+                AnimatedVisibility(route == Route.PERIOD, enter = fadeIn(), exit = fadeOut()) {
+                    PeriodScreen(onBack = { route = Route.HOME })
                 }
                 AnimatedVisibility(route == Route.NOTE, enter = fadeIn(), exit = fadeOut()) {
                     NoteScreen(onBack = { route = Route.HOME })

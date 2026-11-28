@@ -32,10 +32,14 @@ import java.nio.charset.Charset
 /** 计算类工具通用 UI 组件：暖纸色卡片、数字输入行、结果卡、复制/分享 */
 
 @Composable
-fun CalcCard(title: String? = null, content: @Composable ColumnScope.() -> Unit) {
+fun CalcCard(
+    title: String? = null,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit
+) {
     Card(
         shape = UI_RADIUS_MD,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFFFF))
     ) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
