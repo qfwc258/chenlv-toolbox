@@ -1257,7 +1257,7 @@ private fun WordToolbar(
 }
 
 // ============================================================
-// 底部操作栏（悬浮卡片：打开 / 导出 DOCX / 转 PDF / 导出文本 四按钮，等宽）
+// 底部操作栏：图标在上、文字在下的等宽按钮；文件操作与导出操作分组
 // ============================================================
 @Composable
 private fun WordActionBar(
@@ -1275,60 +1275,26 @@ private fun WordActionBar(
         tonalElevation = 3.dp, shadowElevation = 6.dp, color = MaterialTheme.colorScheme.surface,
         shape = UI_CARD_RADIUS, modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp)
     ) {
-        Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            val btnMod = Modifier.weight(1f).height(UI_ACTION_HEIGHT)
-            val btnPad = PaddingValues(horizontal = 3.dp, vertical = 0.dp)
-            FilledTonalIconButton(
-                onClick = onStash,
-                modifier = Modifier.size(UI_ACTION_HEIGHT),
-                colors = IconButtonDefaults.filledTonalIconButtonColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-            ) {
-                Icon(Icons.Default.Bookmark, contentDescription = "暂存", modifier = Modifier.size(19.dp))
-            }
-            OutlinedIconButton(
-                onClick = onNewBlank,
-                modifier = Modifier.size(UI_ACTION_HEIGHT),
-                border = BorderStroke(1.2.dp, MaterialTheme.colorScheme.outline)
-            ) {
-                Icon(Icons.Default.NoteAdd, contentDescription = "新建空白", modifier = Modifier.size(19.dp))
-            }
-            OutlinedButton(
-                onClick = onOpen, shape = UI_BTN_RADIUS, modifier = btnMod,
-                border = BorderStroke(1.2.dp, MaterialTheme.colorScheme.primary),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary),
-                contentPadding = btnPad
-            ) {
-                Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(15.dp))
-                Spacer(Modifier.width(3.dp))
-                Text("打开", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
-            }
-            Button(onClick = onExportDocx, shape = UI_BTN_RADIUS, modifier = btnMod, contentPadding = btnPad) {
-                Icon(Icons.Default.Description, contentDescription = null, modifier = Modifier.size(15.dp))
-                Spacer(Modifier.width(3.dp))
-                Text("导出DOCX", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
-            }
-            OutlinedButton(
-                onClick = onExportPdf, shape = UI_BTN_RADIUS, modifier = btnMod,
-                border = BorderStroke(1.2.dp, MaterialTheme.colorScheme.outline),
-                contentPadding = btnPad
-            ) {
-                Icon(Icons.Default.PictureAsPdf, contentDescription = null, modifier = Modifier.size(15.dp))
-                Spacer(Modifier.width(3.dp))
-                Text("转PDF", fontSize = 12.sp, maxLines = 1, softWrap = false)
-            }
-            Box {
-                OutlinedButton(
-                    onClick = { menuOpen = true }, shape = UI_BTN_RADIUS, modifier = btnMod,
-                    border = BorderStroke(1.2.dp, MaterialTheme.colorScheme.outline),
-                    contentPadding = btnPad
-                ) {
-                    Icon(Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(15.dp))
-                    Spacer(Modifier.width(3.dp))
-                    Text("导出", fontSize = 12.sp, maxLines = 1, softWrap = false)
-                }
+        Row(
+            Modifier.fillMaxWidth().padding(vertical = 8.dp, horizontal = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            val cell = Modifier.weight(1f)
+            // 文件操作组：暂存 / 新建 / 打开
+            WordBarCell(cell, Icons.Default.Bookmark, "暂存", emphasized = false, onClick = onStash)
+            WordBarCell(cell, Icons.Default.NoteAdd, "新建", emphasized = false, onClick = onNewBlank)
+            WordBarCell(cell, Icons.Default.FolderOpen, "打开", emphasized = false, onClick = onOpen)
+            // 分组分隔线
+            Box(
+                Modifier.height(34.dp).width(1.dp)
+                    .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
+            )
+            // 导出操作组：Word / PDF / 更多
+            WordBarCell(cell, Icons.Default.Description, "导出 Word", emphasized = true, onClick = onExportDocx)
+            WordBarCell(cell, Icons.Default.PictureAsPdf, "转 PDF", emphasized = true, onClick = onExportPdf)
+            Box(cell) {
+                WordBarCell(Modifier.fillMaxWidth(), Icons.Default.FileDownload, "更多", emphasized = true) { menuOpen = true }
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                     DropdownMenuItem(text = { Text("导出 Markdown (.md)") }, onClick = { menuOpen = false; onExportText("md") })
                     DropdownMenuItem(text = { Text("导出 纯文本 (.txt)") }, onClick = { menuOpen = false; onExportText("txt") })
@@ -1339,6 +1305,33 @@ private fun WordActionBar(
                 }
             }
         }
+    }
+}
+
+/** 底部单个操作格：图标在上、文字在下，长文字不换行截断 */
+@Composable
+private fun WordBarCell(
+    modifier: Modifier = Modifier,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    emphasized: Boolean,
+    onClick: () -> Unit
+) {
+    val contentColor = if (emphasized) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+    Column(
+        modifier = modifier.clip(UI_BTN_RADIUS).clickable(onClick = onClick)
+            .padding(vertical = 6.dp, horizontal = 2.dp)
+            .heightIn(min = 52.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(icon, contentDescription = label, tint = contentColor, modifier = Modifier.size(19.dp))
+        Spacer(Modifier.height(3.dp))
+        Text(
+            label, fontSize = 10.sp, color = contentColor,
+            maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center
+        )
     }
 }
 

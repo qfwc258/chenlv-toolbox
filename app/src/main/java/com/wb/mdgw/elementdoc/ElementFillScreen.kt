@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -800,7 +802,7 @@ private fun QuickFillDialog(
     onDismiss: () -> Unit,
     onApply: () -> Unit
 ) {
-    // UI 聚焦修正：面板打开即聚焦首个输入框，并用高对比边框/标签色明确当前焦点
+    // UI 聚焦：面板打开即聚焦首个输入框；高对比边框/标签色明确当前焦点
     val firstFieldFocus = remember { FocusRequester() }
     LaunchedEffect(roleTag) {
         runCatching { firstFieldFocus.requestFocus() }
@@ -812,18 +814,20 @@ private fun QuickFillDialog(
     )
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("快速结构化填入") },
+        title = { Text("快速结构化填入", style = MaterialTheme.typography.titleMedium) },
         text = {
+            // 关键修正：字段超出高度时滚动，避免底部输入框被裁切只剩边框
             Column(
-                Modifier.fillMaxWidth().heightIn(max = 480.dp).imePadding(),
+                Modifier.fillMaxWidth().heightIn(max = 420.dp).verticalScroll(rememberScrollState()).imePadding(),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Text(
-                    "按官方表格结构填入，自动保留标签与勾选项顺序；留空的字段不改动。",
+                    "按官方表格结构填入，保留标签与勾选顺序；留空字段不改动。",
                     fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 when {
                     roleTag == "agent" -> {
+                        QFGroup("代理信息")
                         OptionsRow("是否有代理人") {
                             FilterChip(selected = data.agentHas, onClick = { onDataChange(data.copy(agentHas = true)) }, label = { Text("有", fontSize = 11.sp) })
                             FilterChip(selected = !data.agentHas, onClick = { onDataChange(data.copy(agentHas = false)) }, label = { Text("无", fontSize = 11.sp) })
@@ -833,40 +837,56 @@ private fun QuickFillDialog(
                                 FilterChip(selected = data.agentAuthority == a, onClick = { onDataChange(data.copy(agentAuthority = a)) }, label = { Text(a, fontSize = 11.sp) })
                             }
                         }
+                        QFGroup("执业信息")
                         QFTextField("姓名", data.name, focusRequester = firstFieldFocus, colors = fieldColors) { onDataChange(data.copy(name = it)) }
                         QFTextField("单位 / 律所", data.workUnit, colors = fieldColors) { onDataChange(data.copy(workUnit = it)) }
                         QFTextField("职务", data.jobTitle, colors = fieldColors) { onDataChange(data.copy(jobTitle = it)) }
                         QFTextField("联系电话", data.phone, colors = fieldColors) { onDataChange(data.copy(phone = it)) }
                     }
                     roleTag.contains("person") -> {
+                        QFGroup("基本信息")
                         QFTextField("姓名", data.name, focusRequester = firstFieldFocus, colors = fieldColors) { onDataChange(data.copy(name = it)) }
                         OptionsRow("性别") {
                             listOf("男", "女").forEach { g ->
                                 FilterChip(selected = data.gender == g, onClick = { onDataChange(data.copy(gender = g)) }, label = { Text(g, fontSize = 11.sp) })
                             }
                         }
-                        QFTextField("出生日期", data.birthDate, colors = fieldColors) { onDataChange(data.copy(birthDate = it)) }
-                        QFTextField("民族", data.ethnicity, colors = fieldColors) { onDataChange(data.copy(ethnicity = it)) }
-                        QFTextField("工作单位", data.workUnit, colors = fieldColors) { onDataChange(data.copy(workUnit = it)) }
-                        QFTextField("职务", data.jobTitle, colors = fieldColors) { onDataChange(data.copy(jobTitle = it)) }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            QFTextField("出生日期", data.birthDate, colors = fieldColors, modifier = Modifier.weight(1f)) { onDataChange(data.copy(birthDate = it)) }
+                            QFTextField("民族", data.ethnicity, colors = fieldColors, modifier = Modifier.weight(1f)) { onDataChange(data.copy(ethnicity = it)) }
+                        }
+                        QFGroup("职业与联系")
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            QFTextField("工作单位", data.workUnit, colors = fieldColors, modifier = Modifier.weight(1f)) { onDataChange(data.copy(workUnit = it)) }
+                            QFTextField("职务", data.jobTitle, colors = fieldColors, modifier = Modifier.weight(1f)) { onDataChange(data.copy(jobTitle = it)) }
+                        }
                         QFTextField("联系电话", data.phone, colors = fieldColors) { onDataChange(data.copy(phone = it)) }
+                        QFGroup("住址与证件")
                         QFTextField("住所地（户籍所在地）", data.domicile, colors = fieldColors) { onDataChange(data.copy(domicile = it)) }
                         QFTextField("经常居住地", data.residence, colors = fieldColors) { onDataChange(data.copy(residence = it)) }
-                        QFTextField("证件类型", data.idType, colors = fieldColors) { onDataChange(data.copy(idType = it)) }
-                        QFTextField("证件号码", data.idNumber, colors = fieldColors) { onDataChange(data.copy(idNumber = it)) }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            QFTextField("证件类型", data.idType, colors = fieldColors, modifier = Modifier.weight(1f)) { onDataChange(data.copy(idType = it)) }
+                            QFTextField("证件号码", data.idNumber, colors = fieldColors, modifier = Modifier.weight(1f)) { onDataChange(data.copy(idNumber = it)) }
+                        }
                     }
                     else -> {
+                        QFGroup("主体信息")
                         QFTextField("名称", data.name, focusRequester = firstFieldFocus, colors = fieldColors) { onDataChange(data.copy(name = it)) }
                         QFTextField("住所地（主要办事机构所在地）", data.domicile, colors = fieldColors) { onDataChange(data.copy(domicile = it)) }
                         QFTextField("注册地 / 登记地", data.regAddress, colors = fieldColors) { onDataChange(data.copy(regAddress = it)) }
-                        QFTextField("法定代表人 / 负责人", data.legalRep, colors = fieldColors) { onDataChange(data.copy(legalRep = it)) }
-                        QFTextField("职务", data.repTitle, colors = fieldColors) { onDataChange(data.copy(repTitle = it)) }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            QFTextField("法定代表人 / 负责人", data.legalRep, colors = fieldColors, modifier = Modifier.weight(1f)) { onDataChange(data.copy(legalRep = it)) }
+                            QFTextField("职务", data.repTitle, colors = fieldColors, modifier = Modifier.weight(1f)) { onDataChange(data.copy(repTitle = it)) }
+                        }
                         QFTextField("联系电话", data.phone, colors = fieldColors) { onDataChange(data.copy(phone = it)) }
+                        QFGroup("证照与银行")
                         QFTextField("统一社会信用代码", data.creditCode, colors = fieldColors) { onDataChange(data.copy(creditCode = it)) }
-                        QFTextField("银行账号", data.bankAccount, colors = fieldColors) { onDataChange(data.copy(bankAccount = it)) }
-                        QFTextField("开户名", data.bankHolder, colors = fieldColors) { onDataChange(data.copy(bankHolder = it)) }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            QFTextField("银行账号", data.bankAccount, colors = fieldColors, modifier = Modifier.weight(1f)) { onDataChange(data.copy(bankAccount = it)) }
+                            QFTextField("开户名", data.bankHolder, colors = fieldColors, modifier = Modifier.weight(1f)) { onDataChange(data.copy(bankHolder = it)) }
+                        }
                         QFTextField("开户行", data.bankName, colors = fieldColors) { onDataChange(data.copy(bankName = it)) }
-                        Text("组织类型", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                        QFGroup("组织类型")
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             PartyFillEngine.ORG_TYPES.forEach { ot ->
                                 FilterChip(
@@ -891,19 +911,31 @@ private fun QuickFillDialog(
 }
 
 @Composable
+private fun QFGroup(title: String) {
+    Text(
+        title, fontSize = 12.sp,
+        fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(top = 2.dp)
+    )
+}
+
+@Composable
 private fun QFTextField(
     label: String,
     value: String,
     focusRequester: FocusRequester? = null,
     colors: TextFieldColors = OutlinedTextFieldDefaults.colors(),
+    modifier: Modifier = Modifier.fillMaxWidth(),
     onChange: (String) -> Unit
 ) {
     OutlinedTextField(
         value = value, onValueChange = onChange,
-        label = { Text(label, fontSize = 11.sp) },
+        label = { Text(label, fontSize = 10.sp) },
+        textStyle = MaterialTheme.typography.bodyMedium,
         singleLine = true,
         colors = colors,
-        modifier = Modifier.fillMaxWidth().then(
+        modifier = modifier.then(
             if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier
         )
     )
