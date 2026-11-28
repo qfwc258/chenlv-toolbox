@@ -39,7 +39,22 @@ fun ElementDocScreen(onBack: () -> Unit) {
     var showSearch by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
 
-    val roles = listOf("all" to "全部", SpcRole.CLAIM to "起诉/自诉", SpcRole.DEFENSE to "答辩", SpcRole.APPLICATION to "申请", SpcRole.STATEMENT to "陈述")
+    // 类型筛选只显示当前领域实际存在的文书角色（如无「申请」「陈述」则去掉对应 chip）
+    val domainTemplates = remember(selectedDomain) { SpcCorpusStore.templates(context, selectedDomain) }
+    val roles = remember(domainTemplates) {
+        val present = domainTemplates.map { it.docRole }.toSet()
+        buildList {
+            add("all" to "全部")
+            if (SpcRole.CLAIM in present) add(SpcRole.CLAIM to "起诉/自诉")
+            if (SpcRole.DEFENSE in present) add(SpcRole.DEFENSE to "答辩")
+            if (SpcRole.APPLICATION in present) add(SpcRole.APPLICATION to "申请")
+            if (SpcRole.STATEMENT in present) add(SpcRole.STATEMENT to "陈述")
+        }
+    }
+    // 切换领域后原 roleFilter 在新领域不存在时回退到「全部」，避免空列表
+    LaunchedEffect(roles) {
+        if (roleFilter != "all" && roles.none { it.first == roleFilter }) roleFilter = "all"
+    }
 
     Scaffold(
         containerColor = BrandTokens.BrandPaper,

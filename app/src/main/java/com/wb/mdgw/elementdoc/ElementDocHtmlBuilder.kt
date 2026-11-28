@@ -27,11 +27,13 @@ object ElementDocHtmlBuilder {
         append("td.label{font-family:'SimSun','宋体',serif;font-weight:700;text-align:center;}")
         append("td.label.left{text-align:left;}")
         append("td.grid-h{font-family:'SimSun','宋体',serif;font-weight:700;text-align:center;}")
-        append(".notice p{margin:2px 0;}.notice .star{font-family:'SimSun','宋体',serif;font-weight:700;}")
+        // ★特别提示★ 星号与文字均不加粗，仅保留宋体字族
+        append(".notice p{margin:2px 0;}.notice .star{font-family:'SimSun','宋体',serif;font-weight:400;}")
         append(".section{font-family:'SimSun','宋体',serif;font-weight:700;text-align:center;margin:8px 0;}")
         append(".guide{white-space:pre-line;}")
-        append(".signer{text-align:right;margin-top:28px;font-family:'SimSun','宋体',serif;font-size:16px;}")
-        append(".date{text-align:right;margin-top:6px;font-family:'SimSun','宋体',serif;font-size:16px;}")
+        // 具状人/日期：右对齐并距右边距缩进 4 字符（4em≈4 个 16px 汉字）
+        append(".signer{text-align:right;padding-right:4em;margin-top:28px;font-family:'SimSun','宋体',serif;font-size:16px;}")
+        append(".date{text-align:right;padding-right:4em;margin-top:6px;font-family:'SimSun','宋体',serif;font-size:16px;}")
         append(".footnote{font-size:12px;margin-top:10px;}")
         append(".attachment{page-break-before:always;}")
         append(".attachment h3{text-align:center;font-family:'SimSun','宋体',serif;font-size:18px;margin:8px 0 14px;}")
@@ -82,7 +84,7 @@ object ElementDocHtmlBuilder {
         append("</table>")
 
         append("<div class='signer'>${esc(doc.signerLine)} ${esc(doc.signerName.ifBlank { "                    " })}</div>")
-        append("<div class='date'>${esc(doc.dateLine)} ${esc(doc.signDate.ifBlank { "      年    月    日" })}</div>")
+        append("<div class='date'>${esc(doc.dateLine)} ${esc(doc.signDate.ifBlank { "    年    月    日" })}</div>")
         for (fn in doc.footnotes) append("<div class='footnote'>${esc(fn)}</div>")
         append("</div>")
 

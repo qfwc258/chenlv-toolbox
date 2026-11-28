@@ -10,6 +10,21 @@ package com.wb.mdgw.elementdoc
  */
 object ElementEngine {
 
+    /**
+     * 规范签署日期：年月日单位之间固定留 4 个空格（如 `2026 年    3 月    1 日`）。
+     * 兼容 2026年3月1日 / 2026-3-1 / 2026 年 3 月 1 日 等写法；空白时给占位串。
+     * 纯函数，便于单元测试。
+     */
+    fun formatSignDate(raw: String): String {
+        val t = raw.trim()
+        if (t.isEmpty()) return "    年    月    日"
+        val m = Regex("^(\\d{4})\\s*[年/\\-.]\\s*(\\d{1,2})\\s*[月/\\-.]\\s*(\\d{1,2})\\s*日?$").find(t)
+            ?: Regex("^(\\d{4})\\s*(\\d{1,2})\\s*(\\d{1,2})$").find(t)
+        return if (m != null) {
+            "${m.groupValues[1]} 年    ${m.groupValues[2].toInt()} 月    ${m.groupValues[3].toInt()} 日"
+        } else t
+    }
+
     data class CheckboxToken(
         val index: Int,
         val charPos: Int,
@@ -192,7 +207,7 @@ object ElementEngine {
             signerLine = tpl.signerLine,
             signerName = draft.signerName,
             dateLine = tpl.dateLine,
-            signDate = draft.signDate,
+            signDate = formatSignDate(draft.signDate),
             footnotes = tpl.footnotes,
             attachments = attachments
         )

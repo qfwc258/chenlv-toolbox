@@ -151,10 +151,11 @@ object SpcDocxBuilder {
                 spaceBefore = 0, spaceAfter = 140, line = 290))
         }
         body.append(mainTable)
+        // 具状人/日期：右对齐，距右边距缩进 4 字符（约 960 twips）
         body.append(paragraph("${doc.signerLine}${doc.signerName.ifBlank { "                    " }}",
-            align = "right", size = 24, font = "宋体", spaceBefore = 220, spaceAfter = 60, line = 300))
-        body.append(paragraph("${doc.dateLine}${doc.signDate.ifBlank { "      年    月    日" }}",
-            align = "right", size = 24, font = "宋体", spaceBefore = 20, spaceAfter = 60, line = 300))
+            align = "right", size = 24, font = "宋体", spaceBefore = 220, spaceAfter = 60, line = 300, rightIndent = 960))
+        body.append(paragraph("${doc.dateLine}${doc.signDate.ifBlank { "    年    月    日" }}",
+            align = "right", size = 24, font = "宋体", spaceBefore = 20, spaceAfter = 60, line = 300, rightIndent = 960))
         for (fn in doc.footnotes) {
             val isHeader = fn == "注释：" || fn == "注释:"
             body.append(paragraph(fn, align = "left", bold = isHeader,
@@ -216,7 +217,8 @@ object SpcDocxBuilder {
         spaceBefore: Int = 40,
         spaceAfter: Int = 40,
         line: Int = 300,
-        keepNext: Boolean = false
+        keepNext: Boolean = false,
+        rightIndent: Int = 0
     ): String {
         val cjk = canonicalFont(font)
         val boldXml = if (bold) "<w:b/><w:bCs/>" else ""
@@ -250,7 +252,9 @@ object SpcDocxBuilder {
                 }
             }
         }
-        return "<w:p><w:pPr><w:jc w:val=\"$align\"/>$keepXml<w:spacing w:before=\"$spaceBefore\" w:after=\"$spaceAfter\" w:line=\"$line\" w:lineRule=\"auto\"/></w:pPr>$runs</w:p>"
+        // rightIndent 单位 twips；4 个汉字≈960 twips（12pt 宋体一字 240 twips）
+        val indXml = if (rightIndent > 0) "<w:ind w:right=\"$rightIndent\"/>" else ""
+        return "<w:p><w:pPr><w:jc w:val=\"$align\"/>$indXml$keepXml<w:spacing w:before=\"$spaceBefore\" w:after=\"$spaceAfter\" w:line=\"$line\" w:lineRule=\"auto\"/></w:pPr>$runs</w:p>"
     }
 
     private fun noticeParagraphs(raw: String): String = buildString {
@@ -258,8 +262,9 @@ object SpcDocxBuilder {
             val line = rawLine.trim()
             if (line.isEmpty()) continue
             when {
+                // ★特别提示★：星号与"特别提示"四字不加粗，保留左对齐与字号
                 line.startsWith('★') && line.endsWith('★') ->
-                    append(paragraph(line, align = "left", bold = true, size = 21, font = "宋体",
+                    append(paragraph(line, align = "left", bold = false, size = 21, font = "宋体",
                         spaceBefore = 60, spaceAfter = 30, line = 280))
                 line == "说明：" || line == "说明:" ->
                     append(paragraph(line, align = "left", bold = true, size = 21, font = "宋体",

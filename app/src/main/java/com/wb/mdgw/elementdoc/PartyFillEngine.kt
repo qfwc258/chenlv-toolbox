@@ -46,8 +46,9 @@ object PartyFillEngine {
     )
 
     /**
-     * 用执业档案填入「委托诉讼代理人(agent)」行。
-     * 姓名=律师姓名，单位=律所，职务=专职律师（执业证号：xxx），电话=联系电话，特别授权☑。
+     * 用执业证信息填入「委托诉讼代理人(agent)」行。
+     * 姓名=律师姓名，单位=律所，职务=专职律师（不带执业证号），电话=联系电话，特别授权☑。
+     * 执业证号仅作为档案留存，不写入文书的「职务」栏。
      */
     fun fromLawyerProfile(
         templateText: String,
@@ -59,7 +60,7 @@ object PartyFillEngine {
         val data = Data(
             name = name,
             workUnit = firmName,
-            jobTitle = if (licenseNo.isNotBlank()) "专职律师（执业证号：${licenseNo.trim()}）" else "专职律师",
+            jobTitle = "专职律师",
             phone = phone,
             agentHas = true,
             agentAuthority = "特别授权"

@@ -25,6 +25,17 @@ class ElementFeatureTest {
 
     private val agentText = "有□\n姓名：\n单位：        职务：        联系电话：\n代理权限：一般授权□    特别授权□\n无□"
 
+    /** 从 docx zip 字节中取 word/document.xml 文本 */
+    private fun docxDocumentXml(bytes: ByteArray): String {
+        val zis = java.util.zip.ZipInputStream(bytes.inputStream())
+        while (true) {
+            val e = zis.nextEntry ?: break
+            if (e.name == "word/document.xml") return zis.readBytes().toString(Charsets.UTF_8)
+            zis.closeEntry()
+        }
+        throw IllegalStateException("docx 缺少 word/document.xml")
+    }
+
     // ---------- 一键带入执业档案 ----------
 
     @Test
@@ -34,7 +45,8 @@ class ElementFeatureTest {
         assertTrue(out.contains("无□"))
         assertTrue(out.contains("姓名：张三"))
         assertTrue(out.contains("湖南某某律师事务所"))
-        assertTrue(out.contains("专职律师（执业证号：14301202010123456）"))
+        assertTrue(out.contains("职务：专职律师"))
+        assertFalse(out.contains("执业证号"))
         assertTrue(out.contains("联系电话：13800000000"))
         assertTrue(out.contains("一般授权□"))
         assertTrue(out.contains("特别授权☑"))
@@ -174,5 +186,42 @@ class ElementFeatureTest {
         assertTrue(html.contains("&lt;script&gt;"))
         assertTrue(html.contains("&amp;中文"))
         assertFalse(html.contains("<script>"))
+    }
+
+    // ---------- 本轮 UI/版式修正 ----------
+
+    @Test
+    fun `sign date formats with four spaces between year month day`() {
+        assertEquals("2026 年    3 月    1 日", ElementEngine.formatSignDate("2026 年 3 月 1 日"))
+        assertEquals("2026 年    3 月    1 日", ElementEngine.formatSignDate("2026-3-1"))
+        assertEquals("2026 年    3 月    1 日", ElementEngine.formatSignDate("2026年03月01日"))
+        assertEquals("    年    月    日", ElementEngine.formatSignDate("  "))
+    }
+
+    @Test
+    fun `resolved doc sign date uses four spaces`() {
+        val tpl = corpus().templates.first()
+        val doc = ElementEngine.buildResolved(tpl, ElementDraft(templateId = tpl.id, signDate = "2026年3月1日"))
+        assertTrue(doc.signDate.contains("2026 年    3 月    1 日"))
+    }
+
+    @Test
+    fun `docx signer and date are right aligned with four char indent`() {
+        val tpl = corpus().templates.first()
+        val doc = ElementEngine.buildResolved(tpl, ElementDraft(templateId = tpl.id, signerName = "张三", signDate = "2026 年    3 月    1 日"))
+        val xml = docxDocumentXml(SpcDocxBuilder.build(doc))
+        assertTrue(xml.contains("<w:jc w:val=\"right\"/><w:ind w:right=\"960\"/>"))
+        assertTrue(xml.contains("2026 年    3 月    1 日"))
+    }
+
+    @Test
+    fun `a4 signer and date indent four em and star tip not bold`() {
+        val tpl = corpus().templates.first()
+        val doc = ElementEngine.buildResolved(tpl, ElementDraft(templateId = tpl.id))
+        val html = ElementDocHtmlBuilder.build(doc)
+        assertTrue(html.contains(".signer{text-align:right;padding-right:4em"))
+        assertTrue(html.contains(".date{text-align:right;padding-right:4em"))
+        assertTrue(html.contains(".notice .star{font-family:'SimSun','宋体',serif;font-weight:400;}"))
+        assertFalse(html.contains(".notice .star{font-family:'SimSun','宋体',serif;font-weight:700;}"))
     }
 }
