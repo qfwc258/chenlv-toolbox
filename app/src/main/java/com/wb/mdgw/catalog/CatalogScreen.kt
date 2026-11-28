@@ -51,10 +51,10 @@ enum class CatalogKind(val screenTitle: String) {
 }
 
 @Composable
-fun CatalogScreen(kind: CatalogKind, onBack: () -> Unit) {
+fun CatalogScreen(kind: CatalogKind, onBack: () -> Unit, showTopBar: Boolean = true) {
     when (kind) {
-        CatalogKind.EVIDENCE -> EvidenceScreen(onBack)
-        CatalogKind.ARCHIVE -> ArchiveScreen(onBack)
+        CatalogKind.EVIDENCE -> EvidenceScreen(onBack, showTopBar)
+        CatalogKind.ARCHIVE -> ArchiveScreen(onBack, showTopBar)
     }
 }
 
@@ -75,7 +75,7 @@ private fun dateStamp(): String =
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun EvidenceScreen(onBack: () -> Unit) {
+private fun EvidenceScreen(onBack: () -> Unit, showTopBar: Boolean = true) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
@@ -173,7 +173,7 @@ private fun EvidenceScreen(onBack: () -> Unit) {
 
     Scaffold(
         containerColor = com.wb.mdgw.BrandTokens.BrandPaper,
-        topBar = {
+        topBar = if (showTopBar) { {
             Column {
                 TopAppBar(
                     title = {
@@ -199,7 +199,7 @@ private fun EvidenceScreen(onBack: () -> Unit) {
                     thickness = 1.dp
                 )
             }
-        },
+        } } else { {} },
         bottomBar = {
             Button(
                 onClick = { doGenerate() },
@@ -360,7 +360,7 @@ private fun EvidenceCard(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ArchiveScreen(onBack: () -> Unit) {
+private fun ArchiveScreen(onBack: () -> Unit, showTopBar: Boolean = true) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
@@ -425,7 +425,7 @@ private fun ArchiveScreen(onBack: () -> Unit) {
 
     Scaffold(
         containerColor = com.wb.mdgw.BrandTokens.BrandPaper,
-        topBar = {
+        topBar = if (showTopBar) { {
             Column {
                 TopAppBar(
                     title = {
@@ -451,7 +451,7 @@ private fun ArchiveScreen(onBack: () -> Unit) {
                     thickness = 1.dp
                 )
             }
-        },
+        } } else { {} },
         bottomBar = {
             Button(
                 onClick = { doGenerate() },

@@ -50,7 +50,7 @@ private class NoTableException : Exception("no table")
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TableFormScreen(onBack: () -> Unit) {
+fun TableFormScreen(onBack: () -> Unit, showTopBar: Boolean = true) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
@@ -278,7 +278,7 @@ fun TableFormScreen(onBack: () -> Unit) {
 
     Scaffold(
         containerColor = com.wb.mdgw.BrandTokens.BrandPaper,
-        topBar = {
+        topBar = if (showTopBar) { {
             Column {
                 TopAppBar(
                     title = {
@@ -326,7 +326,7 @@ fun TableFormScreen(onBack: () -> Unit) {
                     thickness = 1.dp
                 )
             }
-        },
+        } } else { {} },
         bottomBar = {
             if (phase == TfPhase.FILL) {
                 Surface(tonalElevation = 2.dp, shadowElevation = 4.dp) {

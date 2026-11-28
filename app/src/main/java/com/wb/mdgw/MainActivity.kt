@@ -52,21 +52,22 @@ import com.wb.mdgw.BuildConfig
 import com.wb.mdgw.wechat.WeChatScreen
 import com.wb.mdgw.pptx.MdPptxScreen
 import com.wb.mdgw.shot.ShotScreen
-import com.wb.mdgw.law.Law
-import com.wb.mdgw.law.LawDetailScreen
-import com.wb.mdgw.law.LawSearchScreen
+import com.wb.mdgw.law.LawSearchNewScreen
 import com.wb.mdgw.docgen.DocGenScreen
 import com.wb.mdgw.elementdoc.ElementDocScreen
 import com.wb.mdgw.catalog.CatalogKind
 import com.wb.mdgw.catalog.CatalogScreen
+import com.wb.mdgw.catalog.EvidenceHubScreen
 import com.wb.mdgw.tableform.TableFormScreen
 import com.wb.mdgw.ftp.FtpScreen
 import com.wb.mdgw.injury.InjuryHubScreen
 import com.wb.mdgw.calc.LitigationFeeScreen
 import com.wb.mdgw.calc.LawyerFeeScreen
+import com.wb.mdgw.calc.FeeHubScreen
 import com.wb.mdgw.calc.LprScreen
 import com.wb.mdgw.calc.LaborScreen
 import com.wb.mdgw.update.UpdateManager
+import com.wb.mdgw.notes.NoteScreen
 
 class MainActivity : ComponentActivity() {
 
@@ -120,8 +121,8 @@ fun MdGwTheme(darkTheme: Boolean = false, content: @Composable () -> Unit) {
 /** 顶层路由：主页宫格 + 各功能页（平铺，不再有底部 Tab） */
 private enum class Route {
     HOME, WORD, PDF, WECHAT, PPTX, SETTINGS, SCREENSHOT, LAW_SEARCH, DOC_GEN,
-    EVIDENCE_CATALOG, ARCHIVE_CATALOG, TABLE_FORM, DOCUMENTS, FTP, INJURY, ELEMENT_DOC,
-    LITIGATION_FEE, LAWYER_FEE, LPR_INTEREST, LABOR_COMP
+    EVIDENCE_CATALOG, DOCUMENTS, FTP, INJURY, ELEMENT_DOC,
+    LITIGATION_FEE, LPR_INTEREST, LABOR_COMP, NOTE
 }
 
 /** 宫格功能项 */
@@ -139,15 +140,13 @@ private val HOME_FEATURES = listOf(
     Feature(Route.DOC_GEN, "生成文书", Icons.Default.EditNote),
     Feature(Route.ELEMENT_DOC, "要素式文书", Icons.Default.Gavel),
     Feature(Route.EVIDENCE_CATALOG, "证据目录", Icons.Default.Article),
-    Feature(Route.ARCHIVE_CATALOG, "法援目录", Icons.Default.Inventory),
-    Feature(Route.TABLE_FORM, "表格填报", Icons.Default.GridView),
     Feature(Route.SCREENSHOT, "截图排版", Icons.Default.Camera),
     Feature(Route.LAW_SEARCH, "法律查询", Icons.Default.Gavel),
     Feature(Route.INJURY, "工伤与人损", Icons.Default.Calculate),
-    Feature(Route.LITIGATION_FEE, "诉讼费计算", Icons.Default.Calculate),
-    Feature(Route.LAWYER_FEE, "律师费", Icons.Default.Calculate),
+    Feature(Route.LITIGATION_FEE, "诉讼费与律师费", Icons.Default.Calculate),
     Feature(Route.LPR_INTEREST, "LPR利息", Icons.Default.Calculate),
     Feature(Route.LABOR_COMP, "劳动补偿金", Icons.Default.Calculate),
+    Feature(Route.NOTE, "便签", Icons.Default.EditNote),
     Feature(Route.DOCUMENTS, "我的文档", Icons.Default.Folder),
     Feature(Route.FTP, "FTP 服务", Icons.Default.Dns)
 )
@@ -183,15 +182,13 @@ fun AppScreen(initialUri: Uri? = null) {
     }
 
     var route by remember { mutableStateOf(initialRoute) }
-    var selectedLaw by remember { mutableStateOf<Law?>(null) }
     // 跨页流转：截图排版等产物一键带入「PDF 处理」（加页码/盖章）
     var pendingPdfUri by remember { mutableStateOf<Uri?>(null) }
     val snackbar = remember { SnackbarHostState() }
     val darkMode by AppSettings.darkMode.collectAsState()
 
-    // 返回逻辑：法条详情 → 关闭详情；其它功能页 → 回主页；主页不拦截（退出 App）
-    BackHandler(enabled = selectedLaw != null) { selectedLaw = null }
-    BackHandler(enabled = selectedLaw == null && route != Route.HOME) { route = Route.HOME }
+    // 返回逻辑：功能页 → 回主页；主页不拦截（退出 App）
+    BackHandler(enabled = route != Route.HOME) { route = Route.HOME }
 
     MdGwTheme(darkTheme = darkMode) {
         Scaffold(snackbarHost = { SnackbarHost(snackbar) }) { pad ->
@@ -227,16 +224,9 @@ fun AppScreen(initialUri: Uri? = null) {
                     ElementDocScreen(onBack = { route = Route.HOME })
                 }
 
-                // 目录文书：证据目录 / 案卷归档目录（自带顶部栏）
+                // 证据目录入口：证据目录 / 法援目录 / 表格填报 三合一
                 AnimatedVisibility(route == Route.EVIDENCE_CATALOG, enter = fadeIn(), exit = fadeOut()) {
-                    CatalogScreen(kind = CatalogKind.EVIDENCE, onBack = { route = Route.HOME })
-                }
-                AnimatedVisibility(route == Route.ARCHIVE_CATALOG, enter = fadeIn(), exit = fadeOut()) {
-                    CatalogScreen(kind = CatalogKind.ARCHIVE, onBack = { route = Route.HOME })
-                }
-                // 通用表格填报（导入任意含表格的 docx，手机填报，原位回填）
-                AnimatedVisibility(route == Route.TABLE_FORM, enter = fadeIn(), exit = fadeOut()) {
-                    TableFormScreen(onBack = { route = Route.HOME })
+                    EvidenceHubScreen(onBack = { route = Route.HOME })
                 }
 
                 // 无自带标题栏的页面：统一套一个带返回的标题栏
@@ -261,26 +251,25 @@ fun AppScreen(initialUri: Uri? = null) {
                     }
                 }
                 AnimatedVisibility(route == Route.LAW_SEARCH, enter = fadeIn(), exit = fadeOut()) {
-                    SimpleScreenFrame("法律查询", onBack = { route = Route.HOME }) {
-                        LawSearchScreen(onLawClick = { law -> selectedLaw = law })
-                    }
+                    LawSearchNewScreen()
                 }
                 AnimatedVisibility(route == Route.INJURY, enter = fadeIn(), exit = fadeOut()) {
                     SimpleScreenFrame("工伤与人损", onBack = { route = Route.HOME }) {
                         InjuryHubScreen()
                     }
                 }
+                // 诉讼费入口：诉讼费计算 / 律师费 二合一
                 AnimatedVisibility(route == Route.LITIGATION_FEE, enter = fadeIn(), exit = fadeOut()) {
-                    SimpleScreenFrame("诉讼费计算", onBack = { route = Route.HOME }) { LitigationFeeScreen() }
-                }
-                AnimatedVisibility(route == Route.LAWYER_FEE, enter = fadeIn(), exit = fadeOut()) {
-                    SimpleScreenFrame("律师费", onBack = { route = Route.HOME }) { LawyerFeeScreen() }
+                    FeeHubScreen(onBack = { route = Route.HOME })
                 }
                 AnimatedVisibility(route == Route.LPR_INTEREST, enter = fadeIn(), exit = fadeOut()) {
                     SimpleScreenFrame("LPR 利息与迟延金", onBack = { route = Route.HOME }) { LprScreen() }
                 }
                 AnimatedVisibility(route == Route.LABOR_COMP, enter = fadeIn(), exit = fadeOut()) {
                     SimpleScreenFrame("劳动补偿金", onBack = { route = Route.HOME }) { LaborScreen() }
+                }
+                AnimatedVisibility(route == Route.NOTE, enter = fadeIn(), exit = fadeOut()) {
+                    NoteScreen(onBack = { route = Route.HOME })
                 }
                 AnimatedVisibility(route == Route.DOCUMENTS, enter = fadeIn(), exit = fadeOut()) {
                     DocumentsScreen(
@@ -301,15 +290,6 @@ fun AppScreen(initialUri: Uri? = null) {
                     FtpScreen(onBack = { route = Route.HOME })
                 }
 
-                // 法条详情页（覆盖层）
-                if (selectedLaw != null) {
-                    AnimatedVisibility(visible = true, enter = fadeIn(), exit = fadeOut()) {
-                        LawDetailScreen(
-                            law = selectedLaw!!,
-                            onBack = { selectedLaw = null }
-                        )
-                    }
-                }
             }
         }
     }
@@ -367,7 +347,7 @@ private fun HomeScreen(onOpen: (Route) -> Unit) {
 @Suppress("unused")
 private val EDITORIAL_ROUTES = setOf(
     Route.WORD, Route.WECHAT, Route.PPTX, Route.DOC_GEN,
-    Route.TABLE_FORM, Route.SCREENSHOT
+    Route.SCREENSHOT
 )
 @Suppress("unused")
 private val TOOL_ROUTES = setOf(
@@ -375,7 +355,7 @@ private val TOOL_ROUTES = setOf(
 )
 @Suppress("unused")
 private val SYS_ROUTES = setOf(
-    Route.DOCUMENTS, Route.EVIDENCE_CATALOG, Route.ARCHIVE_CATALOG, Route.FTP
+    Route.DOCUMENTS, Route.EVIDENCE_CATALOG, Route.NOTE, Route.FTP
 )
 
 /**
