@@ -25,10 +25,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -51,6 +56,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.wb.mdgw.UI_RADIUS_MD
+import com.wb.mdgw.BrandTokens
 
 /**
  * 法律查询（按参照源码重新设计）：离线法规库 + 条号智能搜索 + 收藏引注 + 实务核对清单。
@@ -58,7 +64,7 @@ import com.wb.mdgw.UI_RADIUS_MD
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LawSearchNewScreen() {
+fun LawSearchNewScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val entries = remember { LawCorpusStore.entries(context) }
     val checklists = remember { LawCorpusStore.checklists(context) }
@@ -81,13 +87,28 @@ fun LawSearchNewScreen() {
         Toast.makeText(context, "已复制到剪贴板", Toast.LENGTH_SHORT).show()
     }
 
-    Column(Modifier.fillMaxSize()) {
-        PrimaryTabRow(selectedTabIndex = tab) {
+    Scaffold(
+        containerColor = BrandTokens.BrandPaper,
+        topBar = {
+            Column {
+                TopAppBar(
+                    title = { Text("法律查询", style = BrandTokens.BrandTopBarTitleStyle.copy(fontSize = 18.sp)) },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = BrandTokens.BrandPaper)
+                )
+                PrimaryTabRow(selectedTabIndex = tab) {
             Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("法规检索") })
             Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("核对清单") })
-            Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text("说明") })
+                    Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text("说明") })
+                }
+            }
         }
-
+    ) { pad ->
+        Column(Modifier.fillMaxSize().padding(pad)) {
         when (tab) {
             0 -> {
                 // 搜索框
@@ -185,6 +206,7 @@ fun LawSearchNewScreen() {
 
             1 -> ChecklistsTab(checklists)
             2 -> AboutTab(entries.size, dataAsOf)
+        }
         }
     }
 }

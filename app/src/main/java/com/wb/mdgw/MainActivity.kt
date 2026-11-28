@@ -251,7 +251,7 @@ fun AppScreen(initialUri: Uri? = null) {
                     }
                 }
                 AnimatedVisibility(route == Route.LAW_SEARCH, enter = fadeIn(), exit = fadeOut()) {
-                    LawSearchNewScreen()
+                    LawSearchNewScreen(onBack = { route = Route.HOME })
                 }
                 AnimatedVisibility(route == Route.INJURY, enter = fadeIn(), exit = fadeOut()) {
                     SimpleScreenFrame("工伤与人损", onBack = { route = Route.HOME }) {
